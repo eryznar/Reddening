@@ -26,15 +26,15 @@ library(oce)
   
   
 ### PROCESS SST DATA ------------------------------------------------------------------------------------------------------
-  nc <- nc_open("./data/ERA5_sst_1940-2024.nc")
+  nc <- nc_open("./Data/ERA5_sst_1940-2024_NEW.nc")
   
   sst <- ncvar_get(nc, "sst", verbose = F) # keep as Kelvin
   
   sst.1 <- sst[,,1,]
   sst.5 <- sst[,,2,]
   
-  dim(sst.1) #1201 lon, 81 lat, 770 months
-  dim(sst.5) #1201 lon, 81 lat, 770 months
+  dim(sst.1) #241 lon, 81 lat, 770 months
+  dim(sst.5) #241 lon, 81 lat, 770 months
   
   
   #Process
@@ -75,7 +75,32 @@ library(oce)
     reframe(mean.sst = mean(sst)) %>%
     mutate(mean.sst = mean.sst - 273.15) -> sst_1960.2024
   
+  # Create EBS and GOA polygons, filter data into different regions
+    #EBS
+    xp <- cbind(ebs.x, ebs.y)
+    loc=cbind(sst_1960.2024$lon, sst_1960.2024$lat)
+    check <- in.poly(loc, xp=xp)
+    
+    cbind(check, sst_1960.2024) %>%
+      filter(check == "TRUE") %>%
+      dplyr::select(!check)  %>%
+      group_by(year, month) %>%
+      reframe(mean.sst = mean(mean.sst)) -> sst_EBS
   
-  #write.csv(sst_1960.2024, "./Data/sst_1960.2024_EBS.GOA.csv")
-  read.csv("./Data/sst_1960.2024_EBS.GOA.csv") -> dat
+    #GOA
+    xp <- cbind(goa.x, goa.y)
+    loc=cbind(sst_1960.2024$lon, sst_1960.2024$lat)
+    check <- in.poly(loc, xp=xp)
+    
+    cbind(check, sst_1960.2024) %>%
+      filter(check == "TRUE")  %>%
+      dplyr::select(!check) %>%
+      group_by(year, month) %>%
+      reframe(mean.sst = mean(mean.sst)) -> sst_GOA
+  
+  
+  
+  write.csv(sst_1960.2024, "./Data/sst_1960.2024_ALL.csv")
+  write.csv(sst_EBS, "./Data/sst_EBS.csv")
+  write.csv(sst_GOA, "./Data/sst_GOA.csv")
   
