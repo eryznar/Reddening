@@ -208,6 +208,6 @@ library(mgcv)
       
       hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1))-> hh #1982:2021
       
-  years <- 1995:2021
+  years <- 1995:2021 # years where all timeseries are present
   
     
