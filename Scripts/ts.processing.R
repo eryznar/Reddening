@@ -5,6 +5,10 @@
 ### LOAD PACKAGES -------------------------------------------------------------------------------------------------------
 
 library(tidyverse)
+library(zoo)
+library(stats)
+library(mgcv)
+
 
 ### LOAD DATA -----------------------------------------------------------------------------------------------------------
   # BSAI and GOA community timeseries
@@ -15,7 +19,10 @@ library(tidyverse)
     #dplyr::select(grep("X", colnames(.), invert = TRUE)) 
     #na.omit() # omitting earlier in the ts when all stocks aren't available
                   
-  # BSAI and GOA ERA5 SST
+
+### PROCESS DATA ----------------------------------------------------------------------------------------------------------
+  # SST --------------------------
+    # BSAI and GOA ERA5 SST
     goa.sst <- read.csv("./Data/sst_GOA.csv") %>%
       rename(Year = year) %>%
       group_by(Year) %>%
@@ -30,8 +37,6 @@ library(tidyverse)
     rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"), 
           goa.sst %>% mutate(region = "Gulf of Alaska")) -> sst
     
-
-### PROCESS DATA ----------------------------------------------------------------------------------------------------------
   # ADD GF COHORTS AND SALMON OCEAN ENTRY YEAR --------------
     cohorts <- data.frame(Stock = names(c(bsai.ts %>%
                                             dplyr::select(grep(".r0", colnames(.))),
@@ -54,7 +59,7 @@ library(tidyverse)
         dplyr::select(YEAR, grep("ssb", colnames(.))) %>%
         mutate(bsai.ebs.pol.ssb = as.numeric(bsai.ebs.pol.ssb)) %>%
         pivot_longer(., !YEAR, names_to = "Stock", values_to="SSB") %>%
-        mutate(SSB = log(SSB), Region = "BSAI") %>%
+        mutate(SSB = log(SSB+10), Region = "BSAI") %>%
         rename(Year = YEAR) 
     
   # GOA GROUNDFISH SSB ---------------
@@ -62,7 +67,7 @@ library(tidyverse)
       goa.ssb <- goa.ts %>%
         dplyr::select(YEAR, grep("ssb", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "Stock", values_to="SSB") %>%
-        mutate(SSB = log(SSB), Region = "GOA") %>%
+        mutate(SSB = log(SSB +10), Region = "GOA") %>%
         rename(Year = YEAR)
     
   # SALMON CATCH ---------------
@@ -70,7 +75,7 @@ library(tidyverse)
       goa.salmon <- goa.ts %>%
         dplyr::select(YEAR, grep("catch", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "Stock", values_to="Catch") %>%
-        mutate(Catch = log(Catch), Region = "GOA") %>%
+        mutate(Catch = log(Catch+10), Region = "GOA") %>%
         rename(Year = YEAR) %>%
         right_join(ocean.entry, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -78,7 +83,7 @@ library(tidyverse)
       bsai.salmon <- bsai.ts %>%
         dplyr::select(YEAR, grep("catch", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "Stock", values_to="Catch") %>%
-        mutate(Catch = log(Catch), Region = "BSAI") %>%
+        mutate(Catch = log(Catch+10), Region = "BSAI") %>%
         rename(Year = YEAR) %>%
         right_join(ocean.entry, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -90,12 +95,12 @@ library(tidyverse)
       crab.mb <- rbind(bsai.ts %>%
                          dplyr::select(YEAR, grep("mmb", colnames(.))) %>%
                          pivot_longer(., !YEAR, names_to = "Stock", values_to="Value") %>%
-                         mutate(Value = log(Value), Type = "mmb") %>%
+                         mutate(Value = log(Value+10), Type = "mmb") %>%
                          rename(Year = YEAR),
                        bsai.ts %>%
                          dplyr::select(YEAR, grep("fmb", colnames(.))) %>%
                          pivot_longer(., !YEAR, names_to = "Stock", values_to="Value") %>%
-                         mutate(Value = log(Value), Type = "fmb") %>%
+                         mutate(Value = log(Value+10), Type = "fmb") %>%
                          rename(Year = YEAR)) %>%
         mutate(Stock = case_when((Stock == "bsai.bbrkc.mmb")~ "Bristol Bay red king crab",
                                  (Stock %in% c("bsai.opi.fmb", "bsai.opi.mmb")) ~ "Snow crab",
@@ -107,7 +112,7 @@ library(tidyverse)
         dplyr::select(YEAR, grep("r0", colnames(.))) %>%
         mutate(bsai.ebs.pol.r0 = as.numeric(bsai.ebs.pol.r0)) %>%
         pivot_longer(., !YEAR, names_to = "Stock", values_to="Recruitment") %>%
-        mutate(Recruitment = log(Recruitment), Region = "BSAI") %>%
+        mutate(Recruitment = log(Recruitment +10), Region = "BSAI") %>%
         rename(Year = YEAR) %>%
         right_join(cohorts, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -116,7 +121,7 @@ library(tidyverse)
       goa.r0 <- goa.ts %>%
         dplyr::select(YEAR, grep("r0", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "Stock", values_to="Recruitment") %>%
-        mutate(Recruitment = log(Recruitment), Region = "GOA") %>%
+        mutate(Recruitment = log(Recruitment +10), Region = "GOA") %>%
         rename(Year = YEAR) %>%
         right_join(cohorts, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -166,4 +171,43 @@ library(tidyverse)
         na.omit() -> goa.r0.sst
       
     
+    
+      
+### FIND YEAR RANGES WHERE ALL TS ARE PRESENT ---------------------------------------------------
+  bsai.ssb %>%
+      na.omit() -> tt
+    
+      hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1)) -> hh #1992:2021
+  
+  goa.ssb %>%
+      na.omit() -> tt
+  
+      hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1)) -> hh #1982:2021
+
+  bsai.salmon %>%
+    na.omit() -> tt
+  
+      hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1))-> hh #1893:2022
+  
+  
+  goa.salmon %>%
+      na.omit() %>%
+      filter(Year > 1980)-> tt
+      
+      hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1))-> hh #1995:2021
+      
+  crab.mb %>%
+     filter(Type == "mmb") %>%
+     na.omit() -> tt
+  
+      hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1))-> hh #1985:2021
+      
+  crab.mb %>%
+      filter(Type == "fmb") %>%
+      na.omit() -> tt
+      
+      hist(tt$Year, breaks = seq(min(tt$Year), max(tt$Year), by = 1))-> hh #1982:2021
+      
+  years <- 1995:2021
+  
     
