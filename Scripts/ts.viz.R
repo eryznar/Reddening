@@ -1,6 +1,6 @@
 #Timeseries processing and visualization
 
-#PURPOSE: To load, process, and visualize GOA and EBS stock and climate timeseries
+#PURPOSE: To load, process, and visualize GOA and EBS TS and climate timeseries
 
 ### LOAD PACKAGES/DATA -------------------------------------------------------------------------------------------------------
 
@@ -21,7 +21,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save
       ggplot(bsai.ssb %>% filter(Year > 1952), aes(x = Year, y = SSB))+
         geom_line(linewidth = 1)+
-        facet_wrap(~Stock, scales = "free_y", labeller = labeller(Stock = ssb.labs.bsai), ncol = 3)+
+        facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
         theme_bw()+
         ggtitle("BSAI groundfish spawning stock biomass")+
         ylab("log(kilotons)")+
@@ -45,7 +45,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save
       ggplot(goa.ssb %>% filter(Year > 1959), aes(x = Year, y = SSB))+
         geom_line(linewidth = 1)+
-        facet_wrap(~Stock, scales = "free_y", labeller = labeller(Stock = ssb.labs.goa), ncol =3)+
+        facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol =3)+
         theme_bw()+
         ggtitle("GOA groundfish spawning stock biomass")+
         ylab("log(kilotons)")+
@@ -72,7 +72,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save
       ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = Catch))+
         geom_line(linewidth = 0.75)+
-        facet_wrap(~Stock, scales = "free_y", labeller = labeller(Stock = salm.labs),
+        facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs),
                    ncol = 3)+
         theme_bw()+
         ggtitle("BSAI and GOA salmon catch")+
@@ -88,7 +88,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save
       ggplot(crab.mb %>% filter(Year > 1953), aes(x = Year, y = Value, linetype = Type))+
         geom_line(linewidth = 0.75)+
-        facet_wrap(~Stock, scales = "free_y", nrow = 3)+
+        facet_wrap(~TS, scales = "free_y", nrow = 3)+
         theme_bw()+
         scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
         ggtitle("BSAI crab mature biomass")+
@@ -117,7 +117,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save BSAI
       ggplot(bsai.r0 %>% filter(Year > 1950), aes(x = Lagged.Year, y = Recruitment))+
         geom_line(linewidth = 0.75)+
-        facet_wrap(~Stock, scales = "free_y", labeller = labeller(Stock = r0.labs.bsai), ncol = 3)+
+        facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.bsai), ncol = 3)+
         theme_bw()+
         ggtitle("BSAI groundfish and crab recruitment")+
         ylab("log(millions of recruits)") + 
@@ -140,7 +140,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save GOA
       ggplot(goa.r0 %>% filter(Year > 1959), aes(x = Lagged.Year, y = Recruitment))+
         geom_line(linewidth = 0.75)+
-        facet_wrap(~Stock, scales = "free_y", ncol= 3, labeller = labeller(Stock=r0.labs.goa))+
+        facet_wrap(~TS, scales = "free_y", ncol= 3, labeller = labeller(TS=r0.labs.goa))+
         theme_bw()+
         ggtitle("BSAI groundfish and crab recruitment")+
         ylab("log(millions of recruits)") + 
@@ -174,7 +174,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save BSAI SSB/SST
       ggplot(bsai.ssb.sst %>% filter(Year > 1952), aes(x = mean.sst, y = SSB))+
         geom_point()+
-        facet_wrap(~Stock, scales = "free", labeller = labeller(Stock = ssb.labs.bsai),
+        facet_wrap(~TS, scales = "free", labeller = labeller(TS = ssb.labs.bsai),
                    ncol =3)+
         geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
         theme_bw()+
@@ -190,7 +190,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save GOA SSB/SST
       ggplot(goa.ssb.sst %>% filter(Year > 1959), aes(x = mean.sst, y = SSB))+
         geom_point()+
-        facet_wrap(~Stock, scales = "free", labeller = labeller(Stock = ssb.labs.goa),
+        facet_wrap(~TS, scales = "free", labeller = labeller(TS = ssb.labs.goa),
                    ncol =3)+
         theme_bw()+
         geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
@@ -206,7 +206,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save salmon catch/SST
       ggplot(salmon.catch.sst, aes(x = Lagged.sst, y = Catch))+
         geom_point()+
-        facet_wrap(~Stock, scales = "free", labeller = labeller(Stock = salm.labs),
+        facet_wrap(~TS, scales = "free", labeller = labeller(TS = salm.labs),
                    ncol = 3)+
         geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
         theme_bw()+
@@ -223,7 +223,7 @@ source("./Scripts/ts.processing.R")
     # Plot and save crab mb/SST
       ggplot(crab.mb.sst, aes(x = mean.sst, y = Value, color = Type))+
         geom_point(size = 2)+
-        facet_wrap(~Stock, scales = "free", nrow = 3)+
+        facet_wrap(~TS, scales = "free", nrow = 3)+
         geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
         theme_bw()+
         ggtitle("BSAI crab mature biomass and SST")+
@@ -243,7 +243,7 @@ source("./Scripts/ts.processing.R")
     # Plot BSAI r0/SST
       ggplot(bsai.r0.sst, aes(x = Lagged.sst, y = Recruitment))+
         geom_point()+
-        facet_wrap(~Stock, scales = "free", labeller = labeller(Stock = r0.labs.bsai),
+        facet_wrap(~TS, scales = "free", labeller = labeller(TS = r0.labs.bsai),
                    ncol = 3)+
         geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
         theme_bw()+
@@ -261,7 +261,7 @@ source("./Scripts/ts.processing.R")
     # Plot GOA r0/SST
       ggplot(goa.r0.sst, aes(x = Lagged.sst, y = Recruitment))+
         geom_point()+
-        facet_wrap(~Stock, scales = "free", labeller = labeller(Stock = r0.labs.goa),
+        facet_wrap(~TS, scales = "free", labeller = labeller(TS = r0.labs.goa),
                    ncol = 3)+
         theme_bw()+
         ggtitle("GOA groundfish recruitment and SST")+
