@@ -4,9 +4,7 @@
 
 ### LOAD PACKAGES/DATA -------------------------------------------------------------------------------------------------------
 
-  library(tidyverse)
-  
-  source("./Scripts/ts.processing.R")
+source("./Scripts/ts.processing.R")
 
 ### PROCESS/PLOT COMMUNITY AND SST DATA ----------------------------------------------------------------------------------------------
   # BSAI GROUNDFISH SSB -----------
