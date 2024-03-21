@@ -8,16 +8,7 @@ source("./Scripts/ts.processing.R")
 
 ### PROCESS/PLOT COMMUNITY AND SST DATA ----------------------------------------------------------------------------------------------
   # BSAI GROUNDFISH SSB -----------
-    # Specify labels
-      ssb.labs.bsai <- c("Aleutian Islands cod", "Aleutian Islands pollock", "Alaska plaice", "Arrowtooth flounder",
-                    "Atka mackerel", "Blackspotted/rougheye rockfish", "Eastern Bering Sea cod",
-                    "Eastern Bering Sea pollock", "Kamchatka flounder", "Northern rockfish", "Northern rock sole",
-                    "Pacific ocean perch", "Sablefish", "Skate", "Greenland turbot", "Yellowfin sole")
-      
-      names(ssb.labs.bsai) <- c("bsai.ai.cod.ssb", "bsai.ai.pol.ssb", "bsai.apl.ssb", "bsai.atf.ssb", "bsai.atk.ssb",
-                           "bsai.brr.ssb", "bsai.ebs.cod.ssb", "bsai.ebs.pol.ssb", "bsai.kam.ssb", "bsai.nrf.ssb",
-                           "bsai.nrs.ssb", "bsai.pop.ssb", "bsai.sab.ssb", "bsai.ska.ssb", "bsai.turb.ssb", 
-                           "bsai.yfs.ssb")
+   
     # Plot and save
       ggplot(bsai.ssb %>% filter(Year > 1952), aes(x = Year, y = SSB))+
         geom_line(linewidth = 1)+
@@ -33,14 +24,7 @@ source("./Scripts/ts.processing.R")
       
     
   # GOA GROUNDFISH SSB -----------
-    # Specify labels
-      ssb.labs.goa <- c("Arrowtooth flounder", "Cod", "Rougheye/blackspotted rockfish", "Dover sole", "Dusky rockfish",
-                    "Flathead sole", "Northern rockfish", "Northern rock sole", "Pollock", "Pacific ocean perch",
-                    "Rex sole", "Sablefish", "Southern rock sole")
-      
-      names(ssb.labs.goa) <- c("goa.atf.ssb", "goa.cod.ssb", "goa.dbr.ssb", "goa.dov.ssb", "goa.drf.ssb", "goa.fhs.ssb",
-                           "goa.nrf.ssb", "goa.nrs.ssb", "goa.pol.ssb", "goa.pop.ssb", "goa.rex.ssb", "goa.sab.ssb",
-                           "goa.srs.ssb")
+    
       
     # Plot and save
       ggplot(goa.ssb %>% filter(Year > 1959), aes(x = Year, y = SSB))+
@@ -56,18 +40,7 @@ source("./Scripts/ts.processing.R")
       ggsave(plot = goa.ssb.plot, "./Figures/goa.ssb.plot.png", width = 8.5, height = 11, units = "in")
       
   # SALMON CATCH ----------------
-    # Specify labels
-      salm.labs <- c("Bristol Bay sockeye", "Chignik chum", "Chignik pink", "Chignik sockeye", "Cook Inlet chum",
-                        "Cook Inlet pink", "Cook Inlet sockeye", "Kodiak chum", "Kodiak pink", "Kodiak sockeye",
-                        "Peninsula chum", "Peninsula pink", "Peninsula sockeye", "PWS chum",
-                        "PWS pink", "PWS sockeye", "Southeast chum", "Southeast pink",
-                        "Southeast sockeye")
-      
-      names(salm.labs) <- c("bsai.sck.catch", "chig.chm.catch", "chig.pnk.catch", "chig.sck.catch",
-                               "cook.chm.catch", "cook.pnk.catch", "cook.sck.catch", "kod.chm.catch",
-                               "kod.pnk.catch", "kod.sck.catch", "pen.chm.catch", "pen.pnk.catch",
-                               "pen.sck.catch", "pws.chm.catch", "pws.pnk.catch", "pws.sck.catch", "se.chm.catch",
-                               "se.pnk.catch", "se.sck.catch")
+   
     
     # Plot and save
       ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = Catch))+
@@ -102,18 +75,7 @@ source("./Scripts/ts.processing.R")
       ggsave(plot = crab.mb.plot, "./Figures/crab.mb.plot.png", width = 8.5, height = 11, units = "in")
       
   # GROUNDFISH AND CRAB RECRUITMENT ---------------
-    # Specify BSAI labels
-      r0.labs.bsai <- c("Aleutian Islands cod", "Aleutian Islands pollock", "Alaska plaice", "Arrowtooth flounder",
-                        "Atka mackerel", "Bristol Bay red king crab", "Blackspotted/rougheye rockfish", "Eastern Bering Sea cod",
-                        "Eastern Bering Sea pollock", "Kamchatka flounder", "Northern rockfish", "Northern rock sole",
-                        "Snow crab", "Pacific ocean perch", "Sablefish", "Skate", 
-                        "Tanner crab", "Greenland turbot", "Yellowfin sole")
-      
-      names(r0.labs.bsai) <- c("bsai.ai.cod.r0", "bsai.ai.pol.r0", "bsai.apl.r0", "bsai.atf.r0", "bsai.atk.r0",
-                               "bsai.bbrkc.r0", "bsai.brr.r0", "bsai.ebs.cod.r0", "bsai.ebs.pol.r0", "bsai.kam.r0", "bsai.nrf.r0",
-                               "bsai.nrs.r0", "bsai.opi.r0", "bsai.pop.r0", "bsai.sab.r0", "bsai.ska.r0", 
-                               "bsai.tanner.r0", "bsai.turb.r0",  "bsai.yfs.r0")
-      
+   
     # Plot and save BSAI
       ggplot(bsai.r0 %>% filter(Year > 1950), aes(x = Lagged.Year, y = Recruitment))+
         geom_line(linewidth = 0.75)+
@@ -128,14 +90,7 @@ source("./Scripts/ts.processing.R")
       
       ggsave(plot = bsai.r0.plot, "./Figures/bsai.r0.plot.png", width = 8.5, height = 11, units = "in")
       
-    # Specify GOA labels
-      r0.labs.goa <- c("Arrowtooth flounder", "Cod", "Rougheye/blackspotted rockfish", "Dover sole", "Dusky rockfish",
-                        "Flathead sole", "Northern rockfish", "Northern rock sole", "Pollock", "Pacific ocean perch",
-                        "Rex sole", "Sablefish", "Southern rock sole")
-      
-      names(r0.labs.goa) <- c("goa.atf.r0", "goa.cod.r0", "goa.dbr.r0", "goa.dov.r0", "goa.drf.r0", "goa.fhs.r0",
-                               "goa.nrf.r0", "goa.nrs.r0", "goa.pol.r0", "goa.pop.r0", "goa.rex.r0", "goa.sab.r0",
-                               "goa.srs.r0")
+  
       
     # Plot and save GOA
       ggplot(goa.r0 %>% filter(Year > 1959), aes(x = Lagged.Year, y = Recruitment))+
