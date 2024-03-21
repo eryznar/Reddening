@@ -1,6 +1,6 @@
 #Model exploration
 
-#PURPOSE: To fit models GOA and EBS stock and climate timeseries
+#PURPOSE: To fit models GOA and EBS TS and climate timeseries
 
 ### LOAD PACKAGES/DATA -------------------------------------------------------------------------------------------------------
 
@@ -35,15 +35,15 @@ source("./Scripts/ts.processing.R")
       # Make function to streamline fitting
         fit.models <- function(dat){
        
-        for(ii in 1:length(unique(dat$Stock))){
-          # filter data by stock
+        for(ii in 1:length(unique(dat$TS))){
+          # filter data by TS
           dat %>%
-            filter(Stock == unique(dat$Stock)[ii]) -> stock.dat
+            filter(TS == unique(dat$TS)[ii]) -> TS.dat
           
           # fit gams, record pval and AIC
-          gam.1 <- gam(Recruitment ~ s(sst, k = 3), data= stock.dat, method = "REML")
-          gam.2 <- gam(Recruitment ~ s(sst.2, k = 3), data= stock.dat, method = "REML")
-          gam.3 <- gam(Recruitment ~ s(sst.3, k = 3), data= stock.dat, method = "REML")
+          gam.1 <- gam(Recruitment ~ s(sst, k = 3), data= TS.dat, method = "REML")
+          gam.2 <- gam(Recruitment ~ s(sst.2, k = 3), data= TS.dat, method = "REML")
+          gam.3 <- gam(Recruitment ~ s(sst.3, k = 3), data= TS.dat, method = "REML")
           
           p.gam.1 <- signif(summary(gam.1)$s.table[,4], 2)
           p.gam.2 <- signif(summary(gam.2)$s.table[,4],2)
@@ -54,9 +54,9 @@ source("./Scripts/ts.processing.R")
           AIC.gam.3 <- AIC(gam.3)
           
           # fit gls, record pval and AIC
-          gls.1 <- gls(Recruitment ~ sst, data = stock.dat, correlation = corAR1())
-          gls.2 <- gls(Recruitment ~ sst.2, data = stock.dat, correlation = corAR1())
-          gls.3 <- gls(Recruitment ~ sst.3, data = stock.dat, correlation = corAR1())
+          gls.1 <- gls(Recruitment ~ sst, data = TS.dat, correlation = corAR1())
+          gls.2 <- gls(Recruitment ~ sst.2, data = TS.dat, correlation = corAR1())
+          gls.3 <- gls(Recruitment ~ sst.3, data = TS.dat, correlation = corAR1())
           
           p.gls.1 <- signif(summary(gls.1)$tTable[2,4], 2)
           p.gls.2 <- signif(summary(gls.2)$tTable[2,4], 2)
@@ -67,7 +67,7 @@ source("./Scripts/ts.processing.R")
           AIC.gls.3 <- AIC(gls.3)
           
           # Build summary table
-          model.out <- rbind(model.out, data.frame(Stock = unique(dat$Stock)[ii],
+          model.out <- rbind(model.out, data.frame(TS = unique(dat$TS)[ii],
                                                    Model = c("gam.1", "gam.2", "gam.3", "gls.1", "gls.2", "gls.3"),
                                                    p_val = c(p.gam.1, p.gam.2, p.gam.3, p.gls.1, p.gls.2, p.gls.3),
                                                    AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3, AIC.gls.1, AIC.gls.2, AIC.gls.3)))
@@ -100,7 +100,6 @@ source("./Scripts/ts.processing.R")
     win.1 <- seq(min(years), min(years)+14, by= 1)
     win.2 <- seq(max(win.1)+1, max(win.1)+15)
     
-    
     # Create function to calculate values
     sum.fun <- function(dat, data.type){
       
@@ -115,20 +114,21 @@ source("./Scripts/ts.processing.R")
           rename(Value = Catch) -> dat
       }else if(data.type == "SST"){
         dat %>%
-          rename(Value = mean.sst) -> dat
+          rename(Value = mean.sst) %>%
+          mutate(TS = "sst") -> dat
       }else{
         dat = dat
       }
       
-      for(ii in 1:length(unique(dat$Stock))){
+      for(ii in 1:length(unique(dat$TS))){
         dat %>%
-          filter(Stock == unique(dat$Stock)[ii], Year %in% years) %>%
-          na.omit() -> stock.dat
+          filter(TS == unique(dat$TS)[ii], Year %in% years) %>%
+          na.omit() -> TS.dat
         
-        win1.dat <- stock.dat %>%
+        win1.dat <- TS.dat %>%
                       filter(Year %in% win.1)
         
-        win2.dat <- stock.dat %>%
+        win2.dat <- TS.dat %>%
                       filter(Year %in% win.2)
         
         # Calculate AR1
@@ -140,13 +140,16 @@ source("./Scripts/ts.processing.R")
         sd.win2 <- sd(win2.dat$Value)
         
         # Compile output
-        sum.out <- rbind(sum.out, data.frame(Stock = unique(dat$Stock)[ii],
+        sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
                                              ar1.win1 = ar1.win1, 
                                              ar1.win2 = ar1.win2,
                                              sd.win1 = sd.win1, 
                                              sd.win2 = sd.win2))
         
       }
+    
+    
+      
       return(sum.out)
     }
     
@@ -154,6 +157,29 @@ source("./Scripts/ts.processing.R")
     sum.out <- data.frame()
     
     sum.fun(bsai.ssb, "SSB") -> sum.ssb.bsai 
+    
+    sum.ssb.bsai %>%
+      pivot_longer(!TS, values_to = "Value", names_to = "Type") -> long.dat
+    
+    ggplot(long.dat %>% filter(Type %in% c("ar1.win1", "ar1.win2")), mapping = aes(TS, Value, fill = Type))+
+      geom_bar(stat = "identity", position = "dodge")+
+      theme_bw() +
+      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
+                        name = "")+
+      scale_x_discrete(breaks = names(ssb.labs.bsai), labels = ssb.labs.bsai)+
+      ylab("AR1")+
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+            axis.title.x = element_blank())
+    
+    ggplot(long.dat %>% filter(Type %in% c("sd.win1", "sd.win2")), mapping = aes(TS, Value, fill = Type))+
+      geom_bar(stat = "identity", position = "dodge")+
+      theme_bw() +
+      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
+                        name = "")+
+      scale_x_discrete(breaks = names(ssb.labs.bsai), labels = ssb.labs.bsai)+
+      ylab("SD")+
+      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+            axis.title.x = element_blank())
     
     # GOA SSB
     sum.out <- data.frame()
@@ -190,4 +216,22 @@ source("./Scripts/ts.processing.R")
     
     sum.fun(ebs.sst, "SST") -> sum.sst.bsai
     
+    # EBS SST
+    sum.out <- data.frame()
     
+    sum.fun(goa.sst, "SST") -> sum.sst.goa
+    
+    
+   goa.ssb %>%
+     filter(TS == "goa.cod.ssb") %>%
+     filter(Year %in% win.1) -> one
+   
+   acf(one$SSB)$acf[2]
+   
+   goa.ssb %>%
+     filter(TS == "goa.cod.ssb") %>%
+     filter(Year %in% win.2) %>%
+     na.omit() -> two
+   
+   acf(two$SSB)
+   
