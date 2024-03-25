@@ -10,7 +10,7 @@ source("./Scripts/ts.processing.R")
   # BSAI GROUNDFISH SSB -----------
    
     # Plot and save
-      ggplot(bsai.ssb %>% filter(Year > 1952), aes(x = Year, y = SSB))+
+      ggplot(bsai.ssb %>% filter(Year > 1952), aes(x = Year, y = log.SSB))+
         geom_line(linewidth = 1)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
         theme_bw()+
@@ -27,7 +27,7 @@ source("./Scripts/ts.processing.R")
     
       
     # Plot and save
-      ggplot(goa.ssb %>% filter(Year > 1959), aes(x = Year, y = SSB))+
+      ggplot(goa.ssb %>% filter(Year > 1959), aes(x = Year, y = log.SSB))+
         geom_line(linewidth = 1)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol =3)+
         theme_bw()+
@@ -43,7 +43,7 @@ source("./Scripts/ts.processing.R")
    
     
     # Plot and save
-      ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = Catch))+
+      ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = log.catch))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs),
                    ncol = 3)+
@@ -59,7 +59,7 @@ source("./Scripts/ts.processing.R")
       
   # CRAB MB ----------------
     # Plot and save
-      ggplot(crab.mb %>% filter(Year > 1953), aes(x = Year, y = Value, linetype = Type))+
+      ggplot(crab.mb %>% filter(Year > 1953), aes(x = Year, y = log.value, linetype = Type))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", nrow = 3)+
         theme_bw()+
@@ -77,7 +77,7 @@ source("./Scripts/ts.processing.R")
   # GROUNDFISH AND CRAB RECRUITMENT ---------------
    
     # Plot and save BSAI
-      ggplot(bsai.r0 %>% filter(Year > 1950), aes(x = Lagged.Year, y = Recruitment))+
+      ggplot(bsai.r0 %>% filter(Year > 1950), aes(x = Lagged.Year, y = log.recruitment))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.bsai), ncol = 3)+
         theme_bw()+
@@ -93,7 +93,7 @@ source("./Scripts/ts.processing.R")
   
       
     # Plot and save GOA
-      ggplot(goa.r0 %>% filter(Year > 1959), aes(x = Lagged.Year, y = Recruitment))+
+      ggplot(goa.r0 %>% filter(Year > 1959), aes(x = Lagged.Year, y = log.recruitment))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", ncol= 3, labeller = labeller(TS=r0.labs.goa))+
         theme_bw()+
@@ -127,7 +127,7 @@ source("./Scripts/ts.processing.R")
   # SSB/MB/R0/CATCH DATA WITH SST ------------
   
     # Plot and save BSAI SSB/SST
-      ggplot(bsai.ssb.sst %>% filter(Year > 1952), aes(x = mean.sst, y = SSB))+
+      ggplot(bsai.ssb.sst %>% filter(Year > 1952), aes(x = mean.sst, y = log.SSB))+
         geom_point()+
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = ssb.labs.bsai),
                    ncol =3)+
@@ -143,7 +143,7 @@ source("./Scripts/ts.processing.R")
       ggsave(plot= bsai.ssb.sst.plot, "./Figures/bsai.ssb.sst.plot.png", height = 11, width = 8.5, units = "in")
     
     # Plot and save GOA SSB/SST
-      ggplot(goa.ssb.sst %>% filter(Year > 1959), aes(x = mean.sst, y = SSB))+
+      ggplot(goa.ssb.sst %>% filter(Year > 1959), aes(x = mean.sst, y = log.SSB))+
         geom_point()+
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = ssb.labs.goa),
                    ncol =3)+
@@ -159,7 +159,7 @@ source("./Scripts/ts.processing.R")
       ggsave(plot= goa.ssb.sst.plot, "./Figures/goa.ssb.sst.plot.png", height = 11, width = 8.5, units = "in")
    
     # Plot and save salmon catch/SST
-      ggplot(salmon.catch.sst, aes(x = Lagged.sst, y = Catch))+
+      ggplot(salmon.catch.sst, aes(x = Lagged.sst, y = log.catch))+
         geom_point()+
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = salm.labs),
                    ncol = 3)+
@@ -176,7 +176,7 @@ source("./Scripts/ts.processing.R")
       ggsave(plot = salmon.catch.sst.plot, "./Figures/salmon.catch.sst.plot.png", width = 8.5, height = 11, units = "in")
       
     # Plot and save crab mb/SST
-      ggplot(crab.mb.sst, aes(x = mean.sst, y = Value, color = Type))+
+      ggplot(crab.mb.sst, aes(x = mean.sst, y = log.value, color = Type))+
         geom_point(size = 2)+
         facet_wrap(~TS, scales = "free", nrow = 3)+
         geom_smooth(method = "gam", formula = y ~ s(x, k = 3)) +
@@ -196,7 +196,7 @@ source("./Scripts/ts.processing.R")
       ggsave(plot = crab.mb.sst.plot, "./Figures/crab.mb.sst.plot.png", width = 8.5, height = 11, units = "in")
 
     # Plot BSAI r0/SST
-      ggplot(bsai.r0.sst, aes(x = Lagged.sst, y = Recruitment))+
+      ggplot(bsai.r0.sst, aes(x = Lagged.sst, y = log.recruitment))+
         geom_point()+
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = r0.labs.bsai),
                    ncol = 3)+
@@ -214,7 +214,7 @@ source("./Scripts/ts.processing.R")
       
     
     # Plot GOA r0/SST
-      ggplot(goa.r0.sst, aes(x = Lagged.sst, y = Recruitment))+
+      ggplot(goa.r0.sst, aes(x = Lagged.sst, y = log.recruitment))+
         geom_point()+
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = r0.labs.goa),
                    ncol = 3)+
