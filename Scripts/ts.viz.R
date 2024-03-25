@@ -10,7 +10,8 @@ source("./Scripts/ts.processing.R")
   # BSAI GROUNDFISH SSB -----------
    
     # Plot and save
-      ggplot(bsai.ssb %>% filter(Year > 1952), aes(x = Year, y = log.SSB))+
+    ggplot(bsai.ssb %>% filter(Year %in% years), aes(x = Year, y = log.SSB))+
+      #ggplot(bsai.ssb %>% filter(Year > 1952), aes(x = Year, y = log.SSB))+
         geom_line(linewidth = 1)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
         theme_bw()+
@@ -27,7 +28,8 @@ source("./Scripts/ts.processing.R")
     
       
     # Plot and save
-      ggplot(goa.ssb %>% filter(Year > 1959), aes(x = Year, y = log.SSB))+
+      ggplot(goa.ssb %>% filter(Year %in% years), aes(x = Year, y = log.SSB))+
+      #ggplot(goa.ssb %>% filter(Year > 1959), aes(x = Year, y = log.SSB))+
         geom_line(linewidth = 1)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol =3)+
         theme_bw()+
@@ -40,10 +42,10 @@ source("./Scripts/ts.processing.R")
       ggsave(plot = goa.ssb.plot, "./Figures/goa.ssb.plot.png", width = 8.5, height = 11, units = "in")
       
   # SALMON CATCH ----------------
-   
-    
+  
     # Plot and save
-      ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = log.catch))+
+      ggplot(salmon.catch %>% filter(Year %in% years), aes(x = Year, y = log.catch))+
+      #ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = log.catch))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs),
                    ncol = 3)+
@@ -59,7 +61,8 @@ source("./Scripts/ts.processing.R")
       
   # CRAB MB ----------------
     # Plot and save
-      ggplot(crab.mb %>% filter(Year > 1953), aes(x = Year, y = log.value, linetype = Type))+
+      ggplot(crab.mb %>% filter(Year %in% years), aes(x = Year, y = log.value, linetype = Type))+
+      #ggplot(crab.mb %>% filter(Year > 1953), aes(x = Year, y = log.value, linetype = Type))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", nrow = 3)+
         theme_bw()+
@@ -77,7 +80,8 @@ source("./Scripts/ts.processing.R")
   # GROUNDFISH AND CRAB RECRUITMENT ---------------
    
     # Plot and save BSAI
-      ggplot(bsai.r0 %>% filter(Year > 1950), aes(x = Lagged.Year, y = log.recruitment))+
+      ggplot(bsai.r0 %>% filter(Year %in% years), aes(x = Year, y = log.recruitment))+
+      #ggplot(bsai.r0 %>% filter(Year ==), aes(x = Lagged.Year, y = log.recruitment))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.bsai), ncol = 3)+
         theme_bw()+
@@ -93,11 +97,12 @@ source("./Scripts/ts.processing.R")
   
       
     # Plot and save GOA
-      ggplot(goa.r0 %>% filter(Year > 1959), aes(x = Lagged.Year, y = log.recruitment))+
+      ggplot(goa.r0 %>% filter(Year %in% years), aes(x = Year, y = log.recruitment))+
+      #ggplot(goa.r0 %>% filter(Year > 1959), aes(x = Lagged.Year, y = log.recruitment))+
         geom_line(linewidth = 0.75)+
         facet_wrap(~TS, scales = "free_y", ncol= 3, labeller = labeller(TS=r0.labs.goa))+
         theme_bw()+
-        ggtitle("BSAI groundfish and crab recruitment")+
+        ggtitle("GOA groundfish and crab recruitment")+
         ylab("log(millions of recruits)") + 
         xlab("Year")+
         theme(axis.text = element_text(size = 12),
