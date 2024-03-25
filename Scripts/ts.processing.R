@@ -8,7 +8,8 @@ library(tidyverse)
 library(zoo)
 library(stats)
 library(mgcv)
-
+library(MuMIn)
+library(roll)
 
 ### LOAD DATA -----------------------------------------------------------------------------------------------------------
   # BSAI and GOA community timeseries
@@ -59,7 +60,7 @@ library(mgcv)
         dplyr::select(YEAR, grep("ssb", colnames(.))) %>%
         mutate(bsai.ebs.pol.ssb = as.numeric(bsai.ebs.pol.ssb)) %>%
         pivot_longer(., !YEAR, names_to = "TS", values_to="SSB") %>%
-        mutate(SSB = log(SSB+10), Region = "BSAI") %>%
+        mutate(log.SSB = log(SSB+10), SSB = SSB, Region = "BSAI") %>%
         rename(Year = YEAR) 
     
   # GOA GROUNDFISH SSB ---------------
@@ -67,7 +68,7 @@ library(mgcv)
       goa.ssb <- goa.ts %>%
         dplyr::select(YEAR, grep("ssb", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "TS", values_to="SSB") %>%
-        mutate(SSB = log(SSB +10), Region = "GOA") %>%
+        mutate(log.SSB = log(SSB+10), SSB = SSB, Region = "GOA") %>%
         rename(Year = YEAR)
     
   # SALMON CATCH ---------------
@@ -75,7 +76,7 @@ library(mgcv)
       goa.salmon <- goa.ts %>%
         dplyr::select(YEAR, grep("catch", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "TS", values_to="Catch") %>%
-        mutate(Catch = log(Catch+10), Region = "GOA") %>%
+        mutate(log.catch = log(Catch+10), Catch = Catch, Region = "GOA") %>%
         rename(Year = YEAR) %>%
         right_join(ocean.entry, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -83,7 +84,7 @@ library(mgcv)
       bsai.salmon <- bsai.ts %>%
         dplyr::select(YEAR, grep("catch", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "TS", values_to="Catch") %>%
-        mutate(Catch = log(Catch+10), Region = "BSAI") %>%
+        mutate(log.catch = log(Catch+10), Catch = Catch, Region = "BSAI") %>%
         rename(Year = YEAR) %>%
         right_join(ocean.entry, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -95,12 +96,12 @@ library(mgcv)
       crab.mb <- rbind(bsai.ts %>%
                          dplyr::select(YEAR, grep("mmb", colnames(.))) %>%
                          pivot_longer(., !YEAR, names_to = "TS", values_to="Value") %>%
-                         mutate(Value = log(Value+10), Type = "mmb") %>%
+                         mutate(log.value = log(Value+10), Value = Value, Type = "mmb") %>%
                          rename(Year = YEAR),
                        bsai.ts %>%
                          dplyr::select(YEAR, grep("fmb", colnames(.))) %>%
                          pivot_longer(., !YEAR, names_to = "TS", values_to="Value") %>%
-                         mutate(Value = log(Value+10), Type = "fmb") %>%
+                         mutate(log.value = log(Value+10), Value = Value, Type = "fmb") %>%
                          rename(Year = YEAR)) %>%
         mutate(TS = case_when((TS == "bsai.bbrkc.mmb")~ "Bristol Bay red king crab",
                                  (TS %in% c("bsai.opi.fmb", "bsai.opi.mmb")) ~ "Snow crab",
@@ -112,7 +113,7 @@ library(mgcv)
         dplyr::select(YEAR, grep("r0", colnames(.))) %>%
         mutate(bsai.ebs.pol.r0 = as.numeric(bsai.ebs.pol.r0)) %>%
         pivot_longer(., !YEAR, names_to = "TS", values_to="Recruitment") %>%
-        mutate(Recruitment = log(Recruitment +10), Region = "BSAI") %>%
+        mutate(log.recruitment = log(Recruitment +10), Recruitment = Recruitment, Region = "BSAI") %>%
         rename(Year = YEAR) %>%
         right_join(cohorts, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
@@ -121,7 +122,7 @@ library(mgcv)
       goa.r0 <- goa.ts %>%
         dplyr::select(YEAR, grep("r0", colnames(.))) %>%
         pivot_longer(., !YEAR, names_to = "TS", values_to="Recruitment") %>%
-        mutate(Recruitment = log(Recruitment +10), Region = "GOA") %>%
+        mutate(log.recruitment = log(Recruitment +10), Recruitment = Recruitment, Region = "GOA") %>%
         rename(Year = YEAR) %>%
         right_join(cohorts, .) %>%
         mutate(Lagged.Year = Year - Lag.Value)
