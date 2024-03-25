@@ -666,30 +666,161 @@ source("./Scripts/ts.processing.R")
     
   
  
-  # Rolling SD ------------------
+  # Cumulative/Rolling SD ------------------
+    # BSAI SSB
+    bsai.ssb %>%
+      filter(Year %in% years) %>%
+      na.omit() %>%
+      group_by(TS) %>%
+      reframe(roll.SD.2 = roll_sd(log.SSB, width = 2),
+              roll.SD.3 = roll_sd(log.SSB, width = 3),
+              cum.sd = runSD(log.SSB, n = 1, cumulative = TRUE),
+              roll.mean = roll_mean(log.SSB, width = 2),
+              Year = Year) %>%
+      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> bsai.ssb.roll 
+    
+    ggplot(bsai.ssb.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
+      geom_line(size = 1)+
+        #geom_point(size = 1) +
+      theme_bw()+
+      ggtitle("BSAI groundfish SSB SD")+
+      ylab("Cumulative SD")+
+      theme(axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10))
+    
+    ggsave( "./Figures/bsai.ssbcumSD.plot.png", width = 8.5, height = 11, units = "in")
+    
+    # GOA SSB
+    goa.ssb %>%
+      filter(Year %in% years) %>%
+      na.omit() %>%
+      group_by(TS) %>%
+      reframe(roll.SD.2 = roll_sd(log.SSB, width = 2),
+              roll.SD.3 = roll_sd(log.SSB, width = 3),
+              cum.sd = runSD(log.SSB, n = 1, cumulative = TRUE),
+              roll.mean = roll_mean(log.SSB, width = 2),
+              Year = Year) %>%
+      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> goa.ssb.roll 
+    
+    ggplot(goa.ssb.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol = 3)+
+      geom_line(size = 1)+
+      #geom_point(size = 1) +
+      theme_bw()+
+      ggtitle("GOA groundfish SSB SD")+
+      ylab("Cumulative SD")+
+      theme(axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10))
+    
+    ggsave( "./Figures/goa.ssbcumSD.plot.png", width = 8.5, height = 11, units = "in")
+    
+    
+    # Salmon Catch
     salmon.catch %>%
       filter(Year %in% years) %>%
       na.omit() %>%
-      mutate(roll.SD.2 = roll_sd(log.catch, width = 2),
-             roll.SD.3 = roll_sd(log.catch, width = 3)) %>%
-      pivot_longer(c(log.catch, roll.SD.2, roll.SD.3), names_to = "window", values_to = "value") -> salm.roll 
+      group_by(TS) %>%
+      reframe(roll.SD.2 = roll_sd(log.catch, width = 2),
+              roll.SD.3 = roll_sd(log.catch, width = 3),
+              cum.sd = runSD(log.catch, n = 1, cumulative = TRUE),
+              roll.mean = roll_mean(log.catch, width = 2),
+              Year = Year) %>%
+      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> salm.roll 
     
-    ggplot(salm.roll, aes(x = Year, roll.SD, color = window))+
-      facet_wrap(~TS, scales = "free_y")+
+    ggplot(salm.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs), ncol = 3)+
       geom_line(size = 1)+
-      geom_point(size = 1)
+      #geom_point(size = 1) +
+      theme_bw()+
+      ggtitle("BSAI and GOA salmon catch SD")+
+      ylab("Cumulative SD")+
+      theme(axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10))
     
-    bsai.r0 %>%
+    ggsave( "./Figures/salmcatchcumSD.plot.png", width = 8.5, height = 11, units = "in")
+    
+    # Crab mb
+    crab.mb %>%
       filter(Year %in% years) %>%
       na.omit() %>%
-      mutate(roll.SD.2 = roll_sd(log.recruitment, width = 2),
-             roll.SD.3 = roll_sd(log.recruitment, width = 3)) %>%
-      pivot_longer(c(roll.SD.2, roll.SD.3), names_to = "window", values_to = "roll.SD") -> bsai.r0.roll 
+      group_by(TS, Type) %>%
+      reframe(roll.SD.2 = roll_sd(log.value, width = 2),
+             roll.SD.3 = roll_sd(log.value, width = 3),
+             cum.sd = runSD(log.value, n = 1, cumulative = TRUE),
+             roll.mean = roll_mean(log.value, width = 2),
+             Year = Year) %>%
+      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "roll.type", values_to = "value") -> crab.roll 
     
-    ggplot(bsai.r0.roll %>% filter(TS == "bsai.opi.r0"), aes(x = Year, roll.SD, color = window))+
-      facet_wrap(~TS, scales = "free_y")+
+    ggplot(crab.roll %>% filter(roll.type == c("cum.sd")), aes(x = Year, y = value, linetype= Type))+
+      facet_wrap(~TS, scales = "free_y", nrow = 3)+
       geom_line(size = 1)+
-      scale_x_continuous(breaks = seq(min(bsai.r0.roll$Year), max(bsai.r0.roll$Year), by = 2),
-                         labels = seq(min(bsai.r0.roll$Year), max(bsai.r0.roll$Year), by = 2))
-      geom_point(size = 1)
+      #geom_point(size = 1) +
+        theme_bw()+
+      ggtitle("BSAI crab mature biomass")+
+      scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
+      ylab("Cumulative SD")+
+      theme(legend.position = "bottom",
+            axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12))
+    
+    ggsave( "./Figures/crab.mbcumSD.plot.png", width = 8.5, height = 11, units = "in")
+    
+    # GOA r0
+    goa.r0 %>%
+      filter(Year %in% years) %>%
+      na.omit() %>%
+      group_by(TS) %>%
+      reframe(roll.SD.2 = roll_sd(log.recruitment, width = 2),
+              roll.SD.3 = roll_sd(log.recruitment, width = 3),
+              cum.sd = runSD(log.recruitment, n = 1, cumulative = TRUE),
+              roll.mean = roll_mean(log.recruitment, width = 2),
+              Year = Year) %>%
+      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> goa.r0.roll 
+    
+    ggplot(goa.r0.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.goa), ncol = 3)+
+      geom_line(size = 1)+
+         #geom_point(size = 1) +
+      theme_bw()+
+      ggtitle("GOA groundfish/crab recruitment cumulative SD")+
+      ylab("Cumulative SD")+
+      theme(axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10))
+    
+    ggsave( "./Figures/goa.r0cumSD.plot.png", width = 8.5, height = 11, units = "in")
+    
+    # SST
+    sst %>%
+      filter(Year %in% years) %>%
+      na.omit() %>%
+      group_by(region) %>%
+      reframe(roll.SD.2 = roll_sd(mean.sst, width = 2),
+              roll.SD.3 = roll_sd(mean.sst, width = 3),
+              cum.sd = runSD(mean.sst, n = 1, cumulative = TRUE),
+              roll.mean = roll_mean(mean.sst, width = 2),
+              Year = Year) %>%
+      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> sst.roll 
+    
+    ggplot(sst.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
+      facet_wrap(~region, scales = "free_y", nrow = 2)+
+      geom_line(size = 1)+
+      #geom_point(size = 1) +
+      theme_bw()+
+      ggtitle("ERA5 SST cumulative SD")+
+      ylab("Cumulative SD")+
+      theme(axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10))
+    
+    ggsave( "./Figures/sst.cumSD.plot.png", width = 8.5, height = 11, units = "in")
+    
+    
+        
     
