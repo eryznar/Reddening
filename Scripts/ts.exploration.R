@@ -676,7 +676,8 @@ source("./Scripts/ts.processing.R")
               roll.SD.3 = roll_sd(log.SSB, width = 3),
               cum.sd = runSD(log.SSB, n = 1, cumulative = TRUE),
               roll.mean = roll_mean(log.SSB, width = 2),
-              Year = Year) %>%
+              Year = Year,
+              log.SSB = log.SSB) %>%
       pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> bsai.ssb.roll 
     
     ggplot(bsai.ssb.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
@@ -822,5 +823,5 @@ source("./Scripts/ts.processing.R")
     ggsave( "./Figures/sst.cumSD.plot.png", width = 8.5, height = 11, units = "in")
     
     
-        
-    
+ 
+ 
