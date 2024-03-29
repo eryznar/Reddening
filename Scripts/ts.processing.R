@@ -10,6 +10,7 @@ library(stats)
 library(mgcv)
 library(MuMIn)
 library(roll)
+library(TTR)
 
 ### LOAD DATA -----------------------------------------------------------------------------------------------------------
   # BSAI and GOA community timeseries
