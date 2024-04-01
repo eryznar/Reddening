@@ -189,97 +189,90 @@ source("./Scripts/ts.processing.R")
         dat = dat
       }
       
+      
     if(data.type != "Mature biomass"){
       for(ii in 1:length(unique(dat$TS))){
      
         dat %>%
-          filter(TS == unique(dat$TS)[ii], Year %in% years) %>%
+          filter(TS == unique(dat$TS)[ii]) %>%
           na.omit() -> TS.dat
         
-        win1.dat <- TS.dat %>%
-                      filter(Year %in% win.1)
+        # Specify sliding window width
+        width = 15
         
-        win2.dat <- TS.dat %>%
-                      filter(Year %in% win.2)
+        # Calculate rolling window AR1
+        ar1 <- sapply(rollapply(TS.dat$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
         
-        # Calculate AR1
-        ar1.win1 <- acf(win1.dat$Value)$acf[2]
-        ar1.win2 <- acf(win2.dat$Value)$acf[2]
+        # Calculate rolling window SD
+        sd <-  rollapply(TS.dat$Value, width = width, FUN = sd)
         
-        # Calculate SD
-        sd.win1 <- sd(win1.dat$Value)
-        sd.win2 <- sd(win2.dat$Value)
+        # Calculate windows
+        window <- seq(min(TS.dat$Year)+(width-1), max(TS.dat$Year), by = 1)
+        
         
         # Compile output
         sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
-                                             ar1.win1 = ar1.win1, 
-                                             ar1.win2 = ar1.win2,
-                                             sd.win1 = sd.win1, 
-                                             sd.win2 = sd.win2))
+                                             ar1 = ar1,
+                                             sd = sd,
+                                             window = window))
         
       }
     } else{
       for(ii in 1:length(unique(dat$TS))){ # for crab
         
         dat %>%
-          filter(TS == unique(dat$TS)[ii], Year %in% years, Type == "mmb") %>%
+          filter(TS == unique(dat$TS)[ii], Type == "mmb") %>%
           na.omit() -> TS.dat.mmb
       
         dat %>%
-          filter(TS == unique(dat$TS)[ii], Year %in% years, Type == "fmb") %>%
+          filter(TS == unique(dat$TS)[ii], Type == "fmb") %>%
           na.omit() -> TS.dat.fmb
         
-        # Filter by windows
-        win1.dat.mmb <- TS.dat.mmb %>%
-          filter(Year %in% win.1)
         
-        win2.dat.mmb <- TS.dat.mmb %>%
-          filter(Year %in% win.2)
-        
-        win1.dat.fmb <- TS.dat.fmb %>%
-          filter(Year %in% win.1)
-        
-        win2.dat.fmb <- TS.dat.fmb %>%
-          filter(Year %in% win.2)
-        
+        # Specify sliding window width
+        width = 15
+      
         # Calculate AR1
         
         if(unique(dat$TS)[ii] != "Bristol Bay red king crab"){
-          ar1.win1.mmb <- acf(win1.dat.mmb$Value)$acf[2]
-          ar1.win2.mmb <- acf(win2.dat.mmb$Value)$acf[2]
+        
+          # Calculate rolling window AR1
+          ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
+          ar1.fmb <- sapply(rollapply(TS.dat.fmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
           
-          ar1.win1.fmb <- acf(win1.dat.fmb$Value)$acf[2]
-          ar1.win2.fmb <- acf(win2.dat.fmb$Value)$acf[2]
+          # Calculate rolling window SD
+          sd.mmb <-  rollapply(TS.dat.mmb$Value, width = width, FUN = sd)
+          sd.fmb <-  rollapply(TS.dat.fmb$Value, width = width, FUN = sd)
           
-          # Calculate SD
-          sd.win1.mmb <- sd(win1.dat.mmb$Value)
-          sd.win2.mmb <- sd(win2.dat.mmb$Value)
           
-          sd.win1.fmb <- sd(win1.dat.fmb$Value)
-          sd.win2.fmb <- sd(win2.dat.fmb$Value)
+          # Calculate windows
+          window <- seq(min(TS.dat.mmb$Year)+(width-1), max(TS.dat.mmb$Year), by = 1)
+          
+   
           
         } else{
-          ar1.win1.mmb <- acf(win1.dat.mmb$Value)$acf[2]
-          ar1.win2.mmb <- acf(win2.dat.mmb$Value)$acf[2]
+          # Calculate rolling window AR1
+          ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
+
+          # Calculate rolling window SD
+          sd.mmb <-  rollapply(TS.dat.mmb$Value, width = width, FUN = sd)
+
           
-          sd.win1.mmb <- sd(win1.dat.mmb$Value)
-          sd.win2.mmb <- sd(win2.dat.mmb$Value)
+          # Calculate windows
+          window <- seq(min(TS.dat.mmb$Year)+(width-1), max(TS.dat.mmb$Year), by = 1)
           
-          ar1.win1.fmb <- ar1.win2.fmb <- sd.win1.fmb <- sd.win2.fmb <- NA
+          ar1.fmb <- sd.fmb <- NA
           
         }
         
         
         # Compile output
         sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
-                                             ar1.win1.mmb = ar1.win1.mmb, 
-                                             ar1.win2.mmb = ar1.win2.mmb,
-                                             ar1.win1.fmb = ar1.win1.fmb, 
-                                             ar1.win2.fmb = ar1.win2.fmb,
-                                             sd.win1.mmb = sd.win1.mmb, 
-                                             sd.win2.mmb = sd.win2.mmb,
-                                             sd.win1.fmb = sd.win1.fmb, 
-                                             sd.win2.fmb = sd.win2.fmb))
+                                             ar1.mmb = ar1.mmb, 
+                                             ar1.fmb = ar1.fmb, 
+                                             sd.mmb = sd.mmb, 
+                                             sd.fmb = sd.fmb,
+                                             window = window))
         
       }
     }
@@ -288,266 +281,229 @@ source("./Scripts/ts.processing.R")
       return(sum.out)
     }
     
-    # BSAI SSB
+    # BSAI SSB ----
     sum.out <- data.frame()
     
     sum.fun(bsai.ssb, "SSB") -> sum.ssb.bsai 
     
     sum.ssb.bsai %>%
-      pivot_longer(!TS, values_to = "Value", names_to = "Type") -> long.dat
+      pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") -> long.dat
     
     # Plot AR1
-    ggplot(long.dat %>% filter(Type %in% c("ar1.win1", "ar1.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = names(ssb.labs.bsai), labels = function(x)
-        str_wrap(ssb.labs.bsai, width = 17))+
+    ggplot(long.dat %>% filter(Type %in% c("ar1")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#6A6DB7")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(bsai.ssb$Year), max(bsai.ssb$Year), by = 15),
+                         limits = c(min(bsai.ssb$Year), max(bsai.ssb$Year)))+     
       ylab("AR1")+
       ggtitle("BSAI SSB AR1")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
     
-    ggsave("./Figures/bsai.ssb.AR1.png", width = 11, height = 8.5, units = "in")
+    
+    ggsave("./Figures/bsai.ssb.AR1.png", width =11, height = 8.5,
+           units = "in")
+    
     
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd.win1", "sd.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
+    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#6A6DB7")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(bsai.ssb$Year), max(bsai.ssb$Year), by = 15),
+                         limits = c(min(bsai.ssb$Year), max(bsai.ssb$Year)))+      ylab("SD")+
       ggtitle("BSAI SSB SD")+
-      scale_x_discrete(breaks = names(ssb.labs.bsai), labels = function(x)
-        str_wrap(ssb.labs.bsai, width = 17))+
-      ylab("SD")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
     
-    ggsave("./Figures/bsai.ssb.SD.png", width = 11, height = 8.5, units = "in")
     
-    # GOA SSB
+    ggsave("./Figures/bsai.ssb.SD.png", width =11, height = 8.5,
+           units = "in")
+    
+    # GOA SSB ----
     sum.out <- data.frame()
     
     sum.fun(goa.ssb, "SSB") -> sum.ssb.goa
     
     sum.ssb.goa %>%
-      pivot_longer(!TS, values_to = "Value", names_to = "Type") -> long.dat
+      pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") -> long.dat
     
     # Plot AR1
-    ggplot(long.dat %>% filter(Type %in% c("ar1.win1", "ar1.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = names(ssb.labs.goa), labels = function(x)
-        str_wrap(ssb.labs.goa, width = 17))+
-      ylab("AR1")+
+    ggplot(long.dat %>% filter(Type %in% c("ar1")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#A34242")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(goa.ssb$Year), max(goa.ssb$Year), by = 15),
+                         limits = c(min(goa.ssb$Year), max(goa.ssb$Year)))+      ylab("AR1")+
       ggtitle("GOA SSB AR1")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
     
-    ggsave("./Figures/goa.ssb.AR1.png", width = 11, height = 8.5, units = "in")
+    
+    ggsave("./Figures/goa.ssb.AR1.png", width =11, height = 8.5, units = "in")
     
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd.win1", "sd.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      ggtitle("GOA SSB SD")+
-      scale_x_discrete(breaks = names(ssb.labs.goa), labels = function(x)
-        str_wrap(ssb.labs.goa, width = 17))+
+    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#A34242")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(goa.ssb$Year), max(goa.ssb$Year), by = 15),
+                         limits = c(min(goa.ssb$Year), max(goa.ssb$Year)))+
       ylab("SD")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      ggtitle("GOA SSB SD")+
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
     
-    ggsave("./Figures/goa.ssb.SD.png", width = 11, height = 8.5, units = "in")
     
-    # BSAI R0
+    ggsave("./Figures/goa.ssb.SD.png", width =11, height = 8.5, units = "in")
+    
+    # BSAI R0 ----
     sum.out <- data.frame()
     
     sum.fun(bsai.r0, "Recruitment") -> sum.r0.bsai
     
     sum.r0.bsai %>%
-      pivot_longer(!TS, values_to = "Value", names_to = "Type") -> long.dat
+      pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") -> long.dat
     
     # Plot AR1
-    ggplot(long.dat %>% filter(Type %in% c("ar1.win1", "ar1.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = names(r0.labs.bsai), labels = function(x)
-        str_wrap(r0.labs.bsai, width = 17))+
+    ggplot(long.dat %>% filter(Type %in% c("ar1")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#6A6DB7")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.bsai), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(bsai.r0$Year), max(bsai.r0$Year), by = 15),
+                         limits = c(min(bsai.r0$Year), max(bsai.r0$Year)))+     
       ylab("AR1")+
-      ggtitle("BSAI recruitment AR1")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      ggtitle("BSAI Recruitment AR1")+
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
+    
     
     ggsave("./Figures/bsai.r0.AR1.png", width = 11, height = 8.5, units = "in")
     
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd.win1", "sd.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      ggtitle("BSAI recruitment SD")+
-      scale_x_discrete(breaks = names(r0.labs.bsai), labels = function(x)
-                       str_wrap(r0.labs.bsai, width = 17))+
+    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#6A6DB7")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.bsai), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(bsai.r0$Year), max(bsai.r0$Year), by = 15),
+                         limits = c(min(bsai.r0$Year), max(bsai.r0$Year)))+     
       ylab("SD")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      ggtitle("BSAI Recruitment SD")+
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
+    
     
     ggsave("./Figures/bsai.r0.SD.png", width = 11, height = 8.5, units = "in")
     
     
-    # GOA R0
+    # GOA R0 ----
     sum.out <- data.frame()
     
     sum.fun(goa.r0, "Recruitment") -> sum.r0.goa
     
     sum.r0.goa %>%
-      pivot_longer(!TS, values_to = "Value", names_to = "Type") -> long.dat
+      pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") -> long.dat
     
     # Plot AR1
-    ggplot(long.dat %>% filter(Type %in% c("ar1.win1", "ar1.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = names(r0.labs.goa), labels = function(x)
-        str_wrap(r0.labs.goa, width = 17))+
+    ggplot(long.dat %>% filter(Type %in% c("ar1")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#A34242")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.goa), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(goa.r0$Year), max(goa.r0$Year), by = 15),
+                         limits = c(min(goa.r0$Year), max(goa.r0$Year)))+     
       ylab("AR1")+
-      ggtitle("GOA recruitment AR1")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      ggtitle("GOA Recruitment AR1")+
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
+    
     
     ggsave("./Figures/goa.r0.AR1.png", width = 11, height = 8.5, units = "in")
     
+   
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd.win1", "sd.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      ggtitle("GOA recruitment SD")+
-      scale_x_discrete(breaks = names(r0.labs.goa), labels = function(x)
-        str_wrap(r0.labs.goa, width = 17))+
+    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+      geom_line(linewidth = 1, color = "#A34242")+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.goa), ncol = 3)+
+      theme_bw()+
+      scale_x_continuous(breaks = seq(min(goa.r0$Year), max(goa.r0$Year), by = 15),
+                         limits = c(min(goa.r0$Year), max(goa.r0$Year)))+     
       ylab("SD")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
+      ggtitle("GOA Recruitment SD")+
+      theme(axis.text = element_text(size = 12),
+            legend.position = "none",
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10)) 
+    
     
     ggsave("./Figures/goa.r0.SD.png", width = 11, height = 8.5, units = "in")
     
-    # CRAB MB
+    # CRAB MB ----
     sum.out <- data.frame()
     
     sum.fun(crab.mb, "Mature biomass") -> sum.mb.crab
     
     sum.mb.crab %>%
-      pivot_longer(!TS, values_to = "Value", names_to = "Type") %>%
-      mutate(window = ifelse(grepl("win1", Type) == TRUE, "win1", "win2"),
-             type = ifelse(grepl("mmb", Type) == TRUE, 
+      pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") %>%
+      mutate(type = ifelse(grepl("mmb", Type) == TRUE, 
                            "Mature male biomass", "Mature female biomass")) -> long.dat
     
     # Plot AR1
     ggplot(long.dat %>% filter(grepl("ar1", Type) == TRUE),
-           mapping = aes(TS, Value, fill = window))+
-      geom_bar(stat = "identity", position = "dodge")+
-      facet_wrap(~type, strip.position = "bottom", scales = "free_x")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = c("Bristol Bay red king crab", "Snow crab",
-                                  "Tanner crab"), labels = function(x)
-        str_wrap(c("Bristol Bay red king crab", "Snow crab",
-                   "Tanner crab"), width = 17))+
+           mapping = aes(window, Value, linetype = type))+
+      geom_line(linewidth = 1, color = "#6A6DB7")+
+      facet_wrap(~TS, scales = "free_y", nrow = 3)+
+      theme_bw()+
+      scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
       ylab("AR1")+
       ggtitle("Crab mature biomass AR1")+
-      theme(
-            axis.title.x = element_blank(),
+      scale_x_continuous(breaks = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
+                         labels = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
+                         limits = c(min(crab.mb$Year), max(crab.mb$Year)))+
+      theme(legend.position = "bottom",
             axis.text = element_text(size = 12),
-            axis.title = element_text(size = 16),
-            strip.background = element_blank(),
-            strip.text = element_text(size = 14),
-            strip.placement = "outside",
-            legend.position = "bottom",
-            title = element_text(size = 16),
-            legend.text =  element_text(size = 14))
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12))
     
     ggsave("./Figures/crab.AR1.png", width = 11, height = 8.5, units = "in")
     
     # Plot SD
     ggplot(long.dat %>% filter(grepl("sd", Type) == TRUE),
-           mapping = aes(TS, Value, fill = window))+
-      geom_bar(stat = "identity", position = "dodge", na.rm = TRUE)+
-      facet_wrap(~type, strip.position = "bottom", scales = "free_x")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = c("Bristol Bay red king crab", "Snow crab",
-                                  "Tanner crab"), labels = function(x)
-                                    str_wrap(c("Bristol Bay red king crab", "Snow crab",
-                                               "Tanner crab"), width = 17))+
-      ylab("SD")+
+           mapping = aes(window, Value, linetype = type))+
+      geom_line(linewidth = 1, color = "#6A6DB7")+
+      facet_wrap(~TS, scales = "free_y", nrow = 3)+
+      theme_bw()+
+      scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
+      ylab("AR1")+
       ggtitle("Crab mature biomass SD")+
-      theme(
-        axis.title.x = element_blank(),
-        axis.text = element_text(size = 12),
-        axis.title = element_text(size = 16),
-        strip.background = element_blank(),
-        strip.text = element_text(size = 14),
-        strip.placement = "outside",
-        legend.position = "bottom",
-        title = element_text(size = 16),
-        legend.text =  element_text(size = 14))
+      scale_x_continuous(breaks = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
+                         labels = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
+                         limits = c(min(crab.mb$Year), max(crab.mb$Year)))+
+      theme(legend.position = "bottom",
+            axis.text = element_text(size = 12),
+            axis.title = element_text(size = 14),
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12))
     
     ggsave("./Figures/crab.SD.png", width = 11, height = 8.5, units = "in")
     
     
-    # BSAI and GOA salmon
+    # BSAI and GOA salmon ----
     sum.out <- data.frame()
     
     sum.fun(bsai.salmon, "Catch") -> sum.catch.bsai
@@ -557,271 +513,108 @@ source("./Scripts/ts.processing.R")
     sum.fun(goa.salmon, "Catch") -> sum.catch.goa
     
     rbind(sum.catch.goa %>%
-          pivot_longer(!TS, values_to = "Value", names_to = "Type"),
+          pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") %>%
+          mutate(Region = "GOA"),
         sum.catch.bsai %>%
-          pivot_longer(!TS, values_to = "Value", names_to = "Type")) -> long.dat
+          pivot_longer(!c(TS,window), values_to = "Value", names_to = "Type") %>%
+          mutate(Region = "BSAI")) -> long.dat
     
     # Plot AR1
-    ggplot(long.dat %>% filter(Type %in% c("ar1.win1", "ar1.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      scale_x_discrete(breaks = names(salm.labs), labels = function(x)
-        str_wrap(salm.labs, width = 17))+
-      ylab("AR1")+
+    ggplot(long.dat %>% filter(Type %in% c("ar1")), mapping = aes(window, Value, color = Region))+
+      #ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = log.catch))+
+      geom_line(linewidth = 1)+
+      scale_color_manual(values = c("#6A6DB7", "#A34242"))+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs),
+                 ncol = 3)+
+      scale_x_continuous(breaks = seq(min(salmon.catch$Year), max(salmon.catch$Year), by = 30),
+                         limits = c(min(salmon.catch$Year), max(salmon.catch$Year)))+
+      theme_bw()+
       ggtitle("BSAI and GOA salmon catch AR1")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
-    
-    ggsave("./Figures/salm.catch.AR1.png", width = 11, height = 8.5, units = "in")
-    
-    # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd.win1", "sd.win2")), mapping = aes(TS, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      ggtitle("BSAI and GOA salmon catch SD")+
-      scale_x_discrete(breaks = names(salm.labs), labels = function(x)
-        str_wrap(salm.labs, width = 17))+
-      ylab("SD")+
-      theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
-            axis.title.x = element_blank(),
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            legend.position = "bottom",
-            legend.text =  element_text(size = 14),
-            title = element_text(size = 16))
-    
-    ggsave("./Figures/salm.catch.SD.png", width = 11, height = 8.5, units = "in")
-    
-    
-
-    
-    # EBS SST
-    sum.out <- data.frame()
-    
-    sum.fun(ebs.sst, "SST") %>%
-      mutate(region = "BSAI") -> sum.sst.bsai
-  
-    # GOA SST
-    sum.out <- data.frame()
-    
-    sum.fun(goa.sst, "SST") %>%
-      mutate(region = "GOA") -> sum.sst.goa
-    
-    rbind(sum.sst.bsai, sum.sst.goa) %>%
-        pivot_longer(!c(TS, region), values_to = "Value", names_to = "Type") -> long.dat
-    
-    
-    # Plot AR1
-    ggplot(long.dat %>% filter(grepl("ar1", Type) == TRUE),
-           mapping = aes(region, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
       ylab("AR1")+
-      ggtitle("SST AR1")+
-      theme(
-        axis.title.x = element_blank(),
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 16),
-        strip.background = element_blank(),
-        strip.text = element_text(size = 16),
-        strip.placement = "outside",
-        legend.position = "bottom",
-        title = element_text(size = 16),
-        legend.text =  element_text(size = 16))
-    
-    ggsave("./Figures/SST.AR1.png", width = 11, height = 8.5, units = "in")
-    
-    # Plot SD
-    ggplot(long.dat %>% filter(grepl("sd", Type) == TRUE),
-           mapping = aes(region, Value, fill = Type))+
-      geom_bar(stat = "identity", position = "dodge")+
-      theme_bw() +
-      scale_fill_manual(values = c("cadetblue", "turquoise"), labels = c("1995:2009", "2010:2021"),
-                        name = "")+
-      ylab("SD")+
-      ggtitle("SST SD")+
-      theme(
-        axis.title.x = element_blank(),
-        axis.text = element_text(size = 16),
-        axis.title = element_text(size = 16),
-        strip.background = element_blank(),
-        strip.text = element_text(size = 16),
-        strip.placement = "outside",
-        legend.position = "bottom",
-        title = element_text(size = 16),
-        legend.text =  element_text(size = 16))
-    
-    ggsave("./Figures/SST.SD.png", width = 11, height = 8.5, units = "in")
-    
-  
- 
-  # Cumulative/Rolling SD ------------------
-    # BSAI SSB
-    bsai.ssb %>%
-      filter(Year %in% years) %>%
-      na.omit() %>%
-      group_by(TS) %>%
-      reframe(roll.SD.2 = roll_sd(log.SSB, width = 2),
-              roll.SD.3 = roll_sd(log.SSB, width = 3),
-              cum.sd = runSD(log.SSB, n = 1, cumulative = TRUE),
-              roll.mean = roll_mean(log.SSB, width = 2),
-              Year = Year,
-              log.SSB = log.SSB) %>%
-      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> bsai.ssb.roll 
-    
-    ggplot(bsai.ssb.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
-      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
-      geom_line(size = 1)+
-        #geom_point(size = 1) +
-      theme_bw()+
-      ggtitle("BSAI groundfish SSB SD")+
-      ylab("Cumulative SD")+
       theme(axis.text = element_text(size = 12),
-            axis.title = element_text(size = 14),
-            strip.text = element_text(size = 10))
-    
-    ggsave( "./Figures/bsai.ssbcumSD.plot.png", width = 8.5, height = 11, units = "in")
-    
-    # GOA SSB
-    goa.ssb %>%
-      filter(Year %in% years) %>%
-      na.omit() %>%
-      group_by(TS) %>%
-      reframe(roll.SD.2 = roll_sd(log.SSB, width = 2),
-              roll.SD.3 = roll_sd(log.SSB, width = 3),
-              cum.sd = runSD(log.SSB, n = 1, cumulative = TRUE),
-              roll.mean = roll_mean(log.SSB, width = 2),
-              Year = Year) %>%
-      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> goa.ssb.roll 
-    
-    ggplot(goa.ssb.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
-      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol = 3)+
-      geom_line(size = 1)+
-      #geom_point(size = 1) +
-      theme_bw()+
-      ggtitle("GOA groundfish SSB SD")+
-      ylab("Cumulative SD")+
-      theme(axis.text = element_text(size = 12),
-            axis.title = element_text(size = 14),
-            strip.text = element_text(size = 10))
-    
-    ggsave( "./Figures/goa.ssbcumSD.plot.png", width = 8.5, height = 11, units = "in")
-    
-    
-    # Salmon Catch
-    salmon.catch %>%
-      filter(Year %in% years) %>%
-      na.omit() %>%
-      group_by(TS) %>%
-      reframe(roll.SD.2 = roll_sd(log.catch, width = 2),
-              roll.SD.3 = roll_sd(log.catch, width = 3),
-              cum.sd = runSD(log.catch, n = 1, cumulative = TRUE),
-              roll.mean = roll_mean(log.catch, width = 2),
-              Year = Year) %>%
-      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> salm.roll 
-    
-    ggplot(salm.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
-      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs), ncol = 3)+
-      geom_line(size = 1)+
-      #geom_point(size = 1) +
-      theme_bw()+
-      ggtitle("BSAI and GOA salmon catch SD")+
-      ylab("Cumulative SD")+
-      theme(axis.text = element_text(size = 12),
-            axis.title = element_text(size = 14),
-            strip.text = element_text(size = 10))
-    
-    ggsave( "./Figures/salmcatchcumSD.plot.png", width = 8.5, height = 11, units = "in")
-    
-    # Crab mb
-    crab.mb %>%
-      filter(Year %in% years) %>%
-      na.omit() %>%
-      group_by(TS, Type) %>%
-      reframe(roll.SD.2 = roll_sd(log.value, width = 2),
-             roll.SD.3 = roll_sd(log.value, width = 3),
-             cum.sd = runSD(log.value, n = 1, cumulative = TRUE),
-             roll.mean = roll_mean(log.value, width = 2),
-             Year = Year) %>%
-      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "roll.type", values_to = "value") -> crab.roll 
-    
-    ggplot(crab.roll %>% filter(roll.type == c("cum.sd")), aes(x = Year, y = value, linetype= Type))+
-      facet_wrap(~TS, scales = "free_y", nrow = 3)+
-      geom_line(size = 1)+
-      #geom_point(size = 1) +
-        theme_bw()+
-      ggtitle("BSAI crab mature biomass")+
-      scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
-      ylab("Cumulative SD")+
-      theme(legend.position = "bottom",
-            axis.text = element_text(size = 12),
+            legend.position  = "none",
             axis.title = element_text(size = 14),
             strip.text = element_text(size = 10),
             legend.text = element_text(size = 12))
     
-    ggsave( "./Figures/crab.mbcumSD.plot.png", width = 8.5, height = 11, units = "in")
+    ggsave("./Figures/salm.catch.AR1.png", width = 11, height = 8.5, units = "in")
     
-    # GOA r0
-    goa.r0 %>%
-      filter(Year %in% years) %>%
-      na.omit() %>%
-      group_by(TS) %>%
-      reframe(roll.SD.2 = roll_sd(log.recruitment, width = 2),
-              roll.SD.3 = roll_sd(log.recruitment, width = 3),
-              cum.sd = runSD(log.recruitment, n = 1, cumulative = TRUE),
-              roll.mean = roll_mean(log.recruitment, width = 2),
-              Year = Year) %>%
-      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> goa.r0.roll 
-    
-    ggplot(goa.r0.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
-      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.goa), ncol = 3)+
-      geom_line(size = 1)+
-         #geom_point(size = 1) +
+    # Plot SD
+    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value, color = Region))+
+      #ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = log.catch))+
+      geom_line(linewidth = 1)+
+      scale_color_manual(values = c("#6A6DB7", "#A34242"))+
+      facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = salm.labs),
+                 ncol = 3)+
+      scale_x_continuous(breaks = seq(min(salmon.catch$Year), max(salmon.catch$Year), by = 30),
+                         limits = c(min(salmon.catch$Year), max(salmon.catch$Year)))+
       theme_bw()+
-      ggtitle("GOA groundfish/crab recruitment cumulative SD")+
-      ylab("Cumulative SD")+
+      ggtitle("BSAI and GOA salmon catch SD")+
+      ylab("AR1")+
       theme(axis.text = element_text(size = 12),
+            legend.position  = "none",
             axis.title = element_text(size = 14),
-            strip.text = element_text(size = 10))
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12))
     
-    ggsave( "./Figures/goa.r0cumSD.plot.png", width = 8.5, height = 11, units = "in")
+    ggsave("./Figures/salm.catch.SD.png", width = 11, height = 8.5, units = "in")
     
-    # SST
-    sst %>%
-      filter(Year %in% years) %>%
-      na.omit() %>%
-      group_by(region) %>%
-      reframe(roll.SD.2 = roll_sd(mean.sst, width = 2),
-              roll.SD.3 = roll_sd(mean.sst, width = 3),
-              cum.sd = runSD(mean.sst, n = 1, cumulative = TRUE),
-              roll.mean = roll_mean(mean.sst, width = 2),
-              Year = Year) %>%
-      pivot_longer(c(cum.sd, roll.mean, roll.SD.2, roll.SD.3), names_to = "type", values_to = "value") -> sst.roll 
+    # SST ----
+      # EBS SST
+      sum.out <- data.frame()
+      
+      sum.fun(ebs.sst, "SST") %>%
+        mutate(region = "BSAI") -> sum.sst.bsai
     
-    ggplot(sst.roll %>% filter(type == c("cum.sd")), aes(x = Year, y = value))+
-      facet_wrap(~region, scales = "free_y", nrow = 2)+
-      geom_line(size = 1)+
-      #geom_point(size = 1) +
-      theme_bw()+
-      ggtitle("ERA5 SST cumulative SD")+
-      ylab("Cumulative SD")+
-      theme(axis.text = element_text(size = 12),
-            axis.title = element_text(size = 14),
-            strip.text = element_text(size = 10))
-    
-    ggsave( "./Figures/sst.cumSD.plot.png", width = 8.5, height = 11, units = "in")
-    
+      # GOA SST
+      sum.out <- data.frame()
+      
+      sum.fun(goa.sst, "SST") %>%
+        mutate(region = "GOA") -> sum.sst.goa
+      
+      rbind(sum.sst.bsai, sum.sst.goa) %>%
+          pivot_longer(!c(TS, region, window), values_to = "Value", names_to = "Type") -> long.dat
+      
+      # Plot AR1
+      ggplot(long.dat %>% filter(Type %in% c("ar1")), aes(x = window, y = Value, color = region))+
+        facet_wrap(~region, scales = "free_y", nrow = 2)+
+        scale_color_manual(values = c("#6A6DB7", "#A34242"))+
+        geom_line(size = 1.5)+
+        #geom_point(size = 1.5)+
+        scale_x_continuous(breaks = seq(min(sst$Year), max(sst$Year), by = 10),
+                           limits = c(min(sst$Year), max(sst$Year)))+
+        theme_bw()+
+        ggtitle("ERA5 SST AR1")+
+        ylab("°C")+
+        theme(legend.position = "none",
+              axis.text = element_text(size = 14),
+              axis.title = element_text(size = 16),
+              strip.text = element_text(size = 16),
+              legend.text = element_text(size = 14),
+              title = element_text(size = 16))
+      
+      ggsave("./Figures/SST.AR1.png", width = 11, height = 8.5, units = "in")
+      
+      # Plot SD
+      ggplot(long.dat %>% filter(Type %in% c("sd")), aes(x = window, y = Value, color = region))+
+        facet_wrap(~region, scales = "free_y", nrow = 2)+
+        scale_color_manual(values = c("#6A6DB7", "#A34242"))+
+        geom_line(size = 1.5)+
+        #geom_point(size = 1.5)+
+        scale_x_continuous(breaks = seq(min(sst$Year), max(sst$Year), by = 10),
+                           limits = c(min(sst$Year), max(sst$Year)))+
+        theme_bw()+
+        ggtitle("ERA5 SST SD")+
+        ylab("°C")+
+        theme(legend.position = "none",
+              axis.text = element_text(size = 14),
+              axis.title = element_text(size = 16),
+              strip.text = element_text(size = 16),
+              legend.text = element_text(size = 14),
+              title = element_text(size = 16))
+      
+      ggsave("./Figures/SST.SD.png", width = 11, height = 8.5, units = "in")
+      
     
  
  
