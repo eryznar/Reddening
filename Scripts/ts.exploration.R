@@ -489,7 +489,7 @@ source("./Scripts/ts.processing.R")
       facet_wrap(~TS, scales = "free_y", nrow = 3)+
       theme_bw()+
       scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
-      ylab("AR1")+
+      ylab("SD")+
       ggtitle("Crab mature biomass SD")+
       scale_x_continuous(breaks = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
                          labels = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
@@ -585,7 +585,7 @@ source("./Scripts/ts.processing.R")
                            limits = c(min(sst$Year), max(sst$Year)))+
         theme_bw()+
         ggtitle("ERA5 SST AR1")+
-        ylab("°C")+
+        ylab("AR1")+
         theme(legend.position = "none",
               axis.text = element_text(size = 14),
               axis.title = element_text(size = 16),
@@ -605,7 +605,7 @@ source("./Scripts/ts.processing.R")
                            limits = c(min(sst$Year), max(sst$Year)))+
         theme_bw()+
         ggtitle("ERA5 SST SD")+
-        ylab("°C")+
+        ylab("SD")+
         theme(legend.position = "none",
               axis.text = element_text(size = 14),
               axis.title = element_text(size = 16),
