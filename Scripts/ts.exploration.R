@@ -12,8 +12,8 @@ source("./Scripts/ts.processing.R")
     sst.2 <- rollapply(sst$mean.sst, 2, mean, na.rm = T, fill = NA) #2-year
     sst.3 <- rollapply(sst$mean.sst, 3, mean, na.rm = T, fill = NA) #3-year
     
-    sst.rollmeans <- data.frame(sst, sst.2 = sst.2, sst.3 = sst.3) %>%
-                          rename(sst = mean.sst)
+    sst.rollmeans <- data.frame(sst, twoyear = sst.2, threeyear = sst.3) %>%
+                          rename(unsmoothed = mean.sst)
   
      # RECRUITMENT
       # Add rollmean sst to BSAI r0
@@ -48,45 +48,43 @@ source("./Scripts/ts.processing.R")
           knts <- c(3, 4)
           
           for(kk in 1:length(knts)){
-            for(jj in 1:length(unique(TS.dat$era))){
-              
+           
               # fit gams, record pval and AIC
-              gam.1 <- gamm(log.recruitment ~ s(sst, k = knts[kk]), 
-                           data= TS.dat %>% filter(era == unique(TS.dat$era)[jj]), correlation = corAR1())
-              gam.2 <- gamm(log.recruitment ~ s(sst.2, k = knts[kk]), 
-                            data= TS.dat %>% filter(era == unique(TS.dat$era)[jj]), correlation = corAR1())
-              gam.3 <- gamm(log.recruitment ~ s(sst.3, k = knts[kk]), 
-                            data= TS.dat %>% filter(era == unique(TS.dat$era)[jj]), correlation = corAR1())
+              gam.1 <- gamm(log.recruitment ~ s(unsmoothed, k = knts[kk]), 
+                           data= TS.dat, correlation = corAR1())
+              gam.2 <- gamm(log.recruitment ~ s(twoyear, k = knts[kk]), 
+                            data= TS.dat, correlation = corAR1())
+              gam.3 <- gamm(log.recruitment ~ s(threeyear, k = knts[kk]), 
+                            data= TS.dat, correlation = corAR1())
               
               p.gam.1 <- signif(summary(gam.1$gam)$s.table[,4],2)
               p.gam.2 <- signif(summary(gam.2$gam)$s.table[,4],2)
               p.gam.3 <- signif(summary(gam.3$gam)$s.table[,4],2)
               
-              AIC.gam.1 <- AICc(gam.1)
-              AIC.gam.2 <- AICc(gam.2)
-              AIC.gam.3 <- AICc(gam.3)
+              p.lme.1 <- signif(summary(gam.1$lme)$tTable[2,5],2)
+              p.lme.2 <- signif(summary(gam.2$lme)$tTable[2,5],2)
+              p.lme.3 <- signif(summary(gam.3$lme)$tTable[2,5],2)
+              
+              AIC.gam.1 <- AIC(gam.1)
+              AIC.gam.2 <- AIC(gam.2)
+              AIC.gam.3 <- AIC(gam.3)
   
               
               # Build summary table
               model.out <- rbind(model.out, data.frame(TS = unique(dat$TS)[ii],
                                                        knots = knts[kk],
-                                                       era = unique(TS.dat$era)[jj],
                                                        #Model = c("gam.1", "gam.2", "gam.3"),
-                                                       smooth = c("unsmoothed", "2-year", "3-year"),
-                                                       p_val = c(p.gam.1, p.gam.2, p.gam.3),
-                                                       AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3),
-                                                       N = TS.dat %>% 
-                                                            filter(era ==unique(TS.dat$era)[jj]) %>%
-                                                         dplyr::select(N) %>%
-                                                         pull() %>%
-                                                         unique()))
-            } # close era loop
+                                                       sst = c("unsmoothed", "twoyear", "threeyear"),
+                                                       p_lme = c(p.lme.1, p.lme.2, p.lme.3),
+                                                       p_gam = c(p.gam.1, p.gam.2, p.gam.3),
+                                                       AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3)))
+                                                      
           } # close knot loop
         } # close timeseries loop
         
         # Label best models by timeseries
         model.out %>%
-          group_by(TS, era) %>%
+          group_by(TS) %>%
           mutate(BEST = ifelse(AIC == min(AIC), "Y", "N")) -> model.out
         
         return(model.out)
@@ -104,8 +102,54 @@ source("./Scripts/ts.processing.R")
         
         fit.models(dat = goa.r0.sst) -> goa.r0.out
         
+      # Isolate best models
+       bsai.r0.best <- bsai.r0.out %>% filter(BEST == "Y")
+       
+       goa.r0.best <- goa.r0.out %>% filter(BEST == "Y")
+       
+       
+      # Fit and save best models
+      model.predict <- data.frame()
+      
+      for(ii in 1:length(unique(bsai.r0.best$TS))){
+        bsai.r0.best %>%
+          filter(TS == unique(bsai.r0.best$TS)[ii]) -> model.dat
         
-          
+        bsai.r0.sst %>%
+          filter(TS == unique(bsai.r0.best$TS)[ii]) %>%
+                   dplyr::select(TS, log.recruitment, grep(model.dat$sst, names(.))) -> TS.dat
+        
+        gamm.best <- gamm(log.recruitment ~ s(TS.dat[,3], k = model.dat$knots), 
+                      data= TS.dat, correlation = corAR1())
+        
+        model.predict <- rbind(model.predict, data.frame(TS = unique(bsai.r0.best$TS)[ii],
+                                                         log.recruitment = TS.dat$log.recruitment,
+                                                         pred.r0 = predict(gamm.best),
+                                                         sst = TS.dat[,3],
+                                                         sst.smooth = model.dat$sst,
+                                                         k = model.dat$knots))
+        
+        saveRDS(gamm.best, paste0("./Output/", unique(bsai.r0.best$TS)[ii], ".gamm.rda"))
+        
+      }
+      
+      # Plot BSAI r0/SST
+       ggplot()+
+         geom_point(model.predict, mapping=aes(x = sst, y = log.recruitment))+
+         geom_line(model.predict, mapping = aes(x = sst, y = pred.r0), size = 1.5, color = "turquoise")+
+         facet_wrap(~TS, scales = "free", labeller = labeller(TS = r0.labs.bsai),
+                    ncol = 3)+
+        theme_bw()+
+         ggtitle("BSAI groundfish/crab recruitment and SST")+
+         ylab("log(millions of recruits)")+
+         xlab("°C")+
+         theme(axis.text = element_text(size = 12),
+               axis.title = element_text(size = 14),
+               strip.text = element_text(size = 10),
+               legend.text = element_text(size = 12)) -> bsai.r0.sst.plot
+       
+       ggsave(plot = bsai.r0.sst.plot, "./Figures/bsai.r0.sst.plot2.png", width = 8.5, height = 11, units = "in")
+       
     
   # Calculate AR1 and SD for 15 year windows for biology/SST timeseries ----
   
