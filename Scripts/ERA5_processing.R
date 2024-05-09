@@ -11,6 +11,10 @@ library(chron)
 library(fields)
 library(oce)
 
+# 1) Navigate here (will need to login): https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels-monthly-means?tab=overview
+# 2) Click on "Download data" tab
+# 3) Click on the product type you’d like. We have been using “Monthly averaged reanalysis”
+
 ### SET STUDY REGIONS ------------------------------------------------------------------------------------------------------
   # EBS:
   ebs.x <- c(183, 183, 203, 203, 191)
