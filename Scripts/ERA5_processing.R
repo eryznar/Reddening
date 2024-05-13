@@ -10,6 +10,7 @@ library(mapdata)
 library(chron)
 library(fields)
 library(oce)
+library(sf)
 
 # 1) Navigate here (will need to login): https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels-monthly-means?tab=overview
 # 2) Click on "Download data" tab
