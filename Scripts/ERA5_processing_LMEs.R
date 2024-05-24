@@ -1,7 +1,3 @@
-lme <- st_read("./Data/LME shapefiles/LMEs66.shp")
-north40 <- c(1, 2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 51, 52, 53, 54, 56, 57, 58, 59, 60, 62, 63, 64)
-subset(lme, lme$ARCTIC=="Arctic") -> arcticlme
-subset(lme, lme$LME_NUMBER %in% north40) -> north40lme
 
 
 ### PROCESS SST DATA ------------------------------------------------------------------------------------------------------
