@@ -44,8 +44,8 @@ library(TTR)
                                             dplyr::select(grep(".r0", colnames(.))),
                                           goa.ts %>%
                                             dplyr::select(grep(".r0", colnames(.))))),
-                          Lag.Value = c(1, 1, 0, 0, 1, 2, 1, 1, 0, 3, 3, 3, 0, 2, 1, 0, 0, 0, #BSAI
-                                        1, 0, 0, 0, 0, 0, 0, 1, 0, 2, 4, 4)) #GOA
+                          Lag.Value = c(1, 0, 1, 2, 2, 1, 1, 0, 3, 3, 3, 0, 2, 1, 0, 0, 0, #BSAI
+                                        1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 4, 4)) #GOA
     
     ocean.entry <- data.frame(TS = names(c(bsai.ts %>%
                                                 dplyr::select(grep("catch", colnames(.))),
@@ -63,7 +63,7 @@ library(TTR)
         pivot_longer(., !YEAR, names_to = "TS", values_to="SSB") %>%
         mutate(log.SSB = log(SSB+10), SSB = SSB, Region = "BSAI") %>%
         rename(Year = YEAR) %>%
-        filter(Year > 1978)
+        filter(Year > 1978, TS != "bsai.sab.ssb")#selecgting avg sablefish between both regions
     
   # GOA GROUNDFISH SSB ---------------
     # Select GOA ssb and log transform
@@ -72,7 +72,7 @@ library(TTR)
         pivot_longer(., !YEAR, names_to = "TS", values_to="SSB") %>%
         mutate(log.SSB = log(SSB+10), SSB = SSB, Region = "GOA") %>%
         rename(Year = YEAR) %>%
-        filter(Year > 1984)
+        filter(Year > 1984, TS != "goa.sab.ssb")#selecting avg sablefish between both regions
     
   # SALMON CATCH ---------------
     # Select catch and log transform
@@ -121,8 +121,8 @@ library(TTR)
         pivot_longer(., !YEAR, names_to = "TS", values_to="Recruitment") %>%
         mutate(log.recruitment = log(Recruitment +10), Recruitment = Recruitment, Region = "BSAI") %>%
         rename(Year = YEAR) %>%
-        right_join(cohorts, .) %>%
-        filter(Year > 1978) %>%
+        dplyr::right_join(cohorts, .) %>%
+        filter(Year > 1978, TS != "bsai.sab.r0") %>% #selecting avg sablefish between both regions
         mutate(Lagged.Year = Year - Lag.Value)
       
     # Select  GOA r0 and log transform
@@ -131,9 +131,11 @@ library(TTR)
         pivot_longer(., !YEAR, names_to = "TS", values_to="Recruitment") %>%
         mutate(log.recruitment = log(Recruitment +10), Recruitment = Recruitment, Region = "GOA") %>%
         rename(Year = YEAR) %>%
+        distinct(.) %>%
         right_join(cohorts, .) %>%
-        filter(Year > 1984) %>%
-        mutate(Lagged.Year = Year - Lag.Value)
+        filter(Year > 1984, TS != "goa.sab.r0") %>% # selecting avg sablefish between both regions
+        mutate(Lagged.Year = Year - Lag.Value) %>%
+        distinct()
     
   # BSAI GROUNDFISH SSB and SST ---------------
       bsai.ssb %>%
@@ -184,14 +186,14 @@ library(TTR)
       
 ### MAKE LABELS -------------------------------------------------------------------
       # Specify labels
-      ssb.labs.bsai <- c("Aleutian Islands cod", "Aleutian Islands pollock", "Alaska plaice", "Arrowtooth flounder",
+      ssb.labs.bsai <- c("Alaska plaice", "Arrowtooth flounder",
                          "Atka mackerel", "Eastern Bering Sea cod",
                          "Eastern Bering Sea pollock", "Flathead sole", "Kamchatka flounder", "Northern rockfish", "Northern rock sole",
                          "Pacific ocean perch", "Sablefish", "Greenland turbot", "Yellowfin sole")
       
-      names(ssb.labs.bsai) <- c("bsai.ai.cod.ssb", "bsai.ai.pol.ssb", "bsai.apl.ssb", "bsai.atf.ssb", "bsai.atk.ssb",
+      names(ssb.labs.bsai) <- c("bsai.apl.ssb", "bsai.atf.ssb", "bsai.atk.ssb",
                                  "bsai.ebs.cod.ssb", "bsai.ebs.pol.ssb", "bsai.fhs.ssb", "bsai.kam.ssb", "bsai.nrf.ssb",
-                                "bsai.nrs.ssb", "bsai.pop.ssb", "bsai.sab.ssb", "bsai.turb.ssb", 
+                                "bsai.nrs.ssb", "bsai.pop.ssb", "bsai.avg.sab.ssb", "bsai.turb.ssb", 
                                 "bsai.yfs.ssb")
       
       # Specify labels
@@ -200,8 +202,8 @@ library(TTR)
                         "Rex sole", "Sablefish", "Southern rock sole")
       
       names(ssb.labs.goa) <- c("goa.atf.ssb", "goa.cod.ssb", "goa.dov.ssb", "goa.drf.ssb", "goa.fhs.ssb",
-                               "goa.nrf.ssb", "goa.nrs.ssb", "goa.pol.ssb", "goa.pop.ssb", "goa.rex.ssb", "goa.sab.ssb",
-                               "goa.srs.ssb")
+                               "goa.nrf.ssb", "goa.nrs.ssb", "goa.pol.ssb", "goa.pop.ssb", "goa.rex.ssb", 
+                               "goa.avg.sab.ssb", "goa.srs.ssb")
       
       # Specify labels
       salm.labs <- c("Bristol Bay sockeye", "Chignik chum", "Chignik pink", "Chignik sockeye", "Cook Inlet chum",
@@ -217,15 +219,15 @@ library(TTR)
                             "se.pnk.catch", "se.sck.catch")
       
       # Specify BSAI labels
-      r0.labs.bsai <- c("Aleutian Islands cod", "Aleutian Islands pollock", "Alaska plaice", "Arrowtooth flounder",
+      r0.labs.bsai <- c("Alaska plaice", "Arrowtooth flounder",
                         "Atka mackerel", "Bristol Bay red king crab",  "Eastern Bering Sea cod",
                         "Eastern Bering Sea pollock", "Flathead sole", "Kamchatka flounder", "Northern rockfish", "Northern rock sole",
                         "Snow crab", "Pacific ocean perch", "Sablefish", 
                         "Tanner crab", "Greenland turbot", "Yellowfin sole")
       
-      names(r0.labs.bsai) <- c("bsai.ai.cod.r0", "bsai.ai.pol.r0", "bsai.apl.r0", "bsai.atf.r0", "bsai.atk.r0",
+      names(r0.labs.bsai) <- c("bsai.apl.r0", "bsai.atf.r0", "bsai.atk.r0",
                                "bsai.bbrkc.r0", "bsai.ebs.cod.r0", "bsai.ebs.pol.r0", "bsai.fhs.r0", "bsai.kam.r0", "bsai.nrf.r0",
-                               "bsai.nrs.r0", "bsai.opi.r0", "bsai.pop.r0", "bsai.sab.r0",
+                               "bsai.nrs.r0", "bsai.opi.r0", "bsai.pop.r0", "bsai.avg.sab.r0",
                                "bsai.tanner.r0", "bsai.turb.r0",  "bsai.yfs.r0")
       
       # Specify GOA labels
@@ -234,7 +236,7 @@ library(TTR)
                        "Rex sole", "Sablefish", "Southern rock sole")
       
       names(r0.labs.goa) <- c("goa.atf.r0", "goa.cod.r0", "goa.dov.r0", "goa.drf.r0", "goa.fhs.r0",
-                              "goa.nrf.r0", "goa.nrs.r0", "goa.pol.r0", "goa.pop.r0", "goa.rex.r0", "goa.sab.r0",
+                              "goa.nrf.r0", "goa.nrs.r0", "goa.pol.r0", "goa.pop.r0", "goa.rex.r0", "goa.avg.sab.r0",
                               "goa.srs.r0")
       
 ### SPECIFY COLOR PALETTES ---------------------------------------------------------
@@ -281,3 +283,6 @@ library(TTR)
   years <- 1995:2021 # years where all timeseries are present
   
     
+  
+  
+  
