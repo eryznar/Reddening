@@ -63,7 +63,9 @@ library(TTR)
         pivot_longer(., !YEAR, names_to = "TS", values_to="SSB") %>%
         mutate(log.SSB = log(SSB+10), SSB = SSB, Region = "BSAI") %>%
         rename(Year = YEAR) %>%
-        filter(Year > 1978, TS != "bsai.sab.ssb")#selecgting avg sablefish between both regions
+        filter(Year > 1978, TS != "bsai.sab.ssb") %>%
+        mutate(TS = case_when((TS == "bsai.avg.sab.ssb") ~ "bsai.sab.ssb",
+                              TRUE ~ TS)) #selecgting avg sablefish between both regions
     
   # GOA GROUNDFISH SSB ---------------
     # Select GOA ssb and log transform
@@ -72,7 +74,9 @@ library(TTR)
         pivot_longer(., !YEAR, names_to = "TS", values_to="SSB") %>%
         mutate(log.SSB = log(SSB+10), SSB = SSB, Region = "GOA") %>%
         rename(Year = YEAR) %>%
-        filter(Year > 1984, TS != "goa.sab.ssb")#selecting avg sablefish between both regions
+        filter(Year > 1984, TS != "goa.sab.ssb") %>%
+      mutate(TS = case_when((TS == "goa.avg.sab.ssb") ~ "goa.sab.ssb",
+                            TRUE ~ TS))#selecting avg sablefish between both regions
     
   # SALMON CATCH ---------------
     # Select catch and log transform
@@ -123,7 +127,9 @@ library(TTR)
         rename(Year = YEAR) %>%
         dplyr::right_join(cohorts, .) %>%
         filter(Year > 1978, TS != "bsai.sab.r0") %>% #selecting avg sablefish between both regions
-        mutate(Lagged.Year = Year - Lag.Value)
+        mutate(Lagged.Year = Year - Lag.Value,
+               TS = case_when((TS == "bsai.avg.sab.r0") ~ "bsai.sab.r0",
+                                     TRUE ~ TS))
       
     # Select  GOA r0 and log transform
       goa.r0 <- goa.ts %>%
@@ -134,7 +140,9 @@ library(TTR)
         distinct(.) %>%
         right_join(cohorts, .) %>%
         filter(Year > 1984, TS != "goa.sab.r0") %>% # selecting avg sablefish between both regions
-        mutate(Lagged.Year = Year - Lag.Value) %>%
+        mutate(Lagged.Year = Year - Lag.Value,
+               TS = case_when((TS == "goa.avg.sab.r0") ~ "goa.sab.r0",
+                              TRUE ~ TS)) %>%
         distinct()
     
   # BSAI GROUNDFISH SSB and SST ---------------
@@ -193,7 +201,7 @@ library(TTR)
       
       names(ssb.labs.bsai) <- c("bsai.apl.ssb", "bsai.atf.ssb", "bsai.atk.ssb",
                                  "bsai.ebs.cod.ssb", "bsai.ebs.pol.ssb", "bsai.fhs.ssb", "bsai.kam.ssb", "bsai.nrf.ssb",
-                                "bsai.nrs.ssb", "bsai.pop.ssb", "bsai.avg.sab.ssb", "bsai.turb.ssb", 
+                                "bsai.nrs.ssb", "bsai.pop.ssb", "bsai.sab.ssb", "bsai.turb.ssb", 
                                 "bsai.yfs.ssb")
       
       # Specify labels
@@ -203,7 +211,7 @@ library(TTR)
       
       names(ssb.labs.goa) <- c("goa.atf.ssb", "goa.cod.ssb", "goa.dov.ssb", "goa.drf.ssb", "goa.fhs.ssb",
                                "goa.nrf.ssb", "goa.nrs.ssb", "goa.pol.ssb", "goa.pop.ssb", "goa.rex.ssb", 
-                               "goa.avg.sab.ssb", "goa.srs.ssb")
+                               "goa.sab.ssb", "goa.srs.ssb")
       
       # Specify labels
       salm.labs <- c("Bristol Bay sockeye", "Chignik chum", "Chignik pink", "Chignik sockeye", "Cook Inlet chum",
@@ -227,7 +235,7 @@ library(TTR)
       
       names(r0.labs.bsai) <- c("bsai.apl.r0", "bsai.atf.r0", "bsai.atk.r0",
                                "bsai.bbrkc.r0", "bsai.ebs.cod.r0", "bsai.ebs.pol.r0", "bsai.fhs.r0", "bsai.kam.r0", "bsai.nrf.r0",
-                               "bsai.nrs.r0", "bsai.opi.r0", "bsai.pop.r0", "bsai.avg.sab.r0",
+                               "bsai.nrs.r0", "bsai.opi.r0", "bsai.pop.r0", "bsai.sab.r0",
                                "bsai.tanner.r0", "bsai.turb.r0",  "bsai.yfs.r0")
       
       # Specify GOA labels
@@ -236,7 +244,7 @@ library(TTR)
                        "Rex sole", "Sablefish", "Southern rock sole")
       
       names(r0.labs.goa) <- c("goa.atf.r0", "goa.cod.r0", "goa.dov.r0", "goa.drf.r0", "goa.fhs.r0",
-                              "goa.nrf.r0", "goa.nrs.r0", "goa.pol.r0", "goa.pop.r0", "goa.rex.r0", "goa.avg.sab.r0",
+                              "goa.nrf.r0", "goa.nrs.r0", "goa.pol.r0", "goa.pop.r0", "goa.rex.r0", "goa.sab.r0",
                               "goa.srs.r0")
       
 ### SPECIFY COLOR PALETTES ---------------------------------------------------------
