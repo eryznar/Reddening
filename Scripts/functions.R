@@ -1,6 +1,6 @@
 ### FUNCTIONS --------------------------------------------------------------------------
 
-# Make function to streamline fitting
+# Make function to streamline model fitting
 fit.models <- function(dat){
   
   for(ii in 1:length(unique(dat$TS))){
@@ -267,3 +267,109 @@ trend.fun <- function(TS.dat, data.type){
 }
 
 
+# Make function to streamline model fitting
+assess.trend <- function(dat, data.type){
+  
+  for(ii in 1:length(unique(dat$TS))){
+    # filter data by TS
+    dat %>%
+      filter(TS == unique(dat$TS)[ii]) %>%
+      group_by(TS) %>%
+      mutate(N = n()) %>%
+      ungroup()-> TS.dat
+    
+    knts <- c(3, 4)
+    
+    # specify variance value by data type
+    if(data.type == "Recruitment"){
+      var.val = TS.dat$cv
+    } else{
+      var.val = TS.dat$sd
+    }
+    
+    # fit gams, iterating through different knots
+    for(kk in 1:length(knts)){
+      
+      # fit gams, record pval and AIC
+      gam.ar1 <- gam(ar1 ~ s(window, k = knts[kk]), 
+                     data= TS.dat) # removed ", correlation = corAR1()"
+      
+      gam.var <- gam(var.val ~ s(window, k = knts[kk]), 
+                     data= TS.dat) # removed ", correlation = corAR1()"
+      
+      
+      p.gam.ar1 <- summary(gam.ar1)$s.table[,4]
+      p.gam.var <- summary(gam.var)$s.table[,4]
+      
+      r.gam.ar1 <- summary(gam.ar1)$r.sq
+      r.gam.var <- summary(gam.var)$r.sq
+      
+      # p.lme.ar1 <- signif(summary(gam.ar1$lme)$tTable[2,5],2)
+      # p.lme.var <- signif(summary(gam.var$lme)$tTable[2,5],2)
+      
+      AIC.gam.ar1 <- AIC(gam.ar1)
+      AIC.gam.var <- AIC(gam.var)
+      
+      # Build summary table
+      model.out <- rbind(model.out, data.frame(TS = unique(dat$TS)[ii],
+                                               knots = knts[kk],
+                                               response = c("ar1", "var.val"),
+                                               #p_lme = c(p.lme.ar1, p.lme.var),
+                                               p_gam = c(p.gam.ar1, p.gam.var),
+                                               rsq_gam = c(r.gam.ar1, r.gam.var),
+                                               AIC = c(AIC.gam.ar1, AIC.gam.var)))
+      
+    } # close knot loop
+  } # close timeseries loop
+  
+  # Label best models by timeseries
+  model.out %>%
+    group_by(TS, response) %>%
+    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N"),
+           padj = p.adjust(p_gam, method = "fdr")) %>%
+    filter(BEST == "Y") -> model.out
+  
+  return(model.out)
+}
+
+# Make function for model prediction
+model.predict <- function(model.dat, TS.dat, data.type){
+  
+  for(ii in 1:length(unique(model.dat$TS))){
+    for(jj in 1:length(unique(model.dat$response))){
+      
+      model.dat %>%
+        filter(TS == unique(model.dat$TS)[ii],
+               response == unique(model.dat$response[jj])) -> model.dat2
+      
+      TS.dat %>%
+        filter(TS == unique(model.dat$TS)[ii]) %>%
+        dplyr::select(TS, ar1, cv, sd, window) -> TS.dat2
+      
+      
+      if(unique(model.dat$response)[jj] == "var.val" & data.type == "Recruitment"){
+        value = TS.dat2$cv
+      } else if(unique(model.dat$response)[jj] == "var.val" & data.type == "sst"){
+        value = TS.dat2$sd
+      } else{
+        value = TS.dat2$ar1
+      }
+      
+      gam.best <- gam(value~ s(window, k = model.dat2$knots), 
+                      data= TS.dat2)
+      
+      # Predict
+      pred.vals <- rbind(pred.vals, data.frame(TS = model.dat2$TS,
+                                               response = model.dat2$response,
+                                               observed = value,
+                                               pred = predict(gam.best, se.fit =TRUE)$fit,
+                                               pred.CI = 1.96*(predict(gam.best, se.fit =TRUE)$se.fit),
+                                               k = model.dat2$knots,
+                                               rsq = model.dat2$rsq_gam,
+                                               window = TS.dat2$window))
+      
+    } # close response loop
+  } # close timeseries loop
+  
+  return(pred.vals)
+} # close function
