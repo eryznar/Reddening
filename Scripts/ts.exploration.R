@@ -5,6 +5,8 @@
 ### LOAD PACKAGES/DATA -------------------------------------------------------------------------------------------------------
 
 source("./Scripts/ts.processing.R")
+source("./Scripts/functions.R")
+
 
 ### MODEL EXPLORATION -------------------------------------------------------------------------------
 
@@ -32,65 +34,7 @@ source("./Scripts/ts.processing.R")
         na.omit() %>%
         dplyr::select(!region) -> goa.r0.sst
       
-      # Make function to streamline fitting
-      fit.models <- function(dat){
-       
-        for(ii in 1:length(unique(dat$TS))){
-          # filter data by TS
-          dat %>%
-            mutate(era = case_when((Year <=1989) ~ "early",
-                                    (Year >1989) ~ "late")) %>%
-            filter(TS == unique(dat$TS)[ii]) %>%
-            group_by(TS, era) %>%
-            mutate(N = n()) %>%
-            ungroup()-> TS.dat
-          
-          knts <- c(3, 4)
-          
-          for(kk in 1:length(knts)){
-           
-              # fit gams, record pval and AIC
-              gam.1 <- gamm(log.recruitment ~ s(unsmoothed, k = knts[kk]), 
-                           data= TS.dat, correlation = corAR1())
-              gam.2 <- gamm(log.recruitment ~ s(twoyear, k = knts[kk]), 
-                            data= TS.dat, correlation = corAR1())
-              gam.3 <- gamm(log.recruitment ~ s(threeyear, k = knts[kk]), 
-                            data= TS.dat, correlation = corAR1())
-              
-              p.gam.1 <- signif(summary(gam.1$gam)$s.table[,4],2)
-              p.gam.2 <- signif(summary(gam.2$gam)$s.table[,4],2)
-              p.gam.3 <- signif(summary(gam.3$gam)$s.table[,4],2)
-              
-              p.lme.1 <- signif(summary(gam.1$lme)$tTable[2,5],2)
-              p.lme.2 <- signif(summary(gam.2$lme)$tTable[2,5],2)
-              p.lme.3 <- signif(summary(gam.3$lme)$tTable[2,5],2)
-              
-              AIC.gam.1 <- AIC(gam.1)
-              AIC.gam.2 <- AIC(gam.2)
-              AIC.gam.3 <- AIC(gam.3)
-  
-              
-              # Build summary table
-              model.out <- rbind(model.out, data.frame(TS = unique(dat$TS)[ii],
-                                                       knots = knts[kk],
-                                                       #Model = c("gam.1", "gam.2", "gam.3"),
-                                                       sst = c("unsmoothed", "twoyear", "threeyear"),
-                                                       p_lme = c(p.lme.1, p.lme.2, p.lme.3),
-                                                       p_gam = c(p.gam.1, p.gam.2, p.gam.3),
-                                                       AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3)))
-                                                      
-          } # close knot loop
-        } # close timeseries loop
-        
-        # Label best models by timeseries
-        model.out %>%
-          group_by(TS) %>%
-          mutate(BEST = ifelse(AIC == min(AIC), "Y", "N")) -> model.out
-        
-        return(model.out)
-      }
       
-    
       # Fit models for BSAI
         model.out <- data.frame()
         
@@ -108,7 +52,7 @@ source("./Scripts/ts.processing.R")
        goa.r0.best <- goa.r0.out %>% filter(BEST == "Y")
        
        
-      # Fit and save best models BSAI
+      # Predict and plot with best models BSAI
       model.predict <- data.frame()
       
       for(ii in 1:length(unique(bsai.r0.best$TS))){
@@ -167,7 +111,7 @@ source("./Scripts/ts.processing.R")
        
        ggsave(plot = bsai.r0.sst.plot, "./Figures/bsai.r0.sst.plot2.png", width = 8.5, height = 11, units = "in")
        
-       # Fit and save best models GOA
+       # Predict and plot with best models GOA
        model.predict <- data.frame()
        
        for(ii in 1:length(unique(goa.r0.best$TS))){
@@ -301,7 +245,7 @@ source("./Scripts/ts.processing.R")
            
            
         # Isolate best models
-        salmon.catch.best <- model.out.best %>% filter(BEST == "Y")
+        salm.catch.best <- model.out.best %>% filter(BEST == "Y")
            
         # Fit and save best models BSAI
         model.predict <- data.frame()
@@ -369,137 +313,9 @@ source("./Scripts/ts.processing.R")
                 strip.text = element_text(size = 10),
                 legend.text = element_text(size = 12)) -> bsai.r0.sst.plot
         
-  # Calculate AR1 and SD for 15 year windows for biology/SST timeseries ----
+  # Calculate AR1 and CV/SD for 15 year windows for biology/SST timeseries ----
   
-    # Create function to calculate values
-    sum.fun <- function(dat, data.type){
-      
-      # if(data.type == "SSB"){
-      #   dat %>%
-      #     rename(Value = SSB) -> dat
-      # }else if(data.type == "Recruitment"){
-      #   dat %>%
-      #     rename(Value = Recruitment) -> dat
-      # }else if(data.type == "Catch"){
-      #   dat %>% 
-      #     rename(Value = Catch) -> dat
-      # }else if(data.type == "SST"){
-      #   dat %>%
-      #     rename(Value = mean.sst) %>%
-      #     mutate(TS = "sst") -> dat
-      # }else{
-      #   dat = dat
-      # }
-      # 
-      if(data.type == "SSB"){
-        dat %>%
-          rename(Value = log.SSB) -> dat
-      }else if(data.type == "Recruitment"){
-        dat %>%
-          rename(Value = log.recruitment) -> dat
-      }else if(data.type == "Catch"){
-        dat %>% 
-          rename(Value = log.catch) -> dat
-      }else if(data.type == "SST"){
-        dat %>%
-          rename(Value = mean.sst) %>%
-          mutate(TS = "sst") -> dat
-      }else{
-        dat = dat
-      }
-      
-      
-    if(data.type != "Mature biomass"){
-      for(ii in 1:length(unique(dat$TS))){
      
-        dat %>%
-          filter(TS == unique(dat$TS)[ii]) %>%
-          na.omit() -> TS.dat
-        
-        # Specify sliding window width
-        width = 15
-        
-        # Calculate rolling window AR1
-        ar1 <- sapply(rollapply(TS.dat$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-        
-        # Calculate rolling window SD
-        sd <-  rollapply(TS.dat$Value, width = width, FUN = sd)
-        
-        # Calculate windows
-        window <- seq(min(TS.dat$Year)+(width-1), max(TS.dat$Year), by = 1)
-        
-        
-        # Compile output
-        sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
-                                             ar1 = ar1,
-                                             sd = sd,
-                                             window = window))
-        
-      }
-    } else{
-      for(ii in 1:length(unique(dat$TS))){ # for crab
-        
-        dat %>%
-          filter(TS == unique(dat$TS)[ii], Type == "mmb") %>%
-          na.omit() -> TS.dat.mmb
-      
-        dat %>%
-          filter(TS == unique(dat$TS)[ii], Type == "fmb") %>%
-          na.omit() -> TS.dat.fmb
-        
-        
-        # Specify sliding window width
-        width = 15
-      
-        # Calculate AR1
-        
-        if(unique(dat$TS)[ii] != "Bristol Bay red king crab"){
-        
-          # Calculate rolling window AR1
-          ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-          ar1.fmb <- sapply(rollapply(TS.dat.fmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-          
-          # Calculate rolling window SD
-          sd.mmb <-  rollapply(TS.dat.mmb$Value, width = width, FUN = sd)
-          sd.fmb <-  rollapply(TS.dat.fmb$Value, width = width, FUN = sd)
-          
-          
-          # Calculate windows
-          window <- seq(min(TS.dat.mmb$Year)+(width-1), max(TS.dat.mmb$Year), by = 1)
-          
-   
-          
-        } else{
-          # Calculate rolling window AR1
-          ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-
-          # Calculate rolling window SD
-          sd.mmb <-  rollapply(TS.dat.mmb$Value, width = width, FUN = sd)
-
-          
-          # Calculate windows
-          window <- seq(min(TS.dat.mmb$Year)+(width-1), max(TS.dat.mmb$Year), by = 1)
-          
-          ar1.fmb <- sd.fmb <- NA
-          
-        }
-        
-        
-        # Compile output
-        sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
-                                             ar1.mmb = ar1.mmb, 
-                                             ar1.fmb = ar1.fmb, 
-                                             sd.mmb = sd.mmb, 
-                                             sd.fmb = sd.fmb,
-                                             window = window))
-        
-      }
-    }
-    
-      
-      return(sum.out)
-    }
-    
     # BSAI SSB ----
     sum.out <- data.frame()
     
@@ -527,21 +343,21 @@ source("./Scripts/ts.processing.R")
            units = "in")
     
     
-    # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+    # Plot CV
+    ggplot(long.dat %>% filter(Type %in% c("cv")), mapping = aes(window, Value))+
       geom_line(linewidth = 1, color = "#6A6DB7")+
       facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.bsai), ncol = 3)+
       theme_bw()+
       scale_x_continuous(breaks = seq(min(bsai.ssb$Year), max(bsai.ssb$Year), by = 15),
-                         limits = c(min(bsai.ssb$Year), max(bsai.ssb$Year)))+      ylab("SD")+
-      ggtitle("BSAI SSB SD")+
+                         limits = c(min(bsai.ssb$Year), max(bsai.ssb$Year)))+      ylab("CV")+
+      ggtitle("BSAI SSB CV")+
       theme(axis.text = element_text(size = 12),
             legend.position = "none",
             axis.title = element_text(size = 14),
             strip.text = element_text(size = 10)) 
     
     
-    ggsave("./Figures/bsai.ssb.SD.png", width =11, height = 8.5,
+    ggsave("./Figures/bsai.ssb.CV.png", width =11, height = 8.5,
            units = "in")
     
     # GOA SSB ----
@@ -569,21 +385,21 @@ source("./Scripts/ts.processing.R")
     ggsave("./Figures/goa.ssb.AR1.png", width =11, height = 8.5, units = "in")
     
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+    ggplot(long.dat %>% filter(Type %in% c("cv")), mapping = aes(window, Value))+
       geom_line(linewidth = 1, color = "#A34242")+
       facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = ssb.labs.goa), ncol = 3)+
       theme_bw()+
       scale_x_continuous(breaks = seq(min(goa.ssb$Year), max(goa.ssb$Year), by = 15),
                          limits = c(min(goa.ssb$Year), max(goa.ssb$Year)))+
       ylab("SD")+
-      ggtitle("GOA SSB SD")+
+      ggtitle("GOA SSB CV")+
       theme(axis.text = element_text(size = 12),
             legend.position = "none",
             axis.title = element_text(size = 14),
             strip.text = element_text(size = 10)) 
     
     
-    ggsave("./Figures/goa.ssb.SD.png", width =11, height = 8.5, units = "in")
+    ggsave("./Figures/goa.ssb.CV.png", width =11, height = 8.5, units = "in")
     
     # BSAI R0 ----
     sum.out <- data.frame()
@@ -611,21 +427,21 @@ source("./Scripts/ts.processing.R")
     ggsave("./Figures/bsai.r0.AR1.png", width = 11, height = 8.5, units = "in")
     
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+    ggplot(long.dat %>% filter(Type %in% c("cv")), mapping = aes(window, Value))+
       geom_line(linewidth = 1, color = "#6A6DB7")+
       facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.bsai), ncol = 3)+
       theme_bw()+
       scale_x_continuous(breaks = seq(min(bsai.r0$Year), max(bsai.r0$Year), by = 15),
                          limits = c(min(bsai.r0$Year), max(bsai.r0$Year)))+     
-      ylab("SD")+
-      ggtitle("BSAI Recruitment SD")+
+      ylab("CV")+
+      ggtitle("BSAI Recruitment CV")+
       theme(axis.text = element_text(size = 12),
             legend.position = "none",
             axis.title = element_text(size = 14),
             strip.text = element_text(size = 10)) 
     
     
-    ggsave("./Figures/bsai.r0.SD.png", width = 11, height = 8.5, units = "in")
+    ggsave("./Figures/bsai.r0.CV.png", width = 11, height = 8.5, units = "in")
     
     
     # GOA R0 ----
@@ -655,21 +471,21 @@ source("./Scripts/ts.processing.R")
     
    
     # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value))+
+    ggplot(long.dat %>% filter(Type %in% c("cv")), mapping = aes(window, Value))+
       geom_line(linewidth = 1, color = "#A34242")+
       facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = r0.labs.goa), ncol = 3)+
       theme_bw()+
       scale_x_continuous(breaks = seq(min(goa.r0$Year), max(goa.r0$Year), by = 15),
                          limits = c(min(goa.r0$Year), max(goa.r0$Year)))+     
-      ylab("SD")+
-      ggtitle("GOA Recruitment SD")+
+      ylab("CV")+
+      ggtitle("GOA Recruitment CV")+
       theme(axis.text = element_text(size = 12),
             legend.position = "none",
             axis.title = element_text(size = 14),
             strip.text = element_text(size = 10)) 
     
     
-    ggsave("./Figures/goa.r0.SD.png", width = 11, height = 8.5, units = "in")
+    ggsave("./Figures/goa.r0.CV.png", width = 11, height = 8.5, units = "in")
     
     # CRAB MB ----
     sum.out <- data.frame()
@@ -702,14 +518,14 @@ source("./Scripts/ts.processing.R")
     ggsave("./Figures/crab.AR1.png", width = 11, height = 8.5, units = "in")
     
     # Plot SD
-    ggplot(long.dat %>% filter(grepl("sd", Type) == TRUE),
+    ggplot(long.dat %>% filter(grepl("cv", Type) == TRUE),
            mapping = aes(window, Value, linetype = type))+
       geom_line(linewidth = 1, color = "#6A6DB7")+
       facet_wrap(~TS, scales = "free_y", nrow = 3)+
       theme_bw()+
       scale_linetype_manual(name = "", values = c("solid", "dashed"), labels = c("Female", "Male"))+
-      ylab("SD")+
-      ggtitle("Crab mature biomass SD")+
+      ylab("CV")+
+      ggtitle("Crab mature biomass CV")+
       scale_x_continuous(breaks = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
                          labels = seq(min(crab.mb$Year), max(crab.mb$Year), by = 5),
                          limits = c(min(crab.mb$Year), max(crab.mb$Year)))+
@@ -719,7 +535,7 @@ source("./Scripts/ts.processing.R")
             strip.text = element_text(size = 10),
             legend.text = element_text(size = 12))
     
-    ggsave("./Figures/crab.SD.png", width = 11, height = 8.5, units = "in")
+    ggsave("./Figures/crab.CV.png", width = 11, height = 8.5, units = "in")
     
     
     # BSAI and GOA salmon ----
@@ -758,8 +574,8 @@ source("./Scripts/ts.processing.R")
     
     ggsave("./Figures/salm.catch.AR1.png", width = 11, height = 8.5, units = "in")
     
-    # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd")), mapping = aes(window, Value, color = Region))+
+    # Plot CV
+    ggplot(long.dat %>% filter(Type %in% c("cv")), mapping = aes(window, Value, color = Region))+
       #ggplot(salmon.catch %>% filter(Year > 1959), aes(x = Year, y = log.catch))+
       geom_line(linewidth = 1)+
       scale_color_manual(values = c("#6A6DB7", "#A34242"))+
@@ -768,15 +584,15 @@ source("./Scripts/ts.processing.R")
       scale_x_continuous(breaks = seq(min(salmon.catch$Year), max(salmon.catch$Year), by = 30),
                          limits = c(min(salmon.catch$Year), max(salmon.catch$Year)))+
       theme_bw()+
-      ggtitle("BSAI and GOA salmon catch SD")+
-      ylab("AR1")+
+      ggtitle("BSAI and GOA salmon catch CV")+
+      ylab("CV")+
       theme(axis.text = element_text(size = 12),
             legend.position  = "none",
             axis.title = element_text(size = 14),
             strip.text = element_text(size = 10),
             legend.text = element_text(size = 12))
     
-    ggsave("./Figures/salm.catch.SD.png", width = 11, height = 8.5, units = "in")
+    ggsave("./Figures/salm.catch.CV.png", width = 11, height = 8.5, units = "in")
     
     # SST ----
       # EBS SST
@@ -837,95 +653,4 @@ source("./Scripts/ts.processing.R")
     
  
  
-  # SST detrending -----------------------------------------------------------------------------------
-    # BSAI
-    sst %>%
-      filter(region == "Eastern Bering Sea") -> bsai.sst
-      
-    bsai.lo <- loess(mean.sst ~ Year, bsai.sst, span = 0.25, degree = 1)
-    
-    pred.bsai <- data.frame(pred.sst = predict(bsai.lo), Year = bsai.sst$Year)
-    
-    ggplot()+
-      geom_line(bsai.sst, mapping = aes(Year, mean.sst), color = "#6A6DB7", size = 1)+
-      geom_line(pred.bsai, mapping = aes(Year, pred.sst), color = "green", size = 1)+
-      ggtitle("BSAI SST with loess smooth")+
-      theme_bw()+
-      ylab("SST")
-    
-    bsai.lo.resid <- data.frame(Year = bsai.sst$Year, mean.sst = bsai.lo$residuals)
-    
-    # GOA
-    sst %>%
-      filter(region == "Gulf of Alaska") -> goa.sst
-    
-    goa.lo <- loess(mean.sst ~ Year, goa.sst, span = 0.25, degree = 1)
-    
-    pred.goa <- data.frame(pred.sst = predict(goa.lo), Year = goa.sst$Year)
-    
-    ggplot()+
-      geom_line(goa.sst, mapping = aes(Year, mean.sst), color = "#A34242", size = 1)+
-      geom_line(pred.goa, mapping = aes(Year, pred.sst), color = "green", size = 1)+
-      ggtitle("GOA SST with loess smooth")+
-      theme_bw()+
-      ylab("SST")
-    
-    goa.lo.resid <- data.frame(Year = goa.sst$Year, mean.sst = goa.lo$residuals)
   
-    # Calc AR1 and SD on residuals
-    # EBS SST
-    sum.out <- data.frame()
-    
-    sum.fun(bsai.lo.resid, "SST") %>%
-      mutate(region = "BSAI") -> sum.sst.bsai
-    
-    # GOA SST
-    sum.out <- data.frame()
-    
-    sum.fun(goa.lo.resid, "SST") %>%
-      mutate(region = "GOA") -> sum.sst.goa
-    
-    rbind(sum.sst.bsai, sum.sst.goa) %>%
-      pivot_longer(!c(TS, region, window), values_to = "Value", names_to = "Type") -> long.dat
-    
-    # Plot AR1
-    ggplot(long.dat %>% filter(Type %in% c("ar1")), aes(x = window, y = Value, color = region))+
-      facet_wrap(~region, scales = "free_y", nrow = 2)+
-      scale_color_manual(values = c("#6A6DB7", "#A34242"))+
-      geom_line(size = 1.5)+
-      geom_hline(yintercept = 0)+
-      #geom_point(size = 1.5)+
-      scale_x_continuous(breaks = seq(min(sst$Year), max(sst$Year), by = 10),
-                         limits = c(min(sst$Year), max(sst$Year)))+
-      theme_bw()+
-      ggtitle("ERA5 SST AR1 (detrended)")+
-      ylab("AR1")+
-      theme(legend.position = "none",
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            strip.text = element_text(size = 16),
-            legend.text = element_text(size = 14),
-            title = element_text(size = 16))
-    
-    ggsave("./Figures/SST.AR1(detrended).png", width = 11, height = 8.5, units = "in")
-    
-    # Plot SD
-    ggplot(long.dat %>% filter(Type %in% c("sd")), aes(x = window, y = Value, color = region))+
-      facet_wrap(~region, scales = "free_y", nrow = 2)+
-      scale_color_manual(values = c("#6A6DB7", "#A34242"))+
-      geom_line(size = 1.5)+
-      #geom_point(size = 1.5)+
-      scale_x_continuous(breaks = seq(min(sst$Year), max(sst$Year), by = 10),
-                         limits = c(min(sst$Year), max(sst$Year)))+
-      theme_bw()+
-      ggtitle("ERA5 SST SD (detrended)")+
-      ylab("SD")+
-      theme(legend.position = "none",
-            axis.text = element_text(size = 14),
-            axis.title = element_text(size = 16),
-            strip.text = element_text(size = 16),
-            legend.text = element_text(size = 14),
-            title = element_text(size = 16))
-    
-    ggsave("./Figures/SST.SD(detrended).png", width = 11, height = 8.5, units = "in")
-    
