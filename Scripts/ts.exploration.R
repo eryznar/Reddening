@@ -251,13 +251,13 @@ source("./Scripts/functions.R")
         model.predict <- data.frame()
            
         for(ii in 1:length(unique(salm.catch.best$TS))){
-          salmon.catch.best %>%
+          salm.catch.best %>%
             filter(TS == unique(salm.catch.best$TS)[10]) -> model.dat
           
           for(jj in 1:nrow(model.dat)){
             
             
-            salmon.catch.sst %>%
+            salm.catch.sst %>%
               mutate(era = case_when((Year <=1989) ~ "early",
                                      (Year >1989) ~ "late")) %>%
               filter(TS == unique(model.dat$TS), era == model.dat$era[jj]) %>%
@@ -276,7 +276,7 @@ source("./Scripts/functions.R")
                                                              k = model.dat$knots[jj],
                                                              era = model.dat$era[jj]))
             
-            saveRDS(gamm.best, paste0("./Output/", unique(salmon.catch.best$TS)[ii], ".", model.dat$era[jj], ".gamm.rda"))
+            saveRDS(gamm.best, paste0("./Output/", unique(salm.catch.best$TS)[ii], ".", model.dat$era[jj], ".gamm.rda"))
             
           }
         }
@@ -391,7 +391,7 @@ source("./Scripts/functions.R")
       theme_bw()+
       scale_x_continuous(breaks = seq(min(goa.ssb$Year), max(goa.ssb$Year), by = 15),
                          limits = c(min(goa.ssb$Year), max(goa.ssb$Year)))+
-      ylab("SD")+
+      ylab("CV")+
       ggtitle("GOA SSB CV")+
       theme(axis.text = element_text(size = 12),
             legend.position = "none",
