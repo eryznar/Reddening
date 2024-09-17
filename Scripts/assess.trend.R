@@ -1,7 +1,8 @@
 #GAMs on detrended sst and biological ts
 
 #Purpose is to assess the following questions: 
-# 1) Has the climate gotten redder? 
+# 1) Has the climate gotten redder?
+# 2) Is climate related to the biology (recruitment)?
 # 2) Has the biology gotten redder?
 # To do so, this script will test for trends in sst AR1 and SD and recruitment AR1 and CV
 # by fitting GAMs on detrended data
@@ -18,23 +19,26 @@ source("./Scripts/functions.R")
   
   trend.fun(goa.sst, "SST") -> goa.sst.out
   
+  ar1var.EBS.sst <- ebs.sst.out$ar1.var.summary
+  ar1var.goa.sst <- goa.sst.out$ar1.var.summary
+  
   # Fit and select best models
   model.out <- data.frame()
   
-  assess.trend(ebs.sst.out, "sst") -> ebs.sst.best.mods
+  assess.trend(ar1var.EBS.sst, "sst") -> ebs.sst.best.mods
   
   model.out <- data.frame()
   
-  assess.trend(goa.sst.out, "sst") -> goa.sst.best.mods
+  assess.trend(ar1var.goa.sst, "sst") -> goa.sst.best.mods
   
   # Predict with best models
   pred.vals <- data.frame()
   
-  model.predict(ebs.sst.best.mods, ebs.sst.out, "sst") -> ebs.pred.out
+  model.predict(ebs.sst.best.mods, ar1var.EBS.sst, "sst") -> ebs.pred.out
   
   pred.vals <- data.frame()
   
-  model.predict(goa.sst.best.mods, goa.sst.out, "sst") -> goa.pred.out
+  model.predict(goa.sst.best.mods, ar1var.goa.sst, "sst") -> goa.pred.out
   
   # Bind
   rbind(ebs.pred.out %>% mutate(region = "Eastern Bering Sea"),
@@ -42,12 +46,15 @@ source("./Scripts/functions.R")
   
   # Plot sst AR1 with time
    plot.dat.sst %>%
-    dplyr::select(TS, response, region, k, rsq)%>%
+    dplyr::select(TS, response, region, k, rsq, padj)%>%
     distinct() %>%
     arrange(., TS) %>%
     filter(response == "ar1") -> lab.dat
+   
+   lab.dat <- lab.dat %>%
+     mutate(plab = ifelse(lab.dat$padj < 0.001, "p<0.001", paste0("p=", round(lab.dat$padj, 2))))
   
-  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
+  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
   names(labs) <- c("Eastern Bering Sea", "Gulf of Alaska")
   
   plot.dat.sst %>%
@@ -77,12 +84,15 @@ source("./Scripts/functions.R")
   
   # Plot sst SD with time
   plot.dat.sst %>%
-    dplyr::select(TS, response, region, k, rsq)%>%
+    dplyr::select(TS, response, region, k, rsq, padj)%>%
     distinct() %>%
     arrange(., TS) %>%
     filter(response == "var.val") -> lab.dat
   
-  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
+  lab.dat <- lab.dat %>%
+    mutate(plab = ifelse(lab.dat$padj < 0.001, "p<0.001", paste0("p=", round(lab.dat$padj, 2))))
+  
+  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
   names(labs) <- c("Eastern Bering Sea", "Gulf of Alaska")
   
   plot.dat.sst %>%
@@ -111,31 +121,206 @@ source("./Scripts/functions.R")
   ggsave(plot = sst.SD.window.plot, "./Figures/sst.SD.x.time.GAM.png", width = 8.5, height = 11, units = "in")
   
   
-### Test question 2: GAMs to predict BSAI and GOA AR1 and CV with time ----------------------------------------------------
+### Test question 2: GAMS to predict BSAI and GOA recruitment (not detrended) with SST (not detrended) ----------------------------------------------
+  # Evaluate candidate models based on unsmoothed, 2-year, and 3-year rolling mean SST
+  sst.2 <- rollapply(sst$mean.sst, 2, mean, na.rm = T, fill = NA) #2-year
+  sst.3 <- rollapply(sst$mean.sst, 3, mean, na.rm = T, fill = NA) #3-year
+  
+  sst.rollmeans <- data.frame(sst, twoyear = sst.2, threeyear = sst.3) %>%
+    rename(unsmoothed = mean.sst)
+
   # EBS ----
-  # Detrend data
+  # Add rollmean sst to  r0
+  bsai.r0 %>%
+    right_join(., expand.grid(Year = min(bsai.r0$Year):max(bsai.r0$Year))) %>%
+    right_join(., sst.rollmeans %>% filter(region == "Eastern Bering Sea") %>%
+                 rename(Lagged.Year = Year), by = c("Lagged.Year")) %>%
+    na.omit() %>%
+    dplyr::select(!region) %>%
+    filter(Year > 1987)-> bsai.r0.sst
+  
+  # Fit models for BSAI
+  model.out <- data.frame()
+  
+  fit.models(bsai.r0.sst) -> bsai.r0.best
+  
+  # Predict and plot with best models BSAI
+  model.predict <- data.frame()
+  
+  for(ii in 1:length(unique(bsai.r0.best$TS))){
+    bsai.r0.best %>%
+      filter(TS == unique(bsai.r0.best$TS)[ii]) -> model.dat
+    
+    bsai.r0.sst %>%
+      filter(TS == unique(bsai.r0.best$TS)[ii]) %>%
+      dplyr::select(TS, log.recruitment, grep(model.dat$sst, names(.))) -> TS.dat
+    
+    gamm.best <- gamm(log.recruitment ~ s(TS.dat[,3], k = model.dat$knots), 
+                      data= TS.dat, correlation = corAR1())
+    
+    model.predict <- rbind(model.predict, data.frame(TS = unique(bsai.r0.best$TS)[ii],
+                                                     log.recruitment = TS.dat$log.recruitment,
+                                                     pred.r0 = predict(gamm.best, se.fit =TRUE)$fit,
+                                                     pred.CI = 1.96*(predict(gamm.best, se.fit =TRUE)$se.fit),
+                                                     sst = TS.dat[,3],
+                                                     sst.smooth = model.dat$sst,
+                                                     k = model.dat$knots,
+                                                     p_gam = model.dat$p_gam.adj,
+                                                     p_lme = model.dat$p_lme.adj,
+                                                     rsq = model.dat$rsq))
+    
+  }
+  
+  # Specify plotting labels
+  model.predict %>%
+    dplyr::select(TS, sst.smooth, k, p_gam, p_lme, rsq)%>%
+    distinct() %>%
+    arrange(., TS) %>%
+    mutate(sst.smooth = case_when((sst.smooth == "unsmoothed") ~ "1-year",
+                                  (sst.smooth == "twoyear") ~ "2-year",
+                                  (sst.smooth == "threeyear") ~ "3-year")) %>%
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2)))) -> lab.dat
+  
+  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, ", sst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
+                 lab.dat$plab, ")")
+  names(labs) <- names(r0.labs.bsai)
+  
+  # Plot BSAI r0/SST
+  ggplot()+
+    geom_ribbon(model.predict, mapping = aes(x = sst, ymin = pred.r0 - pred.CI, ymax= pred.r0+pred.CI),
+                fill = "grey", alpha = 0.75)+
+    geom_point(model.predict, mapping=aes(x = sst, y = log.recruitment))+
+    geom_line(model.predict, mapping = aes(x = sst, y = pred.r0), size = 1.25, color = "#6A6DB7")+
+    facet_wrap(~TS, scales = "free", labeller = labeller(TS = labs),
+               ncol = 4)+
+    theme_bw()+
+    ggtitle("BSAI groundfish/crab recruitment and SST")+
+    ylab("log(millions of recruits)")+
+    xlab("°C")+
+    theme(axis.text = element_text(size = 10),
+          axis.title = element_text(size = 12),
+          strip.text = element_text(size = 10),
+          legend.text = element_text(size = 12)) -> bsai.r0.sst.plot
+  
+  ggsave(plot = bsai.r0.sst.plot, "./Figures/bsai.r0.sst.plot2.png", width = 11, height = 8.5, units = "in")
+  
+  
+  
+  # GOA ----
+  # Add rollmean sst to  r0
+  goa.r0 %>%
+    right_join(., expand.grid(Year = min(goa.r0$Year):max(goa.r0$Year))) %>%
+    right_join(., sst.rollmeans %>% filter(region == "Gulf of Alaska") %>%
+                 rename(Lagged.Year = Year), by = c("Lagged.Year")) %>%
+    na.omit() %>%
+    dplyr::select(!region) %>%
+    filter(Year > 1987)-> goa.r0.sst
+  
+  # Fit models for BSAI
+  model.out <- data.frame()
+  
+  fit.models(goa.r0.sst) -> goa.r0.best
+  
+  # Predict and plot with best models BSAI
+  model.predict <- data.frame()
+  
+  for(ii in 1:length(unique(goa.r0.best$TS))){
+    goa.r0.best %>%
+      filter(TS == unique(goa.r0.best$TS)[ii]) -> model.dat
+    
+    goa.r0.sst %>%
+      filter(TS == unique(goa.r0.best$TS)[ii]) %>%
+      dplyr::select(TS, log.recruitment, grep(model.dat$sst, names(.))) -> TS.dat
+    
+    gamm.best <- gamm(log.recruitment ~ s(TS.dat[,3], k = model.dat$knots), 
+                      data= TS.dat, correlation = corAR1())
+    
+    model.predict <- rbind(model.predict, data.frame(TS = unique(goa.r0.best$TS)[ii],
+                                                     log.recruitment = TS.dat$log.recruitment,
+                                                     pred.r0 = predict(gamm.best, se.fit =TRUE)$fit,
+                                                     pred.CI = 1.96*(predict(gamm.best, se.fit =TRUE)$se.fit),
+                                                     sst = TS.dat[,3],
+                                                     sst.smooth = model.dat$sst,
+                                                     k = model.dat$knots,
+                                                     p_gam = model.dat$p_gam.adj,
+                                                     p_lme = model.dat$p_lme.adj,
+                                                     rsq = model.dat$rsq))
+    
+  }
+  
+  # Specify plotting labels
+  model.predict %>%
+    dplyr::select(TS, sst.smooth, k, p_gam, p_lme, rsq)%>%
+    distinct() %>%
+    arrange(., TS) %>%
+    mutate(sst.smooth = case_when((sst.smooth == "unsmoothed") ~ "1-year",
+                                  (sst.smooth == "twoyear") ~ "2-year",
+                                  (sst.smooth == "threeyear") ~ "3-year")) %>%
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2)))) -> lab.dat
+  
+  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, ", sst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
+                 lab.dat$plab, ")")
+  names(labs) <- names(r0.labs.goa)
+  
+  # Plot GOA r0/SST
+  ggplot()+
+    geom_ribbon(model.predict, mapping = aes(x = sst, ymin = pred.r0 - pred.CI, ymax= pred.r0+pred.CI),
+                fill = "grey", alpha = 0.75)+
+    geom_point(model.predict, mapping=aes(x = sst, y = log.recruitment))+
+    geom_line(model.predict, mapping = aes(x = sst, y = pred.r0), size = 1.25, color = "#A34242")+
+    facet_wrap(~TS, scales = "free", labeller = labeller(TS = labs),
+               ncol = 4)+
+    theme_bw()+
+    ggtitle("GOA groundfish recruitment and SST")+
+    ylab("log(millions of recruits)")+
+    xlab("°C")+
+    theme(axis.text = element_text(size = 10),
+          axis.title = element_text(size = 12),
+          strip.text = element_text(size = 10),
+          legend.text = element_text(size = 12)) -> goa.r0.sst.plot
+  
+  ggsave(plot = goa.r0.sst.plot, "./Figures/goa.r0.sst.plot2.png", width = 11.5, height = 8.5, units = "in")
+  
+  
+  
+### Test question 3: GAMs to predict BSAI and GOA AR1 and CV with time ----------------------------------------------------
+  # EBS ----
+  # Detrend r0 data
   sum.out <- data.frame()
   
   trend.fun(bsai.r0, "Recruitment") -> ebs.r0.out
   
+  ar1var.EBS.r0 <- ebs.r0.out$ar1.var.summary
+  
   # Fit and select best models
   model.out <- data.frame()
   
-  assess.trend(ebs.r0.out, "Recruitment") -> ebs.r0.best.mods
+  assess.trend(ar1var.EBS.r0, "Recruitment") -> ebs.r0.best.mods
   
   # Predict with best models
   pred.vals <- data.frame()
   
-  model.predict(ebs.r0.best.mods, ebs.r0.out, "Recruitment") -> ebs.r0.pred.out
+  model.predict(ebs.r0.best.mods, ar1var.EBS.r0, "Recruitment") -> ebs.r0.pred.out
   
  # Plot r0 AR1 with time
   ebs.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq)%>%
+    dplyr::select(TS, response, k, rsq, padj)%>%
     distinct() %>%
     arrange(., TS) %>%
-    filter(response == "ar1") -> lab.dat
-  
-  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
+    filter(response == "ar1") %>%
+    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
+                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
+                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
+             
+       
+  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
   names(labs) <- names(r0.labs.bsai)
   
   ebs.r0.pred.out %>%
@@ -147,7 +332,7 @@ source("./Scripts/functions.R")
     #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#6A6DB7", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
-               ncol = 3)+
+               ncol = 4)+
     theme_bw()+
     ggtitle("EBS detrended recruitment AR1 with time")+
     ylab("AR1")+
@@ -157,20 +342,26 @@ source("./Scripts/functions.R")
           strip.text = element_text(size = 10),
           legend.text = element_text(size = 12)) -> EBS.r0.ar1.window.plot
   
-  ggsave(plot = EBS.r0.ar1.window.plot, "./Figures/EBS.r0.AR1.x.time.GAM.png", width = 8.5, height = 11, units = "in")
+  ggsave(plot = EBS.r0.ar1.window.plot, "./Figures/EBS.r0.AR1.x.time.GAM.png", width = 11, height = 8.5, units = "in")
   
   # Plot r0 CV with time
   ebs.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq)%>%
+    dplyr::select(TS, response, k, rsq, padj)%>%
     distinct() %>%
     arrange(., TS) %>%
-    filter(response == "var.val") -> lab.dat
+    filter(response == "var.val") %>%
+    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
+                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
+                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
   
-  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
+  
+  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
   names(labs) <- names(r0.labs.bsai)
   
   ebs.r0.pred.out %>%
     filter(response == "var.val") -> plot.dat
+  
   
   ggplot()+
     geom_ribbon(plot.dat, 
@@ -178,7 +369,7 @@ source("./Scripts/functions.R")
     #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#6A6DB7", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
-               ncol = 3)+
+               ncol = 4)+
     theme_bw()+
     ggtitle("EBS detrended recruitment CV with time")+
     ylab("CV")+
@@ -188,7 +379,7 @@ source("./Scripts/functions.R")
           strip.text = element_text(size = 10),
           legend.text = element_text(size = 12)) -> EBS.r0.CV.window.plot
   
-  ggsave(plot = EBS.r0.CV.window.plot, "./Figures/EBS.r0.CV.x.time.GAM.png", width = 8.5, height = 11, units = "in")
+  ggsave(plot = EBS.r0.CV.window.plot, "./Figures/EBS.r0.CV.x.time.GAM.png", width = 11, height = 8.5, units = "in")
   
   # GOA ----
   # Detrend data
@@ -196,24 +387,32 @@ source("./Scripts/functions.R")
   
   trend.fun(goa.r0, "Recruitment") -> goa.r0.out
   
+  ar1var.goa.r0 <- goa.r0.out$ar1.var.summary
+  
   # Fit and select best models
   model.out <- data.frame()
   
-  assess.trend(goa.r0.out, "Recruitment") -> goa.r0.best.mods
+  assess.trend(ar1var.goa.r0, "Recruitment") -> goa.r0.best.mods
   
   # Predict with best models
   pred.vals <- data.frame()
   
-  model.predict(goa.r0.best.mods, goa.r0.out, "Recruitment") -> goa.r0.pred.out
+  model.predict(goa.r0.best.mods, ar1var.goa.r0, "Recruitment") -> goa.r0.pred.out
+  
   
   # Plot r0 AR1 with time
   goa.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq)%>%
+    dplyr::select(TS, response, k, rsq, padj)%>%
     distinct() %>%
     arrange(., TS) %>%
-    filter(response == "ar1") -> lab.dat
+    filter(response == "ar1") %>%
+    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
+                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
+                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
   
-  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
+  
+  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
   names(labs) <- names(r0.labs.goa)
   
   goa.r0.pred.out %>%
@@ -225,7 +424,7 @@ source("./Scripts/functions.R")
     #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#A34242", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
-               ncol = 3)+
+               ncol = 4)+
     theme_bw()+
     ggtitle("GOA detrended recruitment AR1 with time")+
     ylab("AR1")+
@@ -235,78 +434,21 @@ source("./Scripts/functions.R")
           strip.text = element_text(size = 10),
           legend.text = element_text(size = 12)) -> GOA.r0.ar1.window.plot
   
-  ggsave(plot = GOA.r0.ar1.window.plot, "./Figures/GOA.r0.AR1.x.time.GAM.png", width = 8.5, height = 11, units = "in")
-  
-  # Plot r0 AR1 with time
+  ggsave(plot = GOA.r0.ar1.window.plot, "./Figures/GOA.r0.AR1.x.time.GAM.png", width = 11, height = 8.5, units = "in")
+
+  # Plot r0 CV with time
   goa.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq)%>%
+    dplyr::select(TS, response, k, rsq, padj)%>%
     distinct() %>%
     arrange(., TS) %>%
-    filter(response == "ar1") -> lab.dat
+    filter(response == "var.val") %>%
+    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
+                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
+                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
   
-  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
-  names(labs) <- names(r0.labs.goa)
   
-  goa.r0.pred.out %>%
-    filter(response == "ar1") -> plot.dat
-  
-  ggplot()+
-    geom_ribbon(plot.dat, 
-                mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
-    geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#A34242", size = 1.25)+
-    facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
-               ncol = 3)+
-    theme_bw()+
-    ggtitle("GOA detrended recruitment AR1 with time")+
-    ylab("AR1")+
-    xlab("Window")+
-    theme(axis.text = element_text(size = 10),
-          axis.title = element_text(size = 12),
-          strip.text = element_text(size = 10),
-          legend.text = element_text(size = 12)) -> GOA.r0.ar1.window.plot
-  
-  ggsave(plot = GOA.r0.ar1.window.plot, "./Figures/GOA.r0.AR1.x.time.GAM.png", width = 8.5, height = 11, units = "in")
-  
-  # Plot r0 AR1 with time
-  goa.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq)%>%
-    distinct() %>%
-    arrange(., TS) %>%
-    filter(response == "ar1") -> lab.dat
-  
-  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
-  names(labs) <- names(r0.labs.goa)
-  
-  goa.r0.pred.out %>%
-    filter(response == "ar1") -> plot.dat
-  
-  ggplot()+
-    geom_ribbon(plot.dat, 
-                mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
-    geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#A34242", size = 1.25)+
-    facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
-               ncol = 3)+
-    theme_bw()+
-    ggtitle("GOA detrended recruitment AR1 with time")+
-    ylab("AR1")+
-    xlab("Window")+
-    theme(axis.text = element_text(size = 10),
-          axis.title = element_text(size = 12),
-          strip.text = element_text(size = 10),
-          legend.text = element_text(size = 12)) -> GOA.r0.ar1.window.plot
-  
-  ggsave(plot = GOA.r0.ar1.window.plot, "./Figures/GOA.r0.AR1.x.time.GAM.png", width = 8.5, height = 11, units = "in")
-  
-  # Plot r0 SD with time
-  goa.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq)%>%
-    distinct() %>%
-    arrange(., TS) %>%
-    filter(response == "var.val") -> lab.dat
-  
-  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ")")
+  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
   names(labs) <- names(r0.labs.goa)
   
   goa.r0.pred.out %>%
@@ -318,7 +460,7 @@ source("./Scripts/functions.R")
     #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#A34242", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
-               ncol = 3)+
+               ncol = 4)+
     theme_bw()+
     ggtitle("GOA detrended recruitment CV with time")+
     ylab("CV")+
@@ -328,6 +470,188 @@ source("./Scripts/functions.R")
           strip.text = element_text(size = 10),
           legend.text = element_text(size = 12)) -> GOA.r0.CV.window.plot
   
-  ggsave(plot = GOA.r0.CV.window.plot, "./Figures/GOA.r0.CV.x.time.GAM.png", width = 8.5, height = 11, units = "in")
+  ggsave(plot = GOA.r0.CV.window.plot, "./Figures/GOA.r0.CV.x.time.GAM.png", width = 11, height = 8.5, units = "in")
   
+  
+### Test question 4: Simulated results of impact of greater AR1 -----------------------------------------------------------------
+  # EBS ----
+   right_join(ar1var.EBS.r0, 
+             ar1var.EBS.sst %>% 
+               dplyr::select(ar1, sd, window) %>% 
+               rename(sst_ar1 = ar1, st_sd = sd)) %>%
+    na.omit() -> r0.sst_AR1_EBS
+  
+
+  ar1.fits <- function(dat){
+    for(ii in 1:length(unique(dat$TS))){
+      
+      knts <- c(3, 4)
+      for(kk in 1:length(knts)){
+        dat %>%
+          filter(TS == unique(.$TS)[ii]) -> model.dat
+        
+        
+        # fit models
+        gam.ar1 <- gamm(ar1 ~ s(sst_ar1, k = knts[kk]), 
+                        data= model.dat)
+        
+        p.gam.ar1 <- summary(gam.ar1$gam)$s.table[,4]
+        
+        r.gam.ar1 <- summary(gam.ar1$gam)$r.sq
+        
+        AIC.gam.ar1 <- AIC(gam.ar1)
+        
+        # Build summary table
+        model.out <- rbind(model.out, data.frame(TS = unique(dat$TS)[ii],
+                                                 knots = knts[kk],
+                                                 p_gam = c(p.gam.ar1),
+                                                 rsq_gam = c(r.gam.ar1),
+                                                 AIC = c(AIC.gam.ar1)))
+        
+      } # close knot loop
+    } # close timeseries loop
+    
+    # Label best models by timeseries
+    model.out %>%
+      group_by(TS) %>%
+      mutate(BEST = ifelse(AIC == min(AIC), "Y", "N"),
+             padj = p.adjust(p_gam, method = "fdr")) %>%
+      filter(BEST == "Y") -> model.out
+  }
+ 
+ 
+ ar1.fits(r0.sst_AR1_EBS) -> EBS.out
+ 
+ model.predict <- data.frame()
+ 
+ best.dat <- EBS.out
+ ar1.dat <- r0.sst_AR1_EBS
+ 
+ for(ii in 1:length(unique(EBS.out$TS))){
+   best.dat %>%
+     filter(TS == unique(best.dat$TS)[ii]) -> model.dat
+   
+   ar1.dat %>%
+     filter(TS == unique(best.dat$TS)[ii]) %>%
+     dplyr::select(TS, ar1, sst_ar1) -> TS.dat
+   
+   gamm.best <- gamm(ar1 ~ s(sst_ar1, k = model.dat$knots), 
+                     data= TS.dat, correlation = corAR1())
+   
+   model.predict <- rbind(model.predict, data.frame(TS = unique(best.dat$TS)[ii],
+                                                    pred.ar1 = predict(gamm.best, se.fit =TRUE)$fit,
+                                                    pred.CI = 1.96*(predict(gamm.best, se.fit =TRUE)$se.fit),
+                                                    sst_ar1 = TS.dat$sst_ar1,
+                                                    TS_ar1 = TS.dat$ar1,
+                                                    k = model.dat$knots,
+                                                    p_gam = model.dat$padj,
+                                                    rsq = model.dat$rsq_gam))
+   
+ }
+ 
+ # Specify plotting labels
+ model.predict %>%
+   dplyr::select(TS, k, p_gam, rsq)%>%
+   distinct() %>%
+   arrange(., TS) %>%
+   mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                           (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                           (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                           TRUE ~ paste0("p=", round(p_gam, 2)))) -> lab.dat
+ 
+ labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ",
+                lab.dat$plab, ")")
+ names(labs) <- names(r0.labs.bsai)
+ 
+ # Plot BSAI r0/SST
+ ggplot()+
+   geom_ribbon(model.predict, mapping = aes(x = sst_ar1, ymin = pred.ar1 - pred.CI, ymax= pred.ar1+pred.CI),
+               fill = "grey", alpha = 0.75)+
+   geom_point(model.predict, mapping=aes(x = sst_ar1, y = TS_ar1))+
+   geom_line(model.predict, mapping = aes(x = sst_ar1, y = pred.ar1), size = 1.25, color = "#6A6DB7")+
+   facet_wrap(~TS, scales = "free", labeller = labeller(TS = labs),
+              ncol = 4)+
+   theme_bw()+
+   ggtitle("EBS sst AR1 vs. r0 AR1")+
+   ylab("Recruitment AR1")+
+   xlab("SST AR1")+
+   theme(axis.text = element_text(size = 10),
+         axis.title = element_text(size = 12),
+         strip.text = element_text(size = 10),
+         legend.text = element_text(size = 12)) -> ebs.r0vs.sstAR1.plot
+ 
+ ggsave(plot = ebs.r0vs.sstAR1.plot, "./Figures/ebs.r0vs.sstAR1.plot.png", width = 11, height = 8.5, units = "in")
+ 
+ # GOA ----
+ right_join(ar1var.goa.r0, 
+            ar1var.goa.sst %>% 
+              dplyr::select(ar1, sd, window) %>% 
+              rename(sst_ar1 = ar1, st_sd = sd)) %>%
+   na.omit() -> r0.sst_AR1_goa
+ 
+ 
+ ar1.fits(r0.sst_AR1_goa) -> goa.out
+ 
+ model.predict <- data.frame()
+ 
+ best.dat <- goa.out
+ ar1.dat <- r0.sst_AR1_goa
+ 
+ for(ii in 1:length(unique(best.dat$TS))){
+   best.dat %>%
+     filter(TS == unique(best.dat$TS)[ii]) -> model.dat
+   
+   ar1.dat %>%
+     filter(TS == unique(best.dat$TS)[ii]) %>%
+     dplyr::select(TS, ar1, sst_ar1) -> TS.dat
+   
+   gamm.best <- gamm(ar1 ~ s(sst_ar1, k = model.dat$knots), 
+                     data= TS.dat, correlation = corAR1())
+   
+   model.predict <- rbind(model.predict, data.frame(TS = unique(best.dat$TS)[ii],
+                                                    pred.ar1 = predict(gamm.best, se.fit =TRUE)$fit,
+                                                    pred.CI = 1.96*(predict(gamm.best, se.fit =TRUE)$se.fit),
+                                                    sst_ar1 = TS.dat$sst_ar1,
+                                                    TS_ar1 = TS.dat$ar1,
+                                                    k = model.dat$knots,
+                                                    p_gam = model.dat$padj,
+                                                    rsq = model.dat$rsq_gam))
+   
+ }
+ 
+ # Specify plotting labels
+ model.predict %>%
+   dplyr::select(TS, k, p_gam, rsq)%>%
+   distinct() %>%
+   arrange(., TS) %>%
+   mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                           (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                           (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                           TRUE ~ paste0("p=", round(p_gam, 2)))) -> lab.dat
+ 
+ labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ",
+                lab.dat$plab, ")")
+ names(labs) <- names(r0.labs.goa)
+ 
+ # Plot BSAI r0/SST
+ ggplot()+
+   geom_ribbon(model.predict, mapping = aes(x = sst_ar1, ymin = pred.ar1 - pred.CI, ymax= pred.ar1+pred.CI),
+               fill = "grey", alpha = 0.75)+
+   geom_point(model.predict, mapping=aes(x = sst_ar1, y = TS_ar1))+
+   geom_line(model.predict, mapping = aes(x = sst_ar1, y = pred.ar1), size = 1.25, color = "#A34242")+
+   facet_wrap(~TS, scales = "free", labeller = labeller(TS = labs),
+              ncol = 4)+
+   theme_bw()+
+   ggtitle("GOA sst AR1 vs. r0 AR1")+
+   ylab("Recruitment AR1")+
+   xlab("SST AR1")+
+   theme(axis.text = element_text(size = 10),
+         axis.title = element_text(size = 12),
+         strip.text = element_text(size = 10),
+         legend.text = element_text(size = 12)) -> goa.r0vs.sstAR1.plot
+ 
+ ggsave(plot = goa.r0vs.sstAR1.plot, "./Figures/goa.r0vs.sstAR1.plot.png", width = 11, height = 8.5, units = "in")
+ 
+ 
+ 
   
