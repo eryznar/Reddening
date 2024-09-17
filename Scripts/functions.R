@@ -67,7 +67,7 @@ fit.models <- function(dat){
 }
 
 # Create function to calculate AR1 and CV/SD for 15 year windows for biology/SST timeseries
-sum.fun <- function(dat, data.type){
+sum.fun <- function(dat, data.type, wind){
   
   # if(data.type == "SSB"){
   #   dat %>%
@@ -112,7 +112,7 @@ sum.fun <- function(dat, data.type){
         na.omit() -> TS.dat
       
       # Specify sliding window width
-      width = 15
+      width = wind
       
       # Calculate rolling window AR1
       ar1 <- sapply(rollapply(TS.dat$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
@@ -136,12 +136,13 @@ sum.fun <- function(dat, data.type){
                                            sd = sd,
                                            avg = avg,
                                            cv = cv,
-                                           window = window))
+                                           window = window,
+                                           width =wind))
       
     }
   } else{
     for(ii in 1:length(unique(dat$TS))){ # for crab
-      
+   
       dat %>%
         filter(TS == unique(dat$TS)[ii], Type == "mmb") %>%
         na.omit() -> TS.dat.mmb
@@ -152,11 +153,12 @@ sum.fun <- function(dat, data.type){
       
       
       # Specify sliding window width
-      width = 15
+      width = wind
       
       # Calculate AR1
       
       if(unique(dat$TS)[ii] != "Bristol Bay red king crab"){
+        
         
         # Calculate rolling window AR1
         ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
@@ -210,7 +212,8 @@ sum.fun <- function(dat, data.type){
                                            avg.fmb = avg.fmb,
                                            cv.mmb = cv.mmb,
                                            cv.fmb = cv.fmb,
-                                           window = window))
+                                           window = window,
+                                           width = wind))
       
     }
   }
@@ -220,7 +223,7 @@ sum.fun <- function(dat, data.type){
 }
 
 # Function to detrend data, calculate ar1, SD, avg, and cv for 15 year windows
-trend.fun <- function(TS.dat, data.type){
+trend.fun <- function(TS.dat, data.type, wind){
   
   # # Specify response variable based on data type
   # if(data.type == "Recruitment"){
@@ -266,17 +269,21 @@ trend.fun <- function(TS.dat, data.type){
     detrend.dat.resid <- data.frame(TS = rep("SST", length(unique(dat$Year))),
                                     Year = dat$Year, mean.sst = detrend.dat$residuals)
     
-    # Calculate AR1 and CV/SD on detrended data
-    sum.fun(detrend.dat.resid, data.type) -> out
+    # Calculate AR1 and CV/SD on detrended data on different window lengths
+    wind %>%
+    purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
     
     summary <- out
   }
-  return(list(detrended.data = detrend.dat.resid, ar1.var.summary = summary))
+  #return(list(detrended.data = detrend.dat.resid, ar1.var.summary = summary))
+  
+  return(ar1.var.summary = summary)
+  
 }
 
 
 # Make function to streamline model fitting
-assess.trend <- function(dat, data.type){
+assess.trend <- function(dat, data.type, window){
   
   for(ii in 1:length(unique(dat$TS))){
     # filter data by TS
@@ -286,7 +293,7 @@ assess.trend <- function(dat, data.type){
       mutate(N = n()) %>%
       ungroup()-> TS.dat
     
-    knts <- c(3, 4)
+    knts <- c(3, 4, 5)
     
     # specify variance value by data type
     if(data.type == "Recruitment"){

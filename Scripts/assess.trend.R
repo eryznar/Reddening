@@ -15,9 +15,10 @@ source("./Scripts/functions.R")
 
 ### Test question 1: GAMs to predict sst AR1 and SD with time -----------------------------------------------------------
   # Detrend data
-  trend.fun(ebs.sst, "SST") -> ebs.sst.out
+ 
+  trend.fun(ebs.sst, "SST", 15) -> ebs.sst.out
   
-  trend.fun(goa.sst, "SST") -> goa.sst.out
+  trend.fun(goa.sst, "SST", 15) -> goa.sst.out
   
   ar1var.EBS.sst <- ebs.sst.out$ar1.var.summary
   ar1var.goa.sst <- goa.sst.out$ar1.var.summary
@@ -485,7 +486,7 @@ source("./Scripts/functions.R")
   ar1.fits <- function(dat){
     for(ii in 1:length(unique(dat$TS))){
       
-      knts <- c(3, 4)
+      knts <- c(3, 4, 5)
       for(kk in 1:length(knts)){
         dat %>%
           filter(TS == unique(.$TS)[ii]) -> model.dat
@@ -582,7 +583,7 @@ source("./Scripts/functions.R")
  
  ggsave(plot = ebs.r0vs.sstAR1.plot, "./Figures/ebs.r0vs.sstAR1.plot.png", width = 11, height = 8.5, units = "in")
  
- # GOA ----
+  # GOA ----
  right_join(ar1var.goa.r0, 
             ar1var.goa.sst %>% 
               dplyr::select(ar1, sd, window) %>% 
@@ -655,3 +656,52 @@ source("./Scripts/functions.R")
  
  
   
+### Test question 5: Does window length influence AR1 and variance? ---------------------------------------------------
+  # SST ----
+ ### Test question 1: GAMs to predict sst AR1 and SD with time -----------------------------------------------------------
+ # Detrend data
+ c(10, 15, 20, 25) %>%
+   purrr::map_df(~trend.fun(ebs.sst, "SST", .x)) -> ebs.sst.out
+ 
+ c(10, 15, 20, 25) %>%
+   purrr::map_df(~trend.fun(goa.sst, "SST", .x)) -> goa.sst.out
+ 
+ 
+ rbind(ebs.sst.out %>% mutate(region = "Eastern Bering Sea"), 
+       goa.sst.out %>% mutate(region = "Gulf of Alaska")) -> plot.dat
+ 
+ ggplot()+
+   geom_line(plot.dat, mapping = aes(window, ar1, color = as.factor(width)), size = 1.5) +
+   facet_wrap(~region, scales = "free_y", ncol = 1)+
+   theme_bw()+
+   ggtitle("Detrended SST AR1 at different window lengths")+
+   scale_color_manual(name = "Window length", values = c("#8B0069", "#A96C00", "#75C165","#B0F4FA"))+
+   ylab("AR1")+
+   xlab("Window")+
+   theme(axis.text = element_text(size = 14),
+         axis.title = element_text(size = 16),
+         strip.text = element_text(size = 16),
+         legend.text = element_text(size = 14),
+         title = element_text(size = 16)) -> sst.AR1.windowlength
+ 
+ 
+ ggsave(plot = sst.AR1.windowlength, "./Figures/sst.AR1.windowlength.png", width = 10, height = 11, units = "in")
+ 
+ ggplot()+
+   geom_line(plot.dat, mapping = aes(window, sd, color = as.factor(width)), size = 1.5) +
+   facet_wrap(~region, scales = "free_y",
+              ncol = 1)+
+   theme_bw()+
+   ggtitle("Detrended SST SD at different window lengths")+
+   scale_color_manual(name = "Window length", values = c("#8B0069", "#A96C00", "#75C165","#B0F4FA"))+
+   ylab("SD")+
+   xlab("Window")+
+   theme(axis.text = element_text(size = 14),
+         axis.title = element_text(size = 16),
+         strip.text = element_text(size = 16),
+         legend.text = element_text(size = 14),
+         title = element_text(size = 16)) -> sst.SD.windowlength
+ 
+ ggsave(plot = sst.SD.windowlength, "./Figures/sst.SD.windowlength.png", width = 10, height = 11, units = "in")
+ 
+ 
