@@ -33,6 +33,10 @@ fit.models <- function(dat){
       p.lme.2 <- signif(summary(gam.2$lme)$tTable[2,5],2)
       p.lme.3 <- signif(summary(gam.3$lme)$tTable[2,5],2)
       
+      rsq.gam.1 <- signif(summary(gam.1$gam)$r.sq,2)
+      rsq.gam.2 <- signif(summary(gam.2$gam)$r.sq,2)
+      rsq.gam.3 <- signif(summary(gam.3$gam)$r.sq,2)
+      
       AIC.gam.1 <- AIC(gam.1)
       AIC.gam.2 <- AIC(gam.2)
       AIC.gam.3 <- AIC(gam.3)
@@ -45,7 +49,8 @@ fit.models <- function(dat){
                                                sst = c("unsmoothed", "twoyear", "threeyear"),
                                                p_lme = c(p.lme.1, p.lme.2, p.lme.3),
                                                p_gam = c(p.gam.1, p.gam.2, p.gam.3),
-                                               AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3)))
+                                               AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3),
+                                               rsq = c(rsq.gam.1, rsq.gam.2, rsq.gam.3)))
       
     } # close knot loop
   } # close timeseries loop
@@ -53,7 +58,10 @@ fit.models <- function(dat){
   # Label best models by timeseries
   model.out %>%
     group_by(TS) %>%
-    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N")) -> model.out
+    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N"),
+           p_gam.adj = p.adjust(p_gam, method = "fdr"),
+           p_lme.adj = p.adjust(p_lme, method = "fdr")) %>%
+    filter(BEST == "Y") -> model.out
   
   return(model.out)
 }
@@ -263,7 +271,7 @@ trend.fun <- function(TS.dat, data.type){
     
     summary <- out
   }
-  return(summary)
+  return(list(detrended.data = detrend.dat.resid, ar1.var.summary = summary))
 }
 
 
@@ -291,18 +299,24 @@ assess.trend <- function(dat, data.type){
     for(kk in 1:length(knts)){
       
       # fit gams, record pval and AIC
-      gam.ar1 <- gam(ar1 ~ s(window, k = knts[kk]), 
-                     data= TS.dat) # removed ", correlation = corAR1()"
+      # gam.ar1 <- gam(ar1 ~ s(window, k = knts[kk]), 
+      #                data= TS.dat) # removed ", correlation = corAR1()"
       
-      gam.var <- gam(var.val ~ s(window, k = knts[kk]), 
-                     data= TS.dat) # removed ", correlation = corAR1()"
+      gam.ar1 <- gamm(ar1 ~ s(window, k = knts[kk]), 
+                    data= TS.dat, correlation = corAR1())
+      
+      # gam.var <- gam(var.val ~ s(window, k = knts[kk]), 
+      #                data= TS.dat) # removed ", correlation = corAR1()"
+      
+      gam.var <- gamm(var.val ~ s(window, k = knts[kk]), 
+                      data= TS.dat, correlation = corAR1())
       
       
-      p.gam.ar1 <- summary(gam.ar1)$s.table[,4]
-      p.gam.var <- summary(gam.var)$s.table[,4]
+      p.gam.ar1 <- summary(gam.ar1$gam)$s.table[,4]
+      p.gam.var <- summary(gam.var$gam)$s.table[,4]
       
-      r.gam.ar1 <- summary(gam.ar1)$r.sq
-      r.gam.var <- summary(gam.var)$r.sq
+      r.gam.ar1 <- summary(gam.ar1$gam)$r.sq
+      r.gam.var <- summary(gam.var$gam)$r.sq
       
       # p.lme.ar1 <- signif(summary(gam.ar1$lme)$tTable[2,5],2)
       # p.lme.var <- signif(summary(gam.var$lme)$tTable[2,5],2)
@@ -366,6 +380,7 @@ model.predict <- function(model.dat, TS.dat, data.type){
                                                pred.CI = 1.96*(predict(gam.best, se.fit =TRUE)$se.fit),
                                                k = model.dat2$knots,
                                                rsq = model.dat2$rsq_gam,
+                                               padj = model.dat2$padj,
                                                window = TS.dat2$window))
       
     } # close response loop
