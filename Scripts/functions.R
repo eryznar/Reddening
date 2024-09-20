@@ -13,7 +13,7 @@ fit.models <- function(dat){
       mutate(N = n()) %>%
       ungroup()-> TS.dat
     
-    knts <- c(3, 4)
+    knts <- c(3, 4, 5)
     
     for(kk in 1:length(knts)){
       
@@ -58,9 +58,10 @@ fit.models <- function(dat){
   # Label best models by timeseries
   model.out %>%
     group_by(TS) %>%
-    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N"),
-           p_gam.adj = p.adjust(p_gam, method = "fdr"),
-           p_lme.adj = p.adjust(p_lme, method = "fdr")) %>%
+    mutate(sig = BH2(p_gam, alph = 0.05)$BHSig,
+           p_gam = p_gam,
+           BEST = ifelse(AIC == min(AIC), "Y", "N"),
+           padj = p.adjust(p_gam, method = "fdr")) %>%
     filter(BEST == "Y") -> model.out
   
   return(model.out)
@@ -86,6 +87,9 @@ sum.fun <- function(dat, data.type, wind){
   #   dat = dat
   # }
   # 
+  
+  sum.out <- data.frame()
+  
   if(data.type == "SSB"){
     dat %>%
       rename(Value = log.SSB) -> dat
@@ -234,6 +238,10 @@ trend.fun <- function(TS.dat, data.type, wind){
   #     mutate(Value = mean.sst) -> TS.dat
   # }
   
+  #sum.out <- data.frame()
+  
+ 
+  
   if(data.type == "Recruitment"){
     names = unique(TS.dat$TS)
     
@@ -252,10 +260,13 @@ trend.fun <- function(TS.dat, data.type, wind){
       detrend.dat.resid <- data.frame(TS = rep(names[ii], length(unique(dat$Year))),
                                       Year = dat$Year, log.recruitment = detrend.dat$residuals)
       
-      # Calculate AR1 and CV/SD on detrended data
-      sum.fun(detrend.dat.resid, data.type) -> out
+     
       
-      rbind(summary, out) -> summary
+      # Calculate AR1 and CV/SD on detrended data
+      wind %>%
+        purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
+      
+      rbind(summary, as.data.frame(out)) -> summary
       
     }
   } else{
@@ -283,7 +294,7 @@ trend.fun <- function(TS.dat, data.type, wind){
 
 
 # Make function to streamline model fitting
-assess.trend <- function(dat, data.type, window){
+assess.trend <- function(dat, data.type){
   
   for(ii in 1:length(unique(dat$TS))){
     # filter data by TS
@@ -342,11 +353,13 @@ assess.trend <- function(dat, data.type, window){
       
     } # close knot loop
   } # close timeseries loop
-  
+ 
   # Label best models by timeseries
   model.out %>%
     group_by(TS, response) %>%
-    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N"),
+    mutate(sig = BH2(p_gam, alph = 0.05)$BHSig,
+           p_gam = p_gam,
+           BEST = ifelse(AIC == min(AIC), "Y", "N"),
            padj = p.adjust(p_gam, method = "fdr")) %>%
     filter(BEST == "Y") -> model.out
   
@@ -387,7 +400,8 @@ model.predict <- function(model.dat, TS.dat, data.type){
                                                pred.CI = 1.96*(predict(gam.best, se.fit =TRUE)$se.fit),
                                                k = model.dat2$knots,
                                                rsq = model.dat2$rsq_gam,
-                                               padj = model.dat2$padj,
+                                               p_gam = model.dat2$p_gam,
+                                               sig = model.dat2$sig,
                                                window = TS.dat2$window))
       
     } # close response loop
@@ -395,3 +409,61 @@ model.predict <- function(model.dat, TS.dat, data.type){
   
   return(pred.vals)
 } # close function
+
+
+# BH takes p and an FDR as inputs and returns hypothesis tests and the threshold p value
+BH2 <- function(p, alpha = 0.05){
+  u <- sort(p)
+  uThresh <- alpha * (1:length(p))/length(p)
+  k <- max(c(which((u<=uThresh)), 0), na.rm = TRUE)
+  pCrit <- u[k]
+  return(list(BHSig = c(rep(TRUE, k), rep(FALSE, length(p)-k))[order(order(p))]
+              , pCrit = pCrit)
+  )
+}
+
+# 
+# BHA <- function(p){
+#   u <- sort(p, decreasing = TRUE)
+#   mult <- length(p)/(length(p):1)
+#   pNew <- cummin(u*mult)[order(order(-p))]
+#   return(pNew)
+# }
+# 
+# control.FDR <- function(p, FDR = 0.05, arr = c("p.orig", "none")){
+#   BHP <- BH2(p, FDR)
+#   p.adj <- BHA(p)
+#   p.orig <- p
+#   message(paste0("For a ", FDR
+#                  , "-level false discovery rate, Threshold p-value = ", BHP$pCrit))
+#   out <- data.frame( p.orig
+#                      , significant_after_FDR = BHP$BHSig
+#                      , p.adj)
+#   if(arr == "none"){
+#     return(out)
+#   } 
+#   else {return(out[order(get(arr)),])}
+# }
+# 
+# BHAdjust(Hedenfalk$x, FDR = 0.05, arr = "p.orig") -> tt
+
+# 
+# pvalues<-c(0.01,0.001, 0.05, 0.20, 0.15, 0.15)
+# ranks<-rank(pvalues, ties.method = "last")
+# p_m_over_k<-pvalues*length(pvalues)/ranks
+# 
+# for (r in length(pvalues):1) {
+#   print(p_m_over_k[ranks>=r])
+# }
+# 
+# pvalues_adj<-c()
+# 
+# for (i in 1:length(pvalues)) {
+#   
+#   # find the rank
+#   tmp_rank<-ranks[2]
+#   
+#   # get all the p_m_over_k that are greater or equal to this rank
+#   # and get the min value
+#   pvalues_adj<-c(pvalues_adj, min(1,min(p_m_over_k[ranks>=tmp_rank])))
+# }
