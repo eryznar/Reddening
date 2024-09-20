@@ -20,8 +20,8 @@ source("./Scripts/functions.R")
   
   trend.fun(goa.sst, "SST", 15) -> goa.sst.out
   
-  ar1var.EBS.sst <- ebs.sst.out$ar1.var.summary
-  ar1var.goa.sst <- goa.sst.out$ar1.var.summary
+  ar1var.EBS.sst <- as.data.frame(ebs.sst.out)
+  ar1var.goa.sst <- as.data.frame(goa.sst.out)
   
   # Fit and select best models
   model.out <- data.frame()
@@ -47,15 +47,18 @@ source("./Scripts/functions.R")
   
   # Plot sst AR1 with time
    plot.dat.sst %>%
-    dplyr::select(TS, response, region, k, rsq, padj)%>%
+    dplyr::select(TS, response, region, k, rsq, p_gam, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
-    filter(response == "ar1") -> lab.dat
+    filter(response == "ar1") %>%
+     mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                             (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                             (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                             TRUE ~ paste0("p=", round(p_gam, 2))),
+            psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                             TRUE ~ plab)) -> lab.dat
    
-   lab.dat <- lab.dat %>%
-     mutate(plab = ifelse(lab.dat$padj < 0.001, "p<0.001", paste0("p=", round(lab.dat$padj, 2))))
-  
-  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
+  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- c("Eastern Bering Sea", "Gulf of Alaska")
   
   plot.dat.sst %>%
@@ -81,19 +84,22 @@ source("./Scripts/functions.R")
           legend.text = element_text(size = 14),
           title = element_text(size = 16)) -> sst.ar1.window.plot
   
-  ggsave(plot = sst.ar1.window.plot, "./Figures/sst.AR1.x.time.GAM.png", width = 8.5, height = 11, units = "in")
+  ggsave(plot = sst.ar1.window.plot, "./Figures/sst.AR1.x.time.GAM2.png", width = 8.5, height = 11, units = "in")
   
   # Plot sst SD with time
   plot.dat.sst %>%
-    dplyr::select(TS, response, region, k, rsq, padj)%>%
+    dplyr::select(TS, response, region, k, rsq, p_gam, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
-    filter(response == "var.val") -> lab.dat
-  
-  lab.dat <- lab.dat %>%
-    mutate(plab = ifelse(lab.dat$padj < 0.001, "p<0.001", paste0("p=", round(lab.dat$padj, 2))))
-  
-  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
+    filter(response == "var.val") %>%
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
+   
+  labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- c("Eastern Bering Sea", "Gulf of Alaska")
   
   plot.dat.sst %>%
@@ -166,15 +172,16 @@ source("./Scripts/functions.R")
                                                      sst = TS.dat[,3],
                                                      sst.smooth = model.dat$sst,
                                                      k = model.dat$knots,
-                                                     p_gam = model.dat$p_gam.adj,
-                                                     p_lme = model.dat$p_lme.adj,
-                                                     rsq = model.dat$rsq))
+                                                     p_gam = model.dat$p_gam,
+                                                     p_lme = model.dat$p_lme,
+                                                     rsq = model.dat$rsq,
+                                                     sig = model.dat$sig))
     
   }
   
   # Specify plotting labels
   model.predict %>%
-    dplyr::select(TS, sst.smooth, k, p_gam, p_lme, rsq)%>%
+    dplyr::select(TS, sst.smooth, k, p_gam, p_lme, rsq, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
     mutate(sst.smooth = case_when((sst.smooth == "unsmoothed") ~ "1-year",
@@ -183,10 +190,12 @@ source("./Scripts/functions.R")
     mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
                             (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
                             (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
-                            TRUE ~ paste0("p=", round(p_gam, 2)))) -> lab.dat
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
   
   labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, ", sst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
-                 lab.dat$plab, ")")
+                 lab.dat$psig, ")")
   names(labs) <- names(r0.labs.bsai)
   
   # Plot BSAI r0/SST
@@ -220,7 +229,7 @@ source("./Scripts/functions.R")
     dplyr::select(!region) %>%
     filter(Year > 1987)-> goa.r0.sst
   
-  # Fit models for BSAI
+  # Fit models for GOA
   model.out <- data.frame()
   
   fit.models(goa.r0.sst) -> goa.r0.best
@@ -246,15 +255,16 @@ source("./Scripts/functions.R")
                                                      sst = TS.dat[,3],
                                                      sst.smooth = model.dat$sst,
                                                      k = model.dat$knots,
-                                                     p_gam = model.dat$p_gam.adj,
-                                                     p_lme = model.dat$p_lme.adj,
-                                                     rsq = model.dat$rsq))
+                                                     p_gam = model.dat$p_gam,
+                                                     p_lme = model.dat$p_lme,
+                                                     rsq = model.dat$rsq,
+                                                     sig = model.dat$sig))
     
   }
   
   # Specify plotting labels
   model.predict %>%
-    dplyr::select(TS, sst.smooth, k, p_gam, p_lme, rsq)%>%
+    dplyr::select(TS, sst.smooth, k, p_gam, p_lme, rsq, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
     mutate(sst.smooth = case_when((sst.smooth == "unsmoothed") ~ "1-year",
@@ -263,10 +273,12 @@ source("./Scripts/functions.R")
     mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
                             (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
                             (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
-                            TRUE ~ paste0("p=", round(p_gam, 2)))) -> lab.dat
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
   
   labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, ", sst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
-                 lab.dat$plab, ")")
+                 lab.dat$psig, ")")
   names(labs) <- names(r0.labs.goa)
   
   # Plot GOA r0/SST
@@ -295,9 +307,9 @@ source("./Scripts/functions.R")
   # Detrend r0 data
   sum.out <- data.frame()
   
-  trend.fun(bsai.r0, "Recruitment") -> ebs.r0.out
+  trend.fun(bsai.r0, "Recruitment", 15) -> ebs.r0.out
   
-  ar1var.EBS.r0 <- ebs.r0.out$ar1.var.summary
+  ar1var.EBS.r0 <- ebs.r0.out
   
   # Fit and select best models
   model.out <- data.frame()
@@ -311,17 +323,19 @@ source("./Scripts/functions.R")
   
  # Plot r0 AR1 with time
   ebs.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq, padj)%>%
+    dplyr::select(TS, response, k, rsq, p_gam, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
     filter(response == "ar1") %>%
-    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
-                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
-                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
-                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
              
        
-  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
+  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- names(r0.labs.bsai)
   
   ebs.r0.pred.out %>%
@@ -347,17 +361,19 @@ source("./Scripts/functions.R")
   
   # Plot r0 CV with time
   ebs.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq, padj)%>%
+    dplyr::select(TS, response, k, rsq, p_gam, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
     filter(response == "var.val") %>%
-    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
-                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
-                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
-                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
   
   
-  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
+  labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- names(r0.labs.bsai)
   
   ebs.r0.pred.out %>%
@@ -386,9 +402,9 @@ source("./Scripts/functions.R")
   # Detrend data
   sum.out <- data.frame()
   
-  trend.fun(goa.r0, "Recruitment") -> goa.r0.out
+  trend.fun(goa.r0, "Recruitment", 15) -> goa.r0.out
   
-  ar1var.goa.r0 <- goa.r0.out$ar1.var.summary
+  ar1var.goa.r0 <- goa.r0.out
   
   # Fit and select best models
   model.out <- data.frame()
@@ -403,17 +419,19 @@ source("./Scripts/functions.R")
   
   # Plot r0 AR1 with time
   goa.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq, padj)%>%
+    dplyr::select(TS, response, k, rsq, p_gam, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
     filter(response == "ar1") %>%
-    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
-                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
-                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
-                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
   
   
-  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
+  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- names(r0.labs.goa)
   
   goa.r0.pred.out %>%
@@ -439,17 +457,19 @@ source("./Scripts/functions.R")
 
   # Plot r0 CV with time
   goa.r0.pred.out %>%
-    dplyr::select(TS, response, k, rsq, padj)%>%
+    dplyr::select(TS, response, k, rsq, p_gam, sig)%>%
     distinct() %>%
     arrange(., TS) %>%
     filter(response == "var.val") %>%
-    mutate(plab = case_when((padj < 0.001) ~ "p<0.001",
-                            (padj < 0.01 & padj >= 0.001) ~ "p<0.01",
-                            (padj <0.05 & padj >= 0.01) ~ "p<0.05",
-                            TRUE ~ paste0("p=", round(padj, 2)))) -> lab.dat
+    mutate(plab = case_when((p_gam < 0.001) ~ "p<0.001",
+                            (p_gam < 0.01 & p_gam >= 0.001) ~ "p<0.01",
+                            (p_gam <0.05 & p_gam >= 0.01) ~ "p<0.05",
+                            TRUE ~ paste0("p=", round(p_gam, 2))),
+           psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
+                            TRUE ~ plab)) -> lab.dat
   
   
-  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$plab, ")")
+  labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, " , R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- names(r0.labs.goa)
   
   goa.r0.pred.out %>%
@@ -658,7 +678,6 @@ source("./Scripts/functions.R")
   
 ### Test question 5: Does window length influence AR1 and variance? ---------------------------------------------------
   # SST ----
- ### Test question 1: GAMs to predict sst AR1 and SD with time -----------------------------------------------------------
  # Detrend data
  c(10, 15, 20, 25) %>%
    purrr::map_df(~trend.fun(ebs.sst, "SST", .x)) -> ebs.sst.out
