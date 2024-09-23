@@ -2,15 +2,6 @@
 
 # PURPOSE: To load and process GOA and EBS TS and climate time series
 
-### LOAD PACKAGES -------------------------------------------------------------------------------------------------------
-
-library(tidyverse)
-library(zoo)
-library(stats)
-library(mgcv)
-library(MuMIn)
-library(roll)
-library(TTR)
 
 ### LOAD DATA -----------------------------------------------------------------------------------------------------------
   # BSAI and GOA community timeseries
