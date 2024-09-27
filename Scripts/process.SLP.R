@@ -133,4 +133,9 @@ b.plot <- ggplot(plot.dat, aes(year, sd)) +
   geom_vline(xintercept = 1988.5, lty=2, size=0.3) +
   xlim(1950,2024)
 
+# save data
+data.frame(year = names(SLP.win.anom), SLP.win.anom = SLP.win.anom) -> SLP.dat
 
+rownames(SLP.dat) = NULL
+
+write.csv(SLP.dat, "./Output/SLP.winter.anom.csv")

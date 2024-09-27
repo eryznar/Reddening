@@ -26,7 +26,7 @@ library(FactoMineR)
 ### FUNCTIONS --------------------------------------------------------------------------
 
 # Make function to streamline model fitting
-fit.models <- function(dat){
+fit.r0.SST.models <- function(dat){
   
   for(ii in 1:length(unique(dat$TS))){
     # filter data by TS
@@ -43,24 +43,24 @@ fit.models <- function(dat){
     for(kk in 1:length(knts)){
       
       # fit gams, record pval and AIC
-      gam.1 <- gamm(log.recruitment ~ s(unsmoothed, k = knts[kk]), 
+      gam.1 <- gam(log.recruitment ~ s(unsmoothed, k = knts[kk]), 
                     data= TS.dat, correlation = corAR1())
-      gam.2 <- gamm(log.recruitment ~ s(twoyear, k = knts[kk]), 
+      gam.2 <- gam(log.recruitment ~ s(twoyear, k = knts[kk]), 
                     data= TS.dat, correlation = corAR1())
-      gam.3 <- gamm(log.recruitment ~ s(threeyear, k = knts[kk]), 
+      gam.3 <- gam(log.recruitment ~ s(threeyear, k = knts[kk]), 
                     data= TS.dat, correlation = corAR1())
       
-      p.gam.1 <- signif(summary(gam.1$gam)$s.table[,4],2)
-      p.gam.2 <- signif(summary(gam.2$gam)$s.table[,4],2)
-      p.gam.3 <- signif(summary(gam.3$gam)$s.table[,4],2)
+      p.gam.1 <- signif(summary(gam.1)$s.table[,4],2)
+      p.gam.2 <- signif(summary(gam.2)$s.table[,4],2)
+      p.gam.3 <- signif(summary(gam.3)$s.table[,4],2)
       
-      p.lme.1 <- signif(summary(gam.1$lme)$tTable[2,5],2)
-      p.lme.2 <- signif(summary(gam.2$lme)$tTable[2,5],2)
-      p.lme.3 <- signif(summary(gam.3$lme)$tTable[2,5],2)
+      # p.lme.1 <- signif(summary(gam.1$lme)$tTable[2,5],2)
+      # p.lme.2 <- signif(summary(gam.2$lme)$tTable[2,5],2)
+      # p.lme.3 <- signif(summary(gam.3$lme)$tTable[2,5],2)
       
-      rsq.gam.1 <- signif(summary(gam.1$gam)$r.sq,2)
-      rsq.gam.2 <- signif(summary(gam.2$gam)$r.sq,2)
-      rsq.gam.3 <- signif(summary(gam.3$gam)$r.sq,2)
+      rsq.gam.1 <- signif(summary(gam.1)$r.sq,2)
+      rsq.gam.2 <- signif(summary(gam.2)$r.sq,2)
+      rsq.gam.3 <- signif(summary(gam.3)$r.sq,2)
       
       AIC.gam.1 <- AIC(gam.1)
       AIC.gam.2 <- AIC(gam.2)
@@ -72,7 +72,7 @@ fit.models <- function(dat){
                                                knots = knts[kk],
                                                #Model = c("gam.1", "gam.2", "gam.3"),
                                                sst = c("unsmoothed", "twoyear", "threeyear"),
-                                               p_lme = c(p.lme.1, p.lme.2, p.lme.3),
+                                               #p_lme = c(p.lme.1, p.lme.2, p.lme.3),
                                                p_gam = c(p.gam.1, p.gam.2, p.gam.3),
                                                AIC = c(AIC.gam.1, AIC.gam.2, AIC.gam.3),
                                                rsq = c(rsq.gam.1, rsq.gam.2, rsq.gam.3)))
@@ -82,36 +82,19 @@ fit.models <- function(dat){
   
   # Label best models by timeseries
   model.out %>%
-    group_by(TS) %>%
+    #group_by(TS) %>%
     mutate(sig = BH2(p_gam, alph = 0.05)$BHSig,
            p_gam = p_gam,
-           BEST = ifelse(AIC == min(AIC), "Y", "N"),
            padj = p.adjust(p_gam, method = "fdr")) %>%
+    group_by(TS) %>%
+    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N")) %>%
     filter(BEST == "Y") -> model.out
   
   return(model.out)
 }
 
 # Create function to calculate AR1 and CV/SD for 15 year windows for biology/SST timeseries
-sum.fun <- function(dat, data.type, wind){
-  
-  # if(data.type == "SSB"){
-  #   dat %>%
-  #     rename(Value = SSB) -> dat
-  # }else if(data.type == "Recruitment"){
-  #   dat %>%
-  #     rename(Value = Recruitment) -> dat
-  # }else if(data.type == "Catch"){
-  #   dat %>% 
-  #     rename(Value = Catch) -> dat
-  # }else if(data.type == "SST"){
-  #   dat %>%
-  #     rename(Value = mean.sst) %>%
-  #     mutate(TS = "sst") -> dat
-  # }else{
-  #   dat = dat
-  # }
-  # 
+calc.AR1.SD <- function(dat, data.type, wind){
   
   sum.out <- data.frame()
   
@@ -130,15 +113,14 @@ sum.fun <- function(dat, data.type, wind){
       mutate(TS = "sst") -> dat
   }else if(data.type == "SLP"){
     dat %>%
-      rename(Value = pc1_slp) %>%
+      rename(Value = SLP.win.anom) %>%
       mutate(TS = "slp") -> dat
   }else{
     dat = dat
   }
   
   
-  if(data.type != "Mature biomass"){
-    for(ii in 1:length(unique(dat$TS))){
+  for(ii in 1:length(unique(dat$TS))){
       
       dat %>%
         filter(TS == unique(dat$TS)[ii]) %>%
@@ -151,107 +133,31 @@ sum.fun <- function(dat, data.type, wind){
       ar1 <- sapply(rollapply(TS.dat$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
       
       # Calculate rolling window SD
-      sd <-  rollapply(TS.dat$Value, width = width, FUN = sd)
+      sd <-  rollapply(TS.dat$Value, width = width, FUN = sd, fill = NA)
       
       # Calculate rolling window mean
-      avg <- rollapply(TS.dat$Value, width = width, FUN = mean)
+      avg <- rollapply(TS.dat$Value, width = width, FUN = mean, fill = NA)
       
       # Calculate CV
       cv <- sd/(avg*100)
       
+      # Make data frame of sd-cv
+      data.frame(year = unique(TS.dat$Year), val = TS.dat$Value, sd = sd, avg = avg, cv = cv) -> win.dat
+      
       # Calculate windows
-      window <- seq(min(TS.dat$Year)+(width-1), max(TS.dat$Year), by = 1)
+      win.yr <- na.omit(win.dat) %>% pull(year)
+      
+      # Make data frame of ar1
+      data.frame(year = win.yr, ar1 = ar1) -> ar1.dat
+      
+      # Join
+      left_join(win.dat, ar1.dat) -> win.dat
       
       
       # Compile output
-      sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
-                                           ar1 = ar1,
-                                           sd = sd,
-                                           avg = avg,
-                                           cv = cv,
-                                           window = window,
-                                           width =wind))
+      sum.out <- rbind(sum.out, cbind(win.dat,TS = unique(dat$TS)[ii]))
       
     }
-  } else{
-    for(ii in 1:length(unique(dat$TS))){ # for crab
-   
-      dat %>%
-        filter(TS == unique(dat$TS)[ii], Type == "mmb") %>%
-        na.omit() -> TS.dat.mmb
-      
-      dat %>%
-        filter(TS == unique(dat$TS)[ii], Type == "fmb") %>%
-        na.omit() -> TS.dat.fmb
-      
-      
-      # Specify sliding window width
-      width = wind
-      
-      # Calculate AR1
-      
-      if(unique(dat$TS)[ii] != "Bristol Bay red king crab"){
-        
-        
-        # Calculate rolling window AR1
-        ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-        ar1.fmb <- sapply(rollapply(TS.dat.fmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-        
-        # Calculate rolling window SD
-        sd.mmb <-  rollapply(TS.dat.mmb$Value, width = width, FUN = sd)
-        sd.fmb <-  rollapply(TS.dat.fmb$Value, width = width, FUN = sd)
-        
-        # Calculate rolling window mean
-        avg.mmb <- rollapply(TS.dat.mmb$Value, width = width, FUN = mean)
-        avg.fmb <- rollapply(TS.dat.fmb$Value, width = width, FUN = mean)
-        
-        # Calculate CV
-        cv.mmb <- sd.mmb/(avg.mmb*100)
-        cv.fmb <- sd.fmb/(avg.fmb*100)
-        
-        # Calculate windows
-        window <- seq(min(TS.dat.mmb$Year)+(width-1), max(TS.dat.mmb$Year), by = 1)
-        
-        
-        
-      } else{
-        # Calculate rolling window AR1
-        ar1.mmb <- sapply(rollapply(TS.dat.mmb$Value, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
-        
-        # Calculate rolling window SD
-        sd.mmb <-  rollapply(TS.dat.mmb$Value, width = width, FUN = sd)
-        
-        # Calculate rolling window mean
-        avg.mmb <- rollapply(TS.dat.mmb$Value, width = width, FUN = mean)
-        
-        # Calculate CV
-        cv.mmb <- sd.mmb/(avg.mmb*100)
-        
-        # Calculate windows
-        window <- seq(min(TS.dat.mmb$Year)+(width-1), max(TS.dat.mmb$Year), by = 1)
-        
-        ar1.fmb <- sd.fmb <- avg.fmb <- cv.fmb <- NA
-        
-      }
-      
-      
-      # Compile output
-      sum.out <- rbind(sum.out, data.frame(TS = unique(dat$TS)[ii],
-                                           ar1.mmb = ar1.mmb, 
-                                           ar1.fmb = ar1.fmb, 
-                                           sd.mmb = sd.mmb, 
-                                           sd.fmb = sd.fmb,
-                                           avg.mmb = avg.mmb,
-                                           avg.fmb = avg.fmb,
-                                           cv.mmb = cv.mmb,
-                                           cv.fmb = cv.fmb,
-                                           window = window,
-                                           width = wind))
-      
-    }
-  }
-  
-  
   return(sum.out)
 }
 
@@ -293,7 +199,7 @@ trend.fun <- function(TS.dat, data.type, wind){
       
       # Calculate AR1 and CV/SD on detrended data
       wind %>%
-        purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
+        purrr::map(~calc.AR1.SD(detrend.dat.resid, data.type, .x)) -> out
       
       rbind(summary, as.data.frame(out)) -> summary
       
@@ -311,22 +217,22 @@ trend.fun <- function(TS.dat, data.type, wind){
     
     # Calculate AR1 and CV/SD on detrended data on different window lengths
     wind %>%
-    purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
+    purrr::map(~calc.AR1.SD(detrend.dat.resid, data.type, .x)) -> out
     
     summary <- out
   } else{
     dat <- TS.dat
     
     # Detrend data
-    detrend.dat <- loess(pc1_slp ~ year, dat, span = 0.25, degree = 1)
+    detrend.dat <- loess(SLP.win.anom ~ Year, dat, span = 0.25, degree = 1)
     
     # Extract residuals
-    detrend.dat.resid <- data.frame(TS = rep("SLP", length(unique(dat$year))),
-                                    Year = dat$year, pc1_slp = detrend.dat$residuals)
+    detrend.dat.resid <- data.frame(TS = rep("SLP", length(unique(dat$Year))),
+                                    Year = dat$Year, SLP.win.anom = SLP.win.anom)
     
     # Calculate AR1 and CV/SD on detrended data on different window lengths
     wind %>%
-      purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
+      purrr::map(~calc.AR1.SD(detrend.dat.resid, data.type, .x)) -> out
     
     summary <- out
   }
@@ -335,7 +241,6 @@ trend.fun <- function(TS.dat, data.type, wind){
   return(ar1.var.summary = summary)
   
 }
-
 
 # Make function to streamline model fitting
 assess.trend <- function(dat, data.type){
@@ -360,25 +265,18 @@ assess.trend <- function(dat, data.type){
     # fit gams, iterating through different knots
     for(kk in 1:length(knts)){
       
-      # fit gams, record pval and AIC
-      # gam.ar1 <- gam(ar1 ~ s(window, k = knts[kk]), 
-      #                data= TS.dat) # removed ", correlation = corAR1()"
-      
-      gam.ar1 <- gamm(ar1 ~ s(window, k = knts[kk]), 
+      gam.ar1 <- gam(ar1 ~ s(year, k = knts[kk]), 
                     data= TS.dat, correlation = corAR1())
       
-      # gam.var <- gam(var.val ~ s(window, k = knts[kk]), 
-      #                data= TS.dat) # removed ", correlation = corAR1()"
-      
-      gam.var <- gamm(var.val ~ s(window, k = knts[kk]), 
+      gam.var <- gam(var.val ~ s(year, k = knts[kk]), 
                       data= TS.dat, correlation = corAR1())
       
       
-      p.gam.ar1 <- summary(gam.ar1$gam)$s.table[,4]
-      p.gam.var <- summary(gam.var$gam)$s.table[,4]
+      p.gam.ar1 <- summary(gam.ar1)$s.table[,4]
+      p.gam.var <- summary(gam.var)$s.table[,4]
       
-      r.gam.ar1 <- summary(gam.ar1$gam)$r.sq
-      r.gam.var <- summary(gam.var$gam)$r.sq
+      r.gam.ar1 <- summary(gam.ar1)$r.sq
+      r.gam.var <- summary(gam.var)$r.sq
       
       # p.lme.ar1 <- signif(summary(gam.ar1$lme)$tTable[2,5],2)
       # p.lme.var <- signif(summary(gam.var$lme)$tTable[2,5],2)
@@ -400,11 +298,11 @@ assess.trend <- function(dat, data.type){
  
   # Label best models by timeseries
   model.out %>%
-    group_by(TS, response) %>%
-    mutate(sig = BH2(p_gam, alph = 0.05)$BHSig,
+    mutate(sig = BH2(p_gam, alph = 0.05)$BHSig, # adjust alpha across ALL hypotheses test
            p_gam = p_gam,
-           BEST = ifelse(AIC == min(AIC), "Y", "N"),
            padj = p.adjust(p_gam, method = "fdr")) %>%
+    group_by(TS, response) %>%
+    mutate(BEST = ifelse(AIC == min(AIC), "Y", "N")) %>% # designate best models
     filter(BEST == "Y") -> model.out
   
   return(model.out)
@@ -422,7 +320,8 @@ model.predict <- function(model.dat, TS.dat, data.type){
       
       TS.dat %>%
         filter(TS == unique(model.dat$TS)[ii]) %>%
-        dplyr::select(TS, ar1, cv, sd, window) -> TS.dat2
+        dplyr::select(TS, ar1, cv, sd, year) %>%
+        na.omit() -> TS.dat2
       
       
       if(unique(model.dat$response)[jj] == "var.val" & data.type == "Recruitment"){
@@ -433,8 +332,8 @@ model.predict <- function(model.dat, TS.dat, data.type){
         value = TS.dat2$ar1
       }
       
-      gam.best <- gam(value~ s(window, k = model.dat2$knots), 
-                      data= TS.dat2)
+      gam.best <- gam(value~ s(year, k = model.dat2$knots), 
+                      data= TS.dat2, correlation = corAR1())
       
       # Predict
       pred.vals <- rbind(pred.vals, data.frame(TS = model.dat2$TS,
@@ -446,7 +345,7 @@ model.predict <- function(model.dat, TS.dat, data.type){
                                                rsq = model.dat2$rsq_gam,
                                                p_gam = model.dat2$p_gam,
                                                sig = model.dat2$sig,
-                                               window = TS.dat2$window))
+                                               year= TS.dat2$year))
       
     } # close response loop
   } # close timeseries loop
