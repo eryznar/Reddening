@@ -128,6 +128,10 @@ sum.fun <- function(dat, data.type, wind){
     dat %>%
       rename(Value = mean.sst) %>%
       mutate(TS = "sst") -> dat
+  }else if(data.type == "SLP"){
+    dat %>%
+      rename(Value = pc1_slp) %>%
+      mutate(TS = "slp") -> dat
   }else{
     dat = dat
   }
@@ -294,7 +298,7 @@ trend.fun <- function(TS.dat, data.type, wind){
       rbind(summary, as.data.frame(out)) -> summary
       
     }
-  } else{
+  } else if(data.type == "SST"){
     
     dat <- TS.dat
     
@@ -308,6 +312,21 @@ trend.fun <- function(TS.dat, data.type, wind){
     # Calculate AR1 and CV/SD on detrended data on different window lengths
     wind %>%
     purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
+    
+    summary <- out
+  } else{
+    dat <- TS.dat
+    
+    # Detrend data
+    detrend.dat <- loess(pc1_slp ~ year, dat, span = 0.25, degree = 1)
+    
+    # Extract residuals
+    detrend.dat.resid <- data.frame(TS = rep("SLP", length(unique(dat$year))),
+                                    Year = dat$year, pc1_slp = detrend.dat$residuals)
+    
+    # Calculate AR1 and CV/SD on detrended data on different window lengths
+    wind %>%
+      purrr::map(~sum.fun(detrend.dat.resid, data.type, .x)) -> out
     
     summary <- out
   }
@@ -447,48 +466,3 @@ BH2 <- function(p, alpha = 0.05){
   )
 }
 
-# 
-# BHA <- function(p){
-#   u <- sort(p, decreasing = TRUE)
-#   mult <- length(p)/(length(p):1)
-#   pNew <- cummin(u*mult)[order(order(-p))]
-#   return(pNew)
-# }
-# 
-# control.FDR <- function(p, FDR = 0.05, arr = c("p.orig", "none")){
-#   BHP <- BH2(p, FDR)
-#   p.adj <- BHA(p)
-#   p.orig <- p
-#   message(paste0("For a ", FDR
-#                  , "-level false discovery rate, Threshold p-value = ", BHP$pCrit))
-#   out <- data.frame( p.orig
-#                      , significant_after_FDR = BHP$BHSig
-#                      , p.adj)
-#   if(arr == "none"){
-#     return(out)
-#   } 
-#   else {return(out[order(get(arr)),])}
-# }
-# 
-# BHAdjust(Hedenfalk$x, FDR = 0.05, arr = "p.orig") -> tt
-
-# 
-# pvalues<-c(0.01,0.001, 0.05, 0.20, 0.15, 0.15)
-# ranks<-rank(pvalues, ties.method = "last")
-# p_m_over_k<-pvalues*length(pvalues)/ranks
-# 
-# for (r in length(pvalues):1) {
-#   print(p_m_over_k[ranks>=r])
-# }
-# 
-# pvalues_adj<-c()
-# 
-# for (i in 1:length(pvalues)) {
-#   
-#   # find the rank
-#   tmp_rank<-ranks[2]
-#   
-#   # get all the p_m_over_k that are greater or equal to this rank
-#   # and get the min value
-#   pvalues_adj<-c(pvalues_adj, min(1,min(p_m_over_k[ranks>=tmp_rank])))
-# }
