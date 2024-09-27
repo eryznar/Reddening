@@ -1,175 +1,136 @@
-#ERA 5 SLP processing
+#NCEP/NCAR SLP processing
 
 ### LOAD PACKAGES -------------------------------------------------------------------------------------------------------
 
 source("./Scripts/load.libs.functions.R")
+source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
 
-# 1) Navigate here (will need to login): https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels-monthly-means?tab=overview
-# 2) Click on "Download data" tab
-# 3) Click on the product type you’d like. This script processes 
+# first, load data
+nc.slp <- nc_open("Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc")
 
-### SET STUDY REGIONS ------------------------------------------------------------------------------------------------------
-# EBS:
-ebs.x <- c(183, 183, 203, 203, 191)
-ebs.x <- ifelse(ebs.x > 180, ebs.x-360, ebs.x)
+# process SLP data - first, extract dates
+raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
+h <- raw/(24*60*60)
+d <- dates(h, origin = c(1,1,1970))
 
-ebs.y <- c(53, 65, 65, 57.5, 53)
+# extract coordinates
+x <- ncvar_get(nc.slp, "longitude")
+y <- ncvar_get(nc.slp, "latitude")
 
-# GOA: 
-goa.x <- c(201, 201, 205, 208, 225, 231, 201)
-goa.x <- ifelse(goa.x > 180, goa.x-360, goa.x)
-goa.y <- c(55, 56.5, 59, 61, 61, 55, 55)
+# extract data
+SLP <- ncvar_get(nc.slp, "slp", verbose = F)
+
+# Change data to a matrix
+SLP <- aperm(SLP, 3:1)  
+
+# Change to matrix
+SLP <- matrix(SLP, nrow=dim(SLP)[1], ncol=prod(dim(SLP)[2:3]))  
+
+# Get lat/long vectors and add names to SLP matrix
+lat <- rep(y, length(x))   
+lon <- rep(x, each = length(y))   
+dimnames(SLP) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
+
+# Filter to area of interest
+poly.x <- c(191, 191, 208, 208, 191) 
+poly.y <- c(44, 55, 55, 44, 44)
+
+xp <- cbind(poly.x, poly.y)
+loc=cbind(lon, lat)
+check <- in.poly(loc, xp=xp)
+
+SLP[,!check] <- NA
+
+# plot to check
+z <- colMeans(SLP*100)
+z <- t(matrix(z, length(y)))
+image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(35,66), xlim=c(170,220))
+contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
+map('world2Hires',fill=F, xlim=c(130,250), ylim=c(20,66),add=T, lwd=1)
+# looks good
+
+SLP %>%
+  as.data.frame(.) %>%
+  mutate(date = rownames(.)) %>%
+  #mutate(date = mdy(rownames(.))) %>%
+  pivot_longer(!date, names_to = "coords", values_to = "SLP") %>%
+  # mutate(year = year(date),
+  #        month = month(date)) %>%
+  # mutate(year = case_when((year > 2024) ~ year - 100,
+  #                        TRUE ~ year)) %>%
+  na.omit() %>%
+  mutate(SLP = SLP * 100) %>%
+  pivot_wider(., names_from = coords, values_from = SLP) %>%
+  as.data.frame(.) -> clean.SLP
+
+rownames(clean.SLP) = clean.SLP$date
+
+clean.SLP <- clean.SLP[,-1]
+
+# now we need to get monthly means!
+m.y <- paste(years(d), as.numeric(months(d)), sep="-") # make a month-year factor from the dates
+
+f <- function(x) tapply(x, m.y, mean)
+SLP.m <- as.data.frame(apply(clean.SLP, 2, f))
+
+vv <- matrix(unlist(strsplit(as.character(rownames(SLP.m)), "-")),ncol=2, byrow = T)
+
+SLP.m$year <- as.numeric(vv[,1])
+SLP.m$month <- as.numeric(vv[,2])
+
+SLP.m <- SLP.m %>%
+  arrange(month) %>%
+  arrange(year)
+
+# remove seasonal signal
+m <- SLP.m$month
+yr <- SLP.m$year
+
+f <- function(x) tapply(x, m, mean)
+mu <- apply(SLP.m, 2, f)	# Compute monthly means for each cell
+
+# process as for SST
+mu <- mu[rep(1:12, floor(length(d)/12)),] 
+xtra <- 12*((length(d)/12)-floor(length(d)/12))
+mu <- rbind(mu, mu[1:xtra,])
+
+SLP.anom <- SLP.m[,1:35] - mu   # Compute matrix of anomalies - dropping year and month!
+
+# get average anomaly across the area
+SLP.anom <- rowMeans(SLP.anom)
+
+# fit to winter means
+win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
+SLP.win.anom <- SLP.anom[m %in% c(11,12,1:3)]
+win.yr <- win.yr[m %in% c(11,12,1:3)]
+SLP.win.anom <- tapply(SLP.win.anom, win.yr, mean)
+
+#SLP.win.anom <- SLP.win.anom[2:72]
+plot(1948:2024, SLP.win.anom, type="l")
+
+# and calculate standard deviation over 11-year rolling windows
+SLP.win.sd <- rollapply(SLP.win.anom, 11, sd, fill=NA)
+plot(1948:2024, SLP.win.sd, type="l")
+
+# now fit a non-parametric regression
+
+# first, make a data frame
+plot.dat <- data.frame(year= 1948:2024, sd=SLP.win.sd) %>%
+  na.omit(.)
+
+# fit the model
+mod <- gam(sd ~ s(year), data=plot.dat)
+pred <- predict(mod, se=T, newdata = plot.dat)
+plot.dat$mean <- pred$fit                    
+
+b.plot <- ggplot(plot.dat, aes(year, sd)) +
+  geom_line(size=0.2) +
+  geom_line(aes(year, mean), color="salmon", size=0.4) + # geom_ribbon(aes(ymin=LCI, ymax=UCI), alpha=0.2) +
+  theme(axis.title.x = element_blank(), plot.title = element_text(size=8), axis.text = element_text(size=7),
+        axis.title.y = element_text(size=7)) +
+  ylab("Standard deviation (pa)") +
+  ggtitle("Aleutian Low variability") +
+  geom_vline(xintercept = 1988.5, lty=2, size=0.3) +
+  xlim(1950,2024)
 
 
-### PROCESS SST DATA ------------------------------------------------------------------------------------------------------
-  nc <- nc_open("./Data/ERA5_SLP_1960-2024.nc")
-  
-  slp <- ncvar_get(nc, "msl", verbose = F) # keep as Kelvin
-  
-  slp.1 <- slp[,,1,]
-  slp.5 <- slp[,,2,]
-  
-  dim(slp.1) #161 lon, 201 lat, 776 months
-  dim(slp.5) #161 lon, 201 lat, 776 months
-  
-  #Process
-  h <- (ncvar_get(nc, "time")/24)
-  d <- dates(h, origin = c(1, 1, 1900))  
-  m <- months(d)
-  yr <- chron::years(d)
-  
-  x <- ncvar_get(nc, "longitude")
-  y <- ncvar_get(nc, "latitude")
-  
-  # Keep track of corresponding latitudes and longitudes of each column:
-  lat <- rep(y, length(x))
-  lon <- rep(x, each = length(y))
-
-  # Create slp data matrix
-  slp.1 <- aperm(slp.1, 3:1)
-  slp.5 <- aperm(slp.5, 3:1)
-  
-  mat_slp.1 <- t(matrix(slp.1, nrow = dim(slp.1)[1], ncol = prod(dim(slp.1)[2:3])))
-  mat_slp.5 <- t(matrix(slp.5, nrow = dim(slp.5)[1], ncol = prod(dim(slp.5)[2:3])))
-  
-  # Convert to data frame
-  data.frame(lon = lon, lat = lat,  mat_slp.1) %>%
-    pivot_longer(cols = c(3:ncol(.)), names_to = "month", values_to = "slp") %>%
-    mutate(month = rep(m, nrow(.)/length(m)), year = rep(yr, nrow(.)/length(yr)), slp = slp) %>%
-    na.omit()-> slp_latlon_1960.2024 # Jan-June
-  
-  data.frame(lon = lon, lat = lat,  mat_slp.5) %>%
-    pivot_longer(cols = c(3:ncol(.)), names_to = "month", values_to = "slp") %>%
-    mutate(month = rep(m, nrow(.)/length(m)), year = rep(yr, nrow(.)/length(yr)), slp = slp) %>%
-    na.omit()-> slp_latlon_2024 # Jul-Aug
-  
-  
-  # # Bind dataframes, calculate mean by month
-  # rbind(slp_latlon_1960.2024, slp_latlon_2024) %>%
-  #   group_by(year, month, lon, lat) %>%
-  #   reframe(mean.slp = mean(slp)) -> slp_1960.2024
-  
-  # Compute monthly means for each times series (cell)
-  rbind(slp_latlon_1960.2024, slp_latlon_2024) %>%
-    group_by(month, lon, lat) %>%
-    reframe(mu = mean(slp)) -> month.means
-  
-  # Join back with year data
-  right_join(rbind(slp_latlon_1960.2024, slp_latlon_2024), month.means) %>% 
-    na.omit() -> slp.means
-  
-  # Calculate anomalies
-  slp.means %>%
-    mutate(slp.anom = slp - mu) -> slp.means
-  
-  # Create EBS and GOA polygons, filter data into different regions
-  #EBS
-  xp <- cbind(ebs.x, ebs.y)
-  loc=cbind(slp.means$lon, slp.means$lat)
-  check <- in.poly(loc, xp=xp)
-  
-  cbind(check, slp.means) %>%
-    filter(check == "TRUE", month %in% c("Jan", "Feb", "Mar", "Apr")) %>%
-    dplyr::select(!check)  -> winter.slp.EBS
-    # group_by(year, month) %>%
-    # reframe(mean.slp = mean(mean.slp)) 
-  
-  # Save winter slp
-  write.csv(winter.slp.EBS, "./Output/winter.slp.EBS.csv")
-  
-  # Get weights
-  winter.slp.EBS %>%
-    dplyr::select(lat) %>%
-    pull() -> EBS.lat
-  
-  EBS.weights <- sqrt(cos(EBS.lat*pi/180))
-  
-  write.csv(EBS.weights, "./Output/EBS.weights.csv")
-  
-  #GOA
-  xp <- cbind(goa.x, goa.y)
-  loc=cbind(slp.means$lon, slp.means$lat)
-  check <- in.poly(loc, xp=xp)
-  
-  cbind(check, slp.means) %>%
-    filter(check == "TRUE", month %in% c("Jan", "Feb", "Mar", "Apr")) %>%
-    dplyr::select(!check)  -> winter.slp.GOA
-  # group_by(year, month) %>%
-  # reframe(mean.slp = mean(mean.slp)) 
-  
-  # Save winter slp
-  write.csv(winter.slp.GOA, "./Output/winter.slp.GOA.csv")
-  
-  # Get weights
-  winter.slp.GOA %>%
-    dplyr::select(lat) %>%
-    pull() -> GOA.lat
-  
-  GOA.weights <- sqrt(cos(GOA.lat*pi/180))
-  
-  write.csv(GOA.weights, "./Output/GOA.weights.csv")
-  
-  
-# CALCULATE PC1 AND RUN EOF ---------------------------------------------------------------------------
-  # EBS ----
-  # load slp and cell weights
-  ebs.slp <- read.csv("./Output/winter.slp.EBS.csv", row.names = 1)
-  
-  weights <- read.csv("./Output/EBS.weights.csv", row.names = 1)
-  
-  # Make data wider for pca
-  ebs.slp %>%
-    mutate(coords = paste0("N", lat, "W", lon*-1),
-           date = paste0(month, "-", year)) %>%
-    dplyr::select("slp.anom", "coords", "date") %>%
-    pivot_wider(values_from = slp.anom, names_from = c("coords")) %>%
-    as.data.frame(.) -> ebs.slp.wide
-  
-  # Extract year and make date as rownames
-  yr <- str_split(ebs.slp.wide$date, "-", simplify = T)[,2]
-  
-  rownames(ebs.slp.wide) <- ebs.slp.wide$date
-  
-  ebs.slp.wide %>% dplyr::select(!date) -> ebs.slp.wide
-  
-  # Calculate weights
-  temp1 <- str_split(colnames(ebs.slp.wide), "W", simplify = T)[,1]
-  X.lats <- as.numeric(str_split(temp1, "N", simplify = T)[,2])
-  
-  ebs.weights <- sqrt(cos(X.lats*pi/180))
-    
-  # Run PCA
-  pca <- FactoMineR::svd.triplet(cov(ebs.slp.wide), col.w=ebs.weights) #weighting the columns
-  
-  pc1_slp.ebs <- as.matrix(ebs.slp.wide) %*% pca$U[,1]
-  
-  # and scale!
-  pc1_slp.ebs <- as.vector(scale(pc1_slp.ebs))
-  
-  
-  # and annual FMA means for this value
-  pc1_slp.ebs <- tapply(pc1_slp.ebs, yr, mean)
-  
-  # plot to check
-  plot(1960:2024, pc1_slp, type="l") # looks right re. 1976/77
-  
