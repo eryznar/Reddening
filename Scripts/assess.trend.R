@@ -3,15 +3,14 @@
 #Purpose is to assess the following questions: 
 # 1) Has the climate gotten redder?
 # 2) Is climate related to the biology (recruitment)?
-# 2) Has the biology gotten redder?
+# 3) Has the biology gotten redder?
 # To do so, this script will test for trends in sst AR1 and SD and recruitment AR1 and CV
 # by fitting GAMs on detrended data
 
 ### LOAD PACKAGES/DATA -------------------------------------------------------------------------------------------------------
 
+source("./Scripts/load.libs.functions.R")
 source("./Scripts/ts.processing.R")
-
-source("./Scripts/functions.R")
 
 ### Test question 1: GAMs to predict sst AR1 and SD with time -----------------------------------------------------------
   # Detrend data
@@ -67,7 +66,7 @@ source("./Scripts/functions.R")
   ggplot()+
     geom_ribbon(plot.dat.sst2, 
                 mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat.sst2, mapping=aes(x = window, y = observed), color = "black")+
+    geom_point(plot.dat.sst2, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat.sst2, mapping = aes(x = window, y = pred, color = region), size = 1.25)+
     scale_color_manual(values = c("#6A6DB7", "#A34242"))+
     scale_fill_manual(values = c("#6A6DB7", "#A34242"))+
@@ -108,7 +107,7 @@ source("./Scripts/functions.R")
   ggplot()+
     geom_ribbon(plot.dat.sst2, 
                 mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat.sst2, mapping=aes(x = window, y = observed), color = "black")+
+    geom_point(plot.dat.sst2, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat.sst2, mapping = aes(x = window, y = pred, color = region), size = 1.25)+
     scale_color_manual(values = c("#6A6DB7", "#A34242"))+
     scale_fill_manual(values = c("#6A6DB7", "#A34242"))+
@@ -302,7 +301,7 @@ source("./Scripts/functions.R")
   
   
   
-### Test question 3: GAMs to predict BSAI and GOA AR1 and CV with time ----------------------------------------------------
+### Test question 3: GAMs to predict BSAI and GOA recruitment AR1 and CV with time ----------------------------------------------------
   # EBS ----
   # Detrend r0 data
   sum.out <- data.frame()
@@ -344,7 +343,7 @@ source("./Scripts/functions.R")
   ggplot()+
     geom_ribbon(plot.dat, 
                 mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
+    geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#6A6DB7", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
                ncol = 4)+
@@ -383,7 +382,7 @@ source("./Scripts/functions.R")
   ggplot()+
     geom_ribbon(plot.dat, 
                 mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
+    geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#6A6DB7", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
                ncol = 4)+
@@ -440,7 +439,7 @@ source("./Scripts/functions.R")
   ggplot()+
     geom_ribbon(plot.dat, 
                 mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
+    geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#A34242", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
                ncol = 4)+
@@ -478,7 +477,7 @@ source("./Scripts/functions.R")
   ggplot()+
     geom_ribbon(plot.dat, 
                 mapping = aes(x = window, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-    #geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
+    geom_point(plot.dat, mapping=aes(x = window, y = observed), color = "black")+
     geom_line(plot.dat, mapping = aes(x = window, y = pred), color =  "#A34242", size = 1.25)+
     facet_wrap(~TS, scales = "free_y", labeller = labeller(TS = labs),
                ncol = 4)+
@@ -723,4 +722,54 @@ source("./Scripts/functions.R")
  
  ggsave(plot = sst.SD.windowlength, "./Figures/sst.SD.windowlength.png", width = 10, height = 11, units = "in")
  
+ 
+### Test question 6: Is AL variability related to SST reddening? ----------------------------------------------------
+ # Read in slp data
+ slp <- read.csv("./Output/winter_slp.PC1.csv") %>%
+   dplyr::select(!X)
+ 
+ # Detrend and calculate SD and AR1 on rolling windows
+ trend.fun(slp, "SLP", 15) -> slp.out
+ 
+ slp.roll <- rollapply(slp$pc1_slp, 15, sd, na.rm = T, fill = NA) #2-year
+ data.frame(slp.roll = slp.roll, year = slp$year) -> tt
+ 
+ ar1var.slp <- as.data.frame(slp.out)
+ 
+ # Plot AR1
+ ggplot(ar1var.slp,  mapping=aes(x = window, y = ar1))+
+   geom_point()+
+   geom_line()+
+   theme_bw()+
+   ggtitle("Detrended SLP-EOF1 AR1")+
+   #scale_x_continuous(limits = c(1960, 2024), breaks = seq(1960, 2024, by = 10))+
+   ylab("AR1")+
+   xlab("Window")+
+   theme(legend.position = "none",
+         axis.text = element_text(size = 14),
+         axis.title = element_text(size = 16),
+         strip.text = element_text(size = 16),
+         legend.text = element_text(size = 14),
+         title = element_text(size = 16)) -> slp.ar1.window.plot
+ 
+ ggsave(plot = slp.ar1.window.plot, "./Figures/slp.ar1.window.plot.png", width = 11, height = 8.5, units = "in")
+ 
+ 
+ # Plot AR1
+ ggplot(ar1var.slp,  mapping=aes(x = window, y = sd))+
+   geom_point()+
+   geom_line()+
+   theme_bw()+
+   ggtitle("Detrended SLP-EOF1 SD")+
+   #scale_x_continuous(limits = c(1960, 2024), breaks = seq(1960, 2024, by = 10))+
+   ylab("SD")+
+   xlab("Window")+
+   theme(legend.position = "none",
+         axis.text = element_text(size = 14),
+         axis.title = element_text(size = 16),
+         strip.text = element_text(size = 16),
+         legend.text = element_text(size = 14),
+         title = element_text(size = 16)) -> slp.sd.window.plot
+ 
+ ggsave(plot = slp.sd.window.plot, "./Figures/slp.sd.window.plot.png", width = 11, height = 8.5, units = "in")
  
