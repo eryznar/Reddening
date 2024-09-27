@@ -3,6 +3,8 @@
 ### LOAD PACKAGES -------------------------------------------------------------------------------------------------------
 
 source("./Scripts/load.libs.functions.R")
+source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
+
 
 # 1) Navigate here (will need to login): https://cds.climate.copernicus.eu/cdsapp#!/dataset/reanalysis-era5-single-levels-monthly-means?tab=overview
 # 2) Click on "Download data" tab
@@ -79,21 +81,113 @@ source("./Scripts/load.libs.functions.R")
     
     cbind(check, sst_1960.2024) %>%
       filter(check == "TRUE") %>%
-      dplyr::select(!check)  %>%
+      dplyr::select(!check)  -> sst_EBS
+    
+    # Plot to check
+    sst_EBS %>%
+      group_by(lat, lon) %>%
+      reframe(mean.sst = mean(mean.sst)) %>%
+      st_as_sf(coords = c(x = "lon", y = "lat"), crs = crs.latlon) %>%
+      st_transform(., map.crs) -> spat.sst.ebs
+    
+    cbind(st_coordinates(spat.sst.ebs), sst = spat.sst.ebs$mean.sst) -> pp
+    
+    layers <- akgfmaps::get_base_layers(select.region = "ebs",
+                                        set.crs = map.crs)
+    
+    panel_extent <- data.frame(y = c(50, 70),
+                               x = c(-180, -158)) %>%
+      akgfmaps::transform_data_frame_crs(out.crs = map.crs)
+    
+    ggplot()+
+      geom_point(pp, mapping = aes(X, Y, color = sst))+
+      ggplot2::geom_sf(data = layers$akland,
+                       fill = "grey70",
+                       color = "black")+
+      ggplot2::coord_sf(xlim = panel_extent$x, 
+                        ylim = panel_extent$y)
+    
+    # Calculate mean by month
+    sst_EBS %>%
       group_by(year, month) %>%
       reframe(mean.sst = mean(mean.sst)) -> sst_EBS
   
-    #GOA
+    #GOA ----
     xp <- cbind(goa.x, goa.y)
     loc=cbind(sst_1960.2024$lon, sst_1960.2024$lat)
     check <- in.poly(loc, xp=xp)
     
     cbind(check, sst_1960.2024) %>%
       filter(check == "TRUE")  %>%
-      dplyr::select(!check) %>%
-      group_by(year, month) %>%
-      reframe(mean.sst = mean(mean.sst)) -> sst_GOA
+      dplyr::select(!check) -> sst_GOA
+    
+    
+    # Plot to check
+    sst_GOA %>%
+      group_by(lat, lon) %>%
+      reframe(mean.sst = mean(mean.sst)) %>%
+      st_as_sf(coords = c(x = "lon", y = "lat"), crs = crs.latlon) %>%
+      st_transform(., map.crs) -> spat.sst.goa
+    
+    cbind(st_coordinates(spat.sst.goa), sst = spat.sst.goa$mean.sst) -> pp
+    
+    layers <- akgfmaps::get_base_layers(select.region = "ebs",
+                                        set.crs = map.crs)
+    
+    panel_extent <- data.frame(y = c(38, 70),
+                               x = c(-130, 125)) %>%
+      akgfmaps::transform_data_frame_crs(out.crs = map.crs)
+    
+    ggplot()+
+      geom_point(pp, mapping = aes(X, Y, color = sst))+
+      ggplot2::geom_sf(data = layers$akland,
+                       fill = "grey70",
+                       color = "black")+
+      ggplot2::coord_sf(xlim = panel_extent$x, 
+                        ylim = panel_extent$y)
   
+    # Calculate mean by month
+    sst_GOA %>%
+    group_by(year, month) %>%
+      reframe(mean.sst = mean(mean.sst)) -> sst_GOA
+    
+    # Processing for non-stationary dynamics
+    # now get monthly means weighted by area, using an arithmetic mean
+    weight <- sqrt(cos(sst_GOA$lat*pi/180))
+    
+    sst_GOA %>%
+      mutate(sst_mu = apply(mean.sst, 1, function(x) weighted.mean(x, weight, na.rm = T)))
+    
+    SST.mu <- apply(SST, 1, function(x) weighted.mean(x,weight, na.rm=T))
+    
+    # now separate out winter
+    m <- months(d)
+    yr <- as.numeric(as.character(years(d)))
+    win <- c("Nov", "Dec", "Jan", "Feb", "Mar")
+    
+    mean <- data.frame(year=yr, month=m, mean=SST.mu)
+    mean$win.yr <- mean$year
+    mean$win.yr[mean$month %in% c("Nov", "Dec")] <- mean$win.yr[mean$month %in% c("Nov", "Dec")] + 1
+    
+    win.mean <- mean[mean$month %in% win,]
+    
+    SST.win <- tapply(win.mean$mean, win.mean$win.yr, mean)
+    
+    salm.cov$SST.win <- SST.win[match(salm.cov$year,(names(SST.win)))]
+    
+    
+    
+    
+    
+    sst_GOA %>%
+      filter(month %in% c("Nov", "Dec", "Jan", "Feb", "Mar")) %>%
+      mutate(year = case_when((month %in% c("Nov", "Dec")) ~ as.numeric(as.character(year)) + 1,
+                              TRUE ~ as.numeric(as.character(year)))) %>% # center winter months on year of Nov-Dec
+      group_by(year) %>%
+      reframe(mean.sst = mean(mean.sst) - 273.15) -> winter.GOA.sst
+    
+    winter.GOA.sst.3 <- rollapply(winter.GOA.sst$mean.sst, 3, mean, na.rm = T, fill = NA) #3-year
+    cbind(winter.GOA.sst$year, winter.GOA.sst.3) -> winter.GOA.sst
   
   
   write.csv(sst_1960.2024, "./Data/sst_1960.2024_ALL.csv")
