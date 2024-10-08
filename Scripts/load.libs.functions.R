@@ -22,6 +22,7 @@ library(pracma)
 library(sf)
 library(FactoMineR)
 library(cowplot)
+library(ggpubr)
 
 
 ### FUNCTIONS --------------------------------------------------------------------------
@@ -190,11 +191,11 @@ trend.fun <- function(TS.dat, data.type, wind){
         na.omit()
       
       # Detrend data
-      detrend.dat <- loess(log.recruitment ~ Year, dat, span = 0.25, degree = 1)
+      detrend.dat <- loess(log.recruitment ~ Lagged.Year, dat, span = 0.25, degree = 1)
       
       # Extract residuals
-      detrend.dat.resid <- data.frame(TS = rep(names[ii], length(unique(dat$Year))),
-                                      Year = dat$Year, log.recruitment = detrend.dat$residuals)
+      detrend.dat.resid <- data.frame(TS = rep(names[ii], length(unique(dat$Lagged.Year))),
+                                      Year = dat$Lagged.Year, log.recruitment = detrend.dat$residuals)
       
      
       

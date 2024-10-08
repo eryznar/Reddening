@@ -344,7 +344,7 @@ width = 15 # rolling window length
       # Detrend r0 data
       sum.out <- data.frame()
       
-      trend.fun(bsai.r0, "Recruitment", 15) -> ebs.r0.out
+      trend.fun(bsai.r0, "Recruitment", width) -> ebs.r0.out
       
       ar1var.EBS.r0 <- as.data.frame(ebs.r0.out)
       
@@ -439,7 +439,7 @@ width = 15 # rolling window length
       # Detrend data
       sum.out <- data.frame()
       
-      trend.fun(goa.r0, "Recruitment", 15) -> goa.r0.out
+      trend.fun(goa.r0, "Recruitment", width) -> goa.r0.out
       
       ar1var.goa.r0 <- as.data.frame(goa.r0.out)
       
