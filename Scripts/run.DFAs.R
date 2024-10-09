@@ -764,7 +764,7 @@ ggplot()+
   geom_line(plot.dat.goa, mapping = aes(x = sst, y = pred), size = 1.25, color = "#A34242")+
   ylab("Recruitment trend (DFA)")+
   xlab("SST (two year smooth)")+
-  ggtitle("Gulf of Alaska (p<0.00075*, R2 = 0.32)")+
+  ggtitle("Gulf of Alaska (p<0.001*, R2 = 0.32)")+
   theme_bw()+
   theme(axis.text = element_text(size = 10),
         axis.title = element_text(size = 12),
