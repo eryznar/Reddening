@@ -1,4 +1,4 @@
-# EBS RAW RECRUITMENT ----
+# DFA for EBS RAW RECRUITMENT ----
 value <- "val"
 years = 1987:2016
 data <- ar1var.EBS.r0
@@ -130,7 +130,7 @@ ggpubr::ggarrange(recruit.loadings.plot, recruit.trend.plot, nrow = 2, #labels =
 
 ggsave(paste0("./Figures/", region, ".", value, ".DFAplot.png"), width = 8.5, height = 11, units = "in")
 
-# GOA RAW RECRUITMENT ----
+# DFA for GOA RAW RECRUITMENT ----
 value <- "val"
 years = 1987:2016
 data <- ar1var.goa.r0
@@ -262,7 +262,7 @@ ggpubr::ggarrange(recruit.loadings.plot, recruit.trend.plot, nrow = 2, #labels =
 
 ggsave(paste0("./Figures/", region, ".", value, ".DFAplot.png"), width = 8.5, height = 11, units = "in")
 
-# EBS R0 AR1 ----
+# DFA for EBS R0 AR1 ----
 value <- "ar1"
 years = 1987:2016
 data <- ar1var.EBS.r0
@@ -393,7 +393,7 @@ ggpubr::ggarrange(recruit.loadings.plot, recruit.trend.plot, nrow = 2, #labels =
 ggsave(paste0("./Figures/", region, ".", value, ".DFAplot.png"), width = 8.5, height = 11, units = "in")
        
 
-# GOA R0 AR1 ----
+# DFA for GOA R0 AR1 ----
 value <- "ar1"
 years = 1987:2016
 data <- ar1var.goa.r0
