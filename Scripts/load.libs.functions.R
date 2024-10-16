@@ -214,13 +214,13 @@ trend.fun <- function(TS.dat, data.type, wind){
     detrend.dat <- loess(mean.sst ~ Year, dat, span = 0.25, degree = 1)
     
     # Extract residuals
-    detrend.dat.resid <- data.frame(TS = rep("SST", length(unique(dat$Year))),
-                                    Year = dat$Year, mean.sst = dat$mean.sst)
+    # detrend.dat.resid <- data.frame(TS = rep("SST", length(unique(dat$Year))),
+    #                                 Year = dat$Year, mean.sst = dat$mean.sst)
     
     # # Extract residuals
-    # detrend.dat.resid <- data.frame(TS = rep("SST", length(unique(dat$Year))),
-    #                                 Year = dat$Year, mean.sst = detrend.dat$residuals)
-    
+    detrend.dat.resid <- data.frame(TS = rep("SST", length(unique(dat$Year))),
+                                    Year = dat$Year, mean.sst = detrend.dat$residuals)
+
     # Calculate AR1 and CV/SD on detrended data on different window lengths
     wind %>%
     purrr::map(~calc.AR1.SD(detrend.dat.resid, data.type, .x)) -> out
@@ -235,6 +235,10 @@ trend.fun <- function(TS.dat, data.type, wind){
     # Extract residuals
     detrend.dat.resid <- data.frame(TS = rep("SLP", length(unique(dat$Year))),
                                     Year = dat$Year, SLP.win.anom = dat$SLP.win.anom)
+    
+    detrend.dat.resid <- data.frame(TS = rep("SLP", length(unique(dat$Year))),
+                                    Year = dat$Year, SLP.win.anom = detrend.dat$residuals)
+    
     
     # Calculate AR1 and CV/SD on detrended data on different window lengths
     wind %>%

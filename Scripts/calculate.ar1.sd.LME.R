@@ -6,8 +6,21 @@ source("./Scripts/load.libs.functions.R")
 # LOAD DATA ---------------------------------------------------------------------
 sst.lme <- read.csv("./Output/lme.sst_df.csv") %>%
   filter(!LME %in% c("East Bering Sea", "Gulf of Alaska"),
-         year > 1960 & year < 2024)
+         year > 1960 & year < 2024) %>%
+  dplyr::select(year, LME, mean.anom)
 
+
+ar1var.EBS.sst %>%
+  mutate(LME = "Eastern Bering Sea") %>%
+  dplyr::select(year, val, LME) %>%
+  rename(mean.anom = val) -> ebs
+
+ar1var.goa.sst %>%
+  mutate(LME = "Gulf of Alaska") %>%
+  dplyr::select(year, val, LME) %>%
+  rename(mean.anom = val) -> goa
+
+ rbind(sst.lme, ebs, goa)  -> sst.lme
 
 # PLOT DATA ---------------------------------------------------------------------
 ggplot(sst.lme, aes(year, mean.anom))+
@@ -105,6 +118,28 @@ ggplot(sum.out2, aes(year, ar1))+
 
 ggsave("./Figures/lme.sstAR1.png", height = 8.5, width = 11, units = "in")
 
+library(forcats)
+sum.out2 %>% mutate(LME = fct_reorder(LME, tau.ar1)) %>%
+  dplyr::select(LME, tau.ar1, tau.ar1.sig) %>% distinct()-> data
+ggplot(data, aes(LME, tau.ar1))+
+  geom_bar(stat = "identity", color = "black", fill = "goldenrod2")+
+  geom_text(data = data[data$tau.ar1.sig ==TRUE, ], aes(x = LME, y = tau.ar1, label = "*",
+                vjust = ifelse(tau.ar1 >= 0, tau.ar1-0.5 ,tau.ar1 +2)), size = 10) +
+  ylim(c(-0.45, 0.55))+
+  theme_bw()+
+  ylab("Kendall's tau")+
+  ggtitle("AR1")+
+  xlab("")+
+  theme(axis.text.x  = element_text(angle=60, hjust=1,  size=16), legend.title = element_blank(), legend.position = 'top',
+        axis.text.y = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        strip.text = element_text(size = 10),
+        legend.text = element_text(size = 16),
+        title = element_text(size = 18))
+
+ggsave("./Figures/lme.ar1.tau.png", height = 8.5, width = 10.5, units = "in")
+
+
 
 labs <- paste0(lab.dat$LME, " \n(tau=", lab.dat$tau.sd, ", ", lab.dat$p.sd, ")")
 names(labs) <- lab.dat$LME
@@ -117,6 +152,63 @@ ggplot(sum.out, aes(year, sd))+
   xlab("Year")
 
 ggsave("./Figures/lme.sstSD.png", height = 8.5, width = 11, units = "in")
+
+sum.out2 %>% mutate(LME = fct_reorder(LME, tau.ar1)) %>%
+  dplyr::select(LME, tau.sd, tau.sd.sig) %>% distinct()-> data
+ggplot(data, aes(LME, tau.sd))+
+  geom_bar(stat = "identity", color = "black", fill = "goldenrod2")+
+  geom_text(data = data[data$tau.sd.sig ==TRUE, ], aes(x = LME, y = tau.sd, label = "*",
+                                                        vjust = ifelse(tau.sd >= 0, tau.sd-0.5 ,tau.sd +2)), size = 10) +
+  ylim(c(-0.53, 0.8))+
+  theme_bw()+
+  ylab("Kendall's tau")+
+  ggtitle("SD")+
+  xlab("")+
+  theme(axis.text.x  = element_text(angle=60, hjust=1,  size=16), legend.title = element_blank(), legend.position = 'top',
+        axis.text.y = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        strip.text = element_text(size = 10),
+        legend.text = element_text(size = 16),
+        title = element_text(size = 18))
+
+ggsave("./Figures/lme.sd.tau.png", height = 8.5, width = 11, units = "in")
+
+
+sum.out2%>% mutate(LME = fct_reorder(LME, tau.ar1)) %>%
+  dplyr::select(!c(year, val, sd, ar1)) %>% distinct()-> data
+
+data %>% 
+  dplyr::select(!c(tau.ar1.padj, tau.sd.padj, tau.ar1.p, tau.sd.p)) %>%
+pivot_longer(., c(tau.ar1, tau.sd), values_to = "value", names_to = "name") %>%
+  mutate(sig = case_when((name == "tau.ar1" & tau.ar1.sig == TRUE) ~ TRUE,
+                         (name == "tau.sd" & tau.sd.sig == TRUE) ~ TRUE,
+                         TRUE ~ FALSE)) %>%
+  dplyr::select(!c(tau.ar1.sig, tau.sd.sig)) -> data2
+
+labs <- c("AR1", "Standard deviation")
+names(labs) <- c("tau.ar1", "tau.sd")
+
+ggplot()+
+  geom_bar(data2, mapping = aes(LME, value), stat = "identity", color = "black", fill = "goldenrod2", position= "dodge")+
+  facet_wrap(~name, nrow = 1, labeller = labeller(name = labs))+
+  geom_text(data = data2[data2$sig ==TRUE, ], aes(x = LME, y = value, label = "*", group = name,
+                                                       hjust = ifelse(value >= 0, value-0.8 ,value+2)),
+            vjust = 0.75, size = 10)+
+  theme_bw()+
+  ylab("Kendall's tau")+
+  xlab("")+
+  coord_flip()+
+  theme(axis.text.x  = element_text(angle=60, hjust=1,  size=16), legend.title = element_blank(),
+        axis.text.y = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 16),
+        title = element_text(size = 18))
+
+
+ggsave("./Figures/lme.tau.combined.png", height = 9, width = 15, units = "in")
+
+  
 
 # DFA on AR1 --------------------------------------------------------------------
 # process data
