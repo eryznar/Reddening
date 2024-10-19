@@ -1,7 +1,6 @@
 # LOAD SOURCE FILE --------------------------------------------------------------
-source("./Scripts/ts.processing.R")
 source("./Scripts/load.libs.functions.R")
-
+source("./Scripts/ts.processing.R")
 
 # LOAD DATA ---------------------------------------------------------------------
 sst.lme <- read.csv("./Output/lme.sst_df.csv") %>%
@@ -44,6 +43,13 @@ for(ii in 1:length(lme)){
   
   # Specify sliding window width
   width = 15
+  
+  # Detrend data
+  detrend.dat <- loess(mean.anom ~ year, TS.dat, span = 0.25, degree = 1)
+  
+  # Extract residuals
+  TS.dat <- data.frame(year = TS.dat$year, mean.anom = detrend.dat$residuals)
+  
   
   # Calculate rolling window AR1
   ar1 <- sapply(rollapply(TS.dat$mean.anom, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 

@@ -20,10 +20,10 @@ width = 15 # rolling window length
 ### Test question 1: Has the climate gotten redder? -----------------------------------------------------------
  # APPROACH: fit GAMs between SST AR1/SD and time
 
- # Load (trying anomaly data)  
-  ebs.sst <- read.csv("./Output/SST.winter.anom.ebs.csv") %>%
+ # Load 
+  ebs.sst <- read.csv("./Output/SST.anom.ebs.csv") %>%
     filter(Year %in% 1948:2024)
-  goa.sst <- read.csv("./Output/SST.winter.anom.goa.csv")%>%
+  goa.sst <- read.csv("./Output/SST.anom.goa.csv")%>%
     filter(Year %in% 1948:2024)
   
   rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"),
@@ -88,18 +88,20 @@ width = 15 # rolling window length
     facet_wrap(~region, scales = "free_y", labeller = labeller(region = labs),
                ncol = 1)+
     theme_bw()+
-    ggtitle("SST AR1 with time")+
-    geom_vline(xintercept = 1988.5, linetype = "dashed")+
+    #ggtitle("SST AR1 with time")+
+    scale_x_continuous(breaks = seq(min(plot.dat.sst2$year), max(plot.dat.sst2$year), by = 5))+
+    #geom_vline(xintercept = 1988.5, linetype = "dashed")+
     ylab("AR1")+
     xlab("Year")+
     theme(legend.position = "none",
           axis.text = element_text(size = 14),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
           axis.title = element_text(size = 16),
           strip.text = element_text(size = 16),
           legend.text = element_text(size = 14),
           title = element_text(size = 16)) -> sst.ar1.window.plot
   
-  ggsave(plot = sst.ar1.window.plot, "./Figures/sst.AR1.x.time.GAM2.png", width = 8.5, height = 11, units = "in")
+  #ggsave(plot = sst.ar1.window.plot, "./Figures/sst.AR1.x.time.GAM2.png", width = 8.5, height = 11, units = "in")
   
   # Plot sst SD with time
   plot.dat.sst %>%
@@ -130,27 +132,32 @@ width = 15 # rolling window length
     facet_wrap(~region, scales = "free_y", labeller = labeller(region = labs),
                ncol = 1)+
     theme_bw()+
-    ggtitle("SST SD with time")+
-    geom_vline(xintercept = 1988.5, linetype = "dashed")+
+    #ggtitle("SST SD with time")+
+    scale_x_continuous(breaks = seq(min(plot.dat.sst2$year), max(plot.dat.sst2$year), by = 5))+
+    #geom_vline(xintercept = 1988.5, linetype = "dashed")+
     ylab("SD")+
     xlab("Year")+
     theme(legend.position = "none",
           axis.text = element_text(size = 14),
           axis.title = element_text(size = 16),
+          axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
           strip.text = element_text(size = 16),
           legend.text = element_text(size = 14),
           title = element_text(size = 16)) -> sst.SD.window.plot
   
-  ggsave(plot = sst.SD.window.plot, "./Figures/sst.SD.x.time.GAM.png", width = 8.5, height = 11, units = "in")
+  #ggsave(plot = sst.SD.window.plot, "./Figures/sst.SD.x.time.GAM.png", width = 8.5, height = 11, units = "in")
   
+  plot_grid(sst.ar1.window.plot, sst.SD.window.plot, ncol = 2) -> combined
+  
+  ggsave(plot = combined, "./Figures/sst.AR1SD.combined.png", width = 11, height = 8.5, units = "in")
   
 ### Test question 2: Is climate related to the biology (recruitment)? ----------------------------------------------
   # APPROACH: fit GAMS between BSAI and GOA recruitment (not detrended) and SST (not detrended)
   
   # Load (trying anomaly data)  
-  ebs.sst <- read.csv("./Output/SST.winter.anom.ebs.csv") %>%
+  ebs.sst <- read.csv("./Output/SST.anom.ebs.csv") %>%
     filter(Year %in% 1948:2024)
-  goa.sst <- read.csv("./Output/SST.winter.anom.goa.csv")%>%
+  goa.sst <- read.csv("./Output/SST.anom.goa.csv")%>%
     filter(Year %in% 1948:2024)
   
   rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"),
@@ -632,6 +639,21 @@ width = 15 # rolling window length
      
      ggsave(plot = slp.sd.window.plot, "./Figures/slp.sd.window.plot.png", width = 11, height = 8.5, units = "in")
      
+ # Load and process winter sst data
+    # Load 
+   ebs.sst <- read.csv("./Output/SST.winter.anom.ebs.csv") %>%
+     filter(Year %in% 1948:2024)
+   goa.sst <- read.csv("./Output/SST.winter.anom.goa.csv")%>%
+     filter(Year %in% 1948:2024)
+   
+   # Detrend data
+   trend.fun(ebs.sst, "SST", width) -> ebs.sst.out
+   
+   trend.fun(goa.sst, "SST", width) -> goa.sst.out
+   
+   ar1var.EBS.sst <- as.data.frame(ebs.sst.out)
+   ar1var.goa.sst <- as.data.frame(goa.sst.out)
+   
  # Fit gams between sst and SLP 
    ar1var.slp %>%
      na.omit() %>%
@@ -650,16 +672,16 @@ width = 15 # rolling window length
    
    right_join(goa.sst.model.dat, right_join(ebs.sst.model.dat, slp.model.dat)) -> model.dat
    
-   k = 6 # set knots
-   
+ 
      # Model: EBS sst AR1 x slp AR1 
      rr <- model.dat$ebs.sst.ar1
      pp <- model.dat$slp.ar1
      
-     mod <- gam(rr ~ s(pp, k = k), 
+     mod <- gam(rr ~ pp, 
                    data= model.dat, correlation = corAR1())
      
-     p.val <- summary(mod)$s.table[,4]
+     
+     p.val <- summary(mod)$pTerms.table[3]
      p.val <- case_when((p.val < 0.001) ~ "p<0.001",
                         (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
                         (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
@@ -684,16 +706,18 @@ width = 15 # rolling window length
        theme(axis.text = element_text(size = 10),
              axis.title = element_text(size = 12),
              strip.text = element_text(size = 10),
-             legend.text = element_text(size = 12)) -> plot.1
+             legend.text = element_text(size = 12)) 
      
      # Model: EBS sst AR1 x slp SD 
      rr <- model.dat$ebs.sst.ar1
      pp <- model.dat$slp.sd
      
-     mod <- gam(rr ~ s(pp, k = k), 
+     mod <- gam(rr ~ pp, 
                 data= model.dat, correlation = corAR1())
      
-     p.val <- summary(mod)$s.table[,4]
+     
+     p.val <- summary(mod)$pTerms.table[3]
+     
      p.val <- case_when((p.val < 0.001) ~ "p<0.001",
                         (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
                         (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
@@ -717,17 +741,17 @@ width = 15 # rolling window length
        theme(axis.text = element_text(size = 10),
              axis.title = element_text(size = 12),
              strip.text = element_text(size = 10),
-             legend.text = element_text(size = 12)) -> plot.2
+             legend.text = element_text(size = 12)) -> plot.1
  
      # Model: GOA sst AR1 x slp AR1 
      rr <- model.dat$goa.sst.ar1
      pp <- model.dat$slp.ar1
      
-     mod <- gam(rr ~ s(pp, k = k), 
+     mod <- gam(rr ~ pp, 
                 data= model.dat, correlation = corAR1())
      
      
-     p.val <- summary(mod)$s.table[,4]
+     p.val <- summary(mod)$pTerms.table[3]
      p.val <- case_when((p.val < 0.001) ~ "p<0.001",
                         (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
                         (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
@@ -751,16 +775,17 @@ width = 15 # rolling window length
        theme(axis.text = element_text(size = 10),
              axis.title = element_text(size = 12),
              strip.text = element_text(size = 10),
-             legend.text = element_text(size = 12)) -> plot.3
+             legend.text = element_text(size = 12)) 
      
      # Model: GOA sst AR1 x slp SD 
      rr <- model.dat$goa.sst.ar1
      pp <- model.dat$slp.sd
      
-     mod <- gam(rr ~ s(pp, k = k), 
+     mod <- gam(rr ~ pp, 
                 data= model.dat, correlation = corAR1())
      
-     p.val <- summary(mod)$s.table[,4]
+     
+     p.val <- summary(mod)$pTerms.table[3]
      p.val <- case_when((p.val < 0.001) ~ "p<0.001",
                         (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
                         (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
@@ -784,11 +809,196 @@ width = 15 # rolling window length
        theme(axis.text = element_text(size = 10),
              axis.title = element_text(size = 12),
              strip.text = element_text(size = 10),
-             legend.text = element_text(size = 12)) -> plot.4
+             legend.text = element_text(size = 12)) -> plot.3
      
+    
+    # Model: GOA sst AR1 x slp SD 
+    rr <- model.dat$goa.sst.ar1
+    pp <- model.dat$slp.sd
+    
+    mod <- gam(rr ~ pp, 
+               data= model.dat, correlation = corAR1())
+    
+    
+    p.val <- summary(mod)$pTerms.table[3]
+    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
+                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
+                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
+                       TRUE ~ paste0("p=", round(p.val, 2)))
+    r.sq <- round(summary(mod)$r.sq, 2)
+    
+    pred <- predict(mod, se=T)
+    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
+    
+    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
+    
+    ggplot()+
+      geom_ribbon(plot.dat, 
+                  mapping = aes(x = pp, ymin = pred - pred.se, ymax= pred +pred.se), fill = "grey", alpha = 0.5)+
+      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
+      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#A34242", size = 1.25)+
+      theme_bw()+
+      ggtitle(paste0("SLP SD vs. GOA SST AR1 (", p.val, ", R2 = ", r.sq, ")"))+
+      ylab("SST anomaly AR1")+
+      xlab("SLP anomaly SD") +
+      theme(axis.text = element_text(size = 10),
+            axis.title = element_text(size = 12),
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12))
+    
+    
+    
+    # Model: EBS sst AR1 x slp SD 
+    rr <- model.dat$ebs.sst.sd
+    pp <- model.dat$slp.sd
+    
+    mod <- gam(rr ~ pp, 
+               data= model.dat, correlation = corAR1())
+    
+    
+    p.val <- summary(mod)$pTerms.table[3]
+    
+    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
+                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
+                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
+                       TRUE ~ paste0("p=", round(p.val, 2)))
+    r.sq <- round(summary(mod)$r.sq, 2)
+    
+    pred <- predict(mod, se=T)
+    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
+    
+    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
+    
+    ggplot()+
+      geom_ribbon(plot.dat, 
+                  mapping = aes(x = pp, ymin = pred - pred.se, ymax= pred +pred.se), fill = "grey", alpha = 0.5)+
+      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
+      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#6A6DB7", size = 1.25)+
+      theme_bw()+
+      ggtitle(paste0("SLP SD vs. EBS SST SD (", p.val, ", R2 = ", r.sq, ")"))+
+      ylab("SST anomaly SD")+
+      xlab("SLP anomaly SD") +
+      theme(axis.text = element_text(size = 10),
+            axis.title = element_text(size = 12),
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12)) -> plot.2
+    
+    # Model: GOA sst SD x slp SD 
+    rr <- model.dat$goa.sst.sd
+    pp <- model.dat$slp.sd
+    
+    mod <- gam(rr ~ pp, 
+               data= model.dat, correlation = corAR1())
+    
+    
+    p.val <- summary(mod)$pTerms.table[3]
+    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
+                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
+                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
+                       TRUE ~ paste0("p=", round(p.val, 2)))
+    r.sq <- round(summary(mod)$r.sq, 2)
+    
+    pred <- predict(mod, se=T)
+    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
+    
+    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
+    
+    ggplot()+
+      geom_ribbon(plot.dat, 
+                  mapping = aes(x = pp, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
+      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
+      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#A34242", size = 1.25)+
+      theme_bw()+
+      ggtitle(paste0("SLP SD vs. GOA SST SD (", p.val, ", R2 = ", r.sq, ")"))+
+      ylab("SST anomaly SD")+
+      xlab("SLP anomaly SD") +
+      theme(axis.text = element_text(size = 10),
+            axis.title = element_text(size = 12),
+            strip.text = element_text(size = 10),
+            legend.text = element_text(size = 12)) -> plot.4
+    
     plot_grid(plot.1, plot.2, plot.3, plot.4) -> pp
     
     ggsave(plot = pp, "./Figures/SLP.vs.SST.png", width = 11, height = 8.5, units = "in")
+    
+    
+    # plot SLP SD ts vs. SST AR1 ts
+    model.dat %>%
+      dplyr::select(year, goa.sst.ar1, ebs.sst.ar1, slp.sd) %>%
+      pivot_longer(., c(2, 3), names_to = "region", values_to = "ar1") %>%
+      mutate(region = case_when((grepl("goa", region) == TRUE) ~ "Gulf of Alaska",
+                               TRUE ~ "Eastern Bering Sea")) %>%
+      right_join(., model.dat %>%
+                   dplyr::select(year, goa.sst.sd, ebs.sst.sd, slp.sd) %>%
+                   pivot_longer(., c(2, 3), names_to = "region", values_to = "sd") %>%
+                   mutate(region = case_when((grepl("goa", region) == TRUE) ~ "Gulf of Alaska",
+                                             TRUE ~ "Eastern Bering Sea"))) %>%
+      group_by(region) %>%
+      mutate(slp.sd.norm = (slp.sd-min(slp.sd))/(max(slp.sd)-min(slp.sd)),
+             sst.sd.norm = (sd-min(sd))/(max(sd)-min(sd)),
+             sst.ar1.norm = (ar1-min(ar1))/(max(ar1)-min(ar1))) %>%
+      ungroup() -> plot.dat2
+    
+    p =data.frame(plab = c("p<0.001*", "p<0.01*"),
+                  rlab = c("0.46", "0.13"),
+                     x = c(1960.5, 1960.5),
+                     y = c(0.91, 0.91),
+                     region= c("Eastern Bering Sea", "Gulf of Alaska"))
+  
+    
+    ggplot()+
+      geom_line(plot.dat2, mapping = aes(year, sst.ar1.norm, color = "salmon"), linewidth = 1.5)+
+      geom_line(plot.dat2, mapping = aes(year, slp.sd.norm, color = "steelblue"), linewidth = 1.5)+
+      facet_wrap(~region)+
+      theme_bw()+
+      scale_color_manual(name = "", values = c("salmon", "steelblue"), labels = c("Sea surface temperature\nautocorrelation", "Sea level pressure\nstandard deviation"))+
+      theme_bw()+
+      scale_x_continuous(breaks= seq(min(plot.dat2$year), max(plot.dat2$year), by = 10))+
+      ylab("Normalized value")+
+      xlab("Year")+
+      #geom_richtext(data = p, aes(x = x,  y = y, label = lab))+
+      geom_richtext(data = p, aes(x = x,  y = y, 
+                              label = paste0(plab, "<br>\nr<sup>2</sup> = ", rlab)), size = 4)+
+      theme(legend.position = "bottom",
+            legend.direction= "horizontal",
+            axis.text = element_text(size = 14),
+            axis.title = element_text(size = 16),
+            strip.text = element_text(size = 16),
+            legend.text = element_text(size = 14),
+            title = element_text(size = 16)) -> comp.1
+    
+    ggsave(plot = comp.1, "./Figures/sstar1.slp.sd.png", width = 9, height = 5, units = "in")
+    
+    
+    p =data.frame(plab = c("p=0.28", "p<0.001*"),
+                  rlab = c("0", "0.2"),
+                  x = c(1960.5, 1960.5),
+                  y = c(0.91, 0.91),
+                  region= c("Eastern Bering Sea", "Gulf of Alaska"))
+    
+    
+    ggplot()+
+      geom_line(plot.dat2, mapping = aes(year, sst.sd.norm, color = "gold"), linewidth = 1.5)+
+      geom_line(plot.dat2, mapping = aes(year, slp.sd.norm, color = "steelblue"), linewidth = 1.5)+
+      facet_wrap(~region)+
+      theme_bw()+
+      scale_color_manual(name = "", values = c("gold", "steelblue"), labels = c("Sea surface temperature\nstandard deviation", "Sea level pressure\nstandard deviation"))+
+      theme_bw()+
+      scale_x_continuous(breaks= seq(min(plot.dat2$year), max(plot.dat2$year), by = 10))+
+      ylab("Normalized value")+
+      xlab("Year")+
+      #geom_richtext(data = p, aes(x = x,  y = y, label = lab))+
+      geom_richtext(data = p, aes(x = x,  y = y, 
+                                  label = paste0(plab, "<br>\nr<sup>2</sup> = ", rlab)), size = 4)+
+      theme(legend.position = "bottom",
+            legend.direction= "horizontal",
+            axis.text = element_text(size = 14),
+            axis.title = element_text(size = 16),
+            strip.text = element_text(size = 16),
+            legend.text = element_text(size = 14),
+            title = element_text(size = 16)) -> comp.2
+      
+    ggsave(plot = comp.2, "./Figures/sstsd.slp.sd.png", width = 9, height = 5, units = "in")
 
  # Calculate correlations through time 
       year <- data.frame(year = min(slp$Year):max(slp$Year))

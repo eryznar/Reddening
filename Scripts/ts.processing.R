@@ -14,13 +14,13 @@
 ### PROCESS DATA ----------------------------------------------------------------------------------------------------------
   # SST --------------------------
     # BSAI and GOA ERA5 SST
-    goa.sst <- read.csv("./Data/sst_GOA.csv") %>%
+    goa.sst <- read.csv("./Output/sst_GOA_ERA5.csv") %>%
       rename(Year = year) %>%
       group_by(Year) %>%
       reframe(mean.sst = mean(mean.sst)) %>%
       filter(Year < 2024)
     
-    ebs.sst <- read.csv("./Data/sst_EBS.csv") %>%
+    ebs.sst <- read.csv("./Output/sst_EBS_ERA5.csv") %>%
       rename(Year = year) %>%
       group_by(Year) %>%
       reframe(mean.sst = mean(mean.sst)) %>%

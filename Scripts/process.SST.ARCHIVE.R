@@ -150,44 +150,7 @@ source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
     sst_GOA %>%
     group_by(year, month) %>%
       reframe(mean.sst = mean(mean.sst)) -> sst_GOA
-    
-    # Processing for non-stationary dynamics
-    # now get monthly means weighted by area, using an arithmetic mean
-    weight <- sqrt(cos(sst_GOA$lat*pi/180))
-    
-    sst_GOA %>%
-      mutate(sst_mu = apply(mean.sst, 1, function(x) weighted.mean(x, weight, na.rm = T)))
-    
-    SST.mu <- apply(SST, 1, function(x) weighted.mean(x,weight, na.rm=T))
-    
-    # now separate out winter
-    m <- months(d)
-    yr <- as.numeric(as.character(years(d)))
-    win <- c("Nov", "Dec", "Jan", "Feb", "Mar")
-    
-    mean <- data.frame(year=yr, month=m, mean=SST.mu)
-    mean$win.yr <- mean$year
-    mean$win.yr[mean$month %in% c("Nov", "Dec")] <- mean$win.yr[mean$month %in% c("Nov", "Dec")] + 1
-    
-    win.mean <- mean[mean$month %in% win,]
-    
-    SST.win <- tapply(win.mean$mean, win.mean$win.yr, mean)
-    
-    salm.cov$SST.win <- SST.win[match(salm.cov$year,(names(SST.win)))]
-    
-    
-    
-    
-    
-    sst_GOA %>%
-      filter(month %in% c("Nov", "Dec", "Jan", "Feb", "Mar")) %>%
-      mutate(year = case_when((month %in% c("Nov", "Dec")) ~ as.numeric(as.character(year)) + 1,
-                              TRUE ~ as.numeric(as.character(year)))) %>% # center winter months on year of Nov-Dec
-      group_by(year) %>%
-      reframe(mean.sst = mean(mean.sst) - 273.15) -> winter.GOA.sst
-    
-    winter.GOA.sst.3 <- rollapply(winter.GOA.sst$mean.sst, 3, mean, na.rm = T, fill = NA) #3-year
-    cbind(winter.GOA.sst$year, winter.GOA.sst.3) -> winter.GOA.sst
+  
   
   
   write.csv(sst_1960.2024, "./Data/sst_1960.2024_ALL.csv")

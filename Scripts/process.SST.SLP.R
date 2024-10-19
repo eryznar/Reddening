@@ -95,24 +95,54 @@ SST <- aperm(SST, 3:1)
   
   SST.anom.ebs <- SST.m[,1:(ncol(SST.m)-2)] - mu   # Compute matrix of anomalies - dropping year and month!
   
+  SST.ebs <- SST.m[, 1:(ncol(SST.m)-2)]
   # get average anomaly across the area
   SST.anom.ebs <- rowMeans(SST.anom.ebs)
+  SST.ebs <- rowMeans(SST.ebs)
   
   # fit to winter means
   win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
   SST.win.anom.ebs <- SST.anom.ebs[m %in% c(11,12,1:3)]
   win.yr <- win.yr[m %in% c(11,12,1:3)]
-  SST.win.anom.ebs <- tapply(SST.win.anom.ebs, win.yr, mean)
+  # SST.anom.ebs2 <- tapply(SST.win.anom.ebs, win.yr, mean)
+  #SST.anom.ebs2 <- tapply(SST.anom.ebs, yr, mean)
   
-  plot(1854:2024, SST.win.anom.ebs, type = "l")
+  
+  #plot(1854:2024, SST.ebs2, type = "l")
   
   # pivot longer
-  data.frame(Year = names(SST.win.anom.ebs), mean.sst = SST.win.anom.ebs) -> SST.win.anom.ebs
+  #data.frame(Year = names(SST.anom.ebs2), mean.sst = SST.anom.ebs2) -> SST.anom.ebs2
   
-  rownames(SST.win.anom.ebs) <- NULL
+  #rownames(SST.anom.ebs2) <- NULL
+  
+  data.frame(Date = names(SST.anom.ebs), sst = SST.anom.ebs) %>%
+    mutate(Year = as.numeric(as.character(substr(Date, 1, 4))),
+           Month = as.numeric(as.character(substr(Date, 6, 7))),
+           Win.year = case_when((Month %in% c(10:12)) ~ (Year+1),
+                                TRUE ~ Year)) -> sst.anom.ebs2
+  
+  rownames(SST.anom.ebs2) <- NULL
+  
+  sst.anom.ebs2 %>%
+    group_by(Year) %>%
+    reframe(mean.sst = mean(sst)) -> SST.anom.ebs.regyr
+  
+  sst.anom.ebs2 %>%
+    group_by(Win.year) %>%
+    reframe(mean.sst = mean(sst)) %>%
+    rename(Year = Win.year)-> SST.anom.ebs.winyr
+  
+  
+  sst.anom.ebs2 %>%
+    filter(Month %in% c(11:12, 1:3)) %>%
+    group_by(Win.year) %>%
+    reframe(mean.sst = mean(sst)) %>%
+    rename(Year = Win.year)-> SST.anom.ebs.winter
   
   # write csv
-  write.csv(SST.win.anom.ebs, "./Output/SST.winter.anom.ebs.csv")
+  write.csv(SST.anom.ebs.regyr, "./Output/SST.anom.ebs.csv") # regular years
+  write.csv(SST.anom.ebs.winyr, "./Output/SST.anom.ebs.winyr.csv") # Oct-Sept, year of January
+  write.csv(SST.anom.ebs.winter, "./Output/SST.winter.anom.ebs.csv") # winter months, year of January
   
   
   # GOA: ----
@@ -184,26 +214,57 @@ SST <- aperm(SST, 3:1)
   mu <- rbind(mu, mu[1:xtra,])
   
   SST.anom.goa <- SST.m[,1:(ncol(SST.m)-2)] - mu   # Compute matrix of anomalies - dropping year and month!
+  SST.goa <- SST.m[,1:(ncol(SST.m)-2)] 
+  
   
   # get average anomaly across the area
   SST.anom.goa <- rowMeans(SST.anom.goa)
+  SST.goa <- rowMeans(SST.goa)
+  
   
   # fit to winter means
   win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
   SST.win.anom.goa <- SST.anom.goa[m %in% c(11,12,1:3)]
   win.yr <- win.yr[m %in% c(11,12,1:3)]
-  SST.win.anom.goa <- tapply(SST.win.anom.goa, win.yr, mean)
+  # SST.anom.goa2 <- tapply(SST.win.anom.goa, win.yr, mean)
+  #SST.anom.goa2 <- tapply(SST.anom.goa, yr, mean)
   
-  # Plot
-  plot(1854:2024, SST.win.anom.goa, type = "l")
+  
+  #plot(1854:2024, SST.goa2, type = "l")
   
   # pivot longer
-  data.frame(Year = names(SST.win.anom.goa), mean.sst = SST.win.anom.goa) -> SST.win.anom.goa
+  #data.frame(Year = names(SST.anom.goa2), mean.sst = SST.anom.goa2) -> SST.anom.goa2
   
-  rownames(SST.win.anom.goa) <- NULL
+  #rownames(SST.anom.goa2) <- NULL
+  
+  data.frame(Date = names(SST.anom.goa), sst = SST.anom.goa) %>%
+    mutate(Year = as.numeric(as.character(substr(Date, 1, 4))),
+           Month = as.numeric(as.character(substr(Date, 6, 7))),
+           Win.year = case_when((Month %in% c(10:12)) ~ (Year+1),
+                                TRUE ~ Year)) -> sst.anom.goa2
+  
+  rownames(SST.anom.goa2) <- NULL
+  
+  sst.anom.goa2 %>%
+    group_by(Year) %>%
+    reframe(mean.sst = mean(sst)) -> SST.anom.goa.regyr
+  
+  sst.anom.goa2 %>%
+    group_by(Win.year) %>%
+    reframe(mean.sst = mean(sst)) %>%
+    rename(Year = Win.year)-> SST.anom.goa.winyr
+  
+  sst.anom.goa2 %>%
+    filter(Month %in% c(11:12, 1:3)) %>%
+    group_by(Win.year) %>%
+    reframe(mean.sst = mean(sst)) %>%
+    rename(Year = Win.year)-> SST.anom.goa.winter
   
   # write csv
-  write.csv(SST.win.anom.goa, "./Output/SST.winter.anom.goa.csv")
+  write.csv(SST.anom.goa.regyr, "./Output/SST.anom.goa.csv")
+  write.csv(SST.anom.goa.winyr, "./Output/SST.anom.goa.winyr.csv")
+  write.csv(SST.anom.goa.winter, "./Output/SST.winter.anom.goa.csv")
+  
   
 
 ### SLP -----------------------------------------------------------------------------------------------------
