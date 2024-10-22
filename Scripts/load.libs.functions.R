@@ -23,6 +23,7 @@ library(sf)
 library(FactoMineR)
 library(cowplot)
 library(ggpubr)
+library(ggtext)
 
 
 ### FUNCTIONS --------------------------------------------------------------------------

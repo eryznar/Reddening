@@ -64,6 +64,12 @@ conditions <- data.frame(system = rep(c("EBS", "GOA"), each = 2),
                          ar = c(0.0001, 0.64, 0.0001, 0.47), # from 15 year running mean
                          sd = c(0.24, 0.76, 0.25, 0.58), 
                          trend = rep(c(0.021, 0.011), each = 2))
+# for sim figs
+conditions <- data.frame(system = rep(c("EBS", "GOA"), each = 2),
+                         state = rep(c("White noise", "Red noise"), 2),
+                         ar = c(0.0001, 0.9, 0.0001, 0.9), # from 15 year running mean
+                         sd = c(0.5, 0.5, 0.5, 0.5), 
+                         trend = rep(c(0.011, 0.011), each = 2))
 output <- data.frame()
 
 
@@ -95,11 +101,23 @@ for(i in 1:nrow(conditions)){
   
 }
 
+output$state = factor(output$state, levels=c("White noise", "Red noise"))
+ggplot(output %>% filter(time <=100, system == "GOA"), aes(time, temperature, color = state)) +
+  geom_line(linewidth = 1.25) +
+  scale_color_manual(values = c("darkslateblue", "brown3"), guide = "none")+
+  facet_wrap(~state, nrow = 1)+
+  geom_smooth(method = "lm", se = F, linetype = "dashed")+
+  ylab("Temperature (°C)")+
+  xlab("Time")+
+  theme(legend.direction= "horizontal",
+        legend.position = "bottom",
+        axis.text = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        strip.text = element_text(size = 16),
+        legend.text = element_text(size = 14),
+        title = element_text(size = 16)) -> sim.plot
 
-ggplot(filter(output, time <=100), aes(time, temperature)) +
-  geom_line() +
-  facet_grid(system~state)+
-  geom_smooth(method = "lm", se = F)
+ggsave("./Figures/white.v.red.png", height = 4, width = 11, units = "in")
 
 # plot first differences
 ggplot(filter(output, time <=100), aes(time, diff_temp)) +
@@ -238,10 +256,13 @@ summary <- na.omit(output_detrend) %>%
                                       TRUE ~ sum(abs(detrended_temp) > max(goa.outliers))/length(detrended_temp))) %>%
   distinct()
 
+labs <- c("Eastern Bering Sea", "Gulf of Alaska")
+names(labs) <- c("EBS", "GOA")
+
 ggplot()+
   geom_tile(summary, mapping = aes(ar, sd, fill = prop_out_degree))+
-  scale_fill_viridis_c(option = "turbo", name = "Proportion \nanomalous conditions")+
-  facet_wrap(~system)+
+  scale_fill_viridis_c(option = "turbo", name = "Proportion \nanomalous \nconditions")+
+  facet_wrap(~system, labeller = labeller(system = labs))+
   # geom_hline(data.frame(system = c("EBS", "GOA"), y = c(0.76, 0.58)), mapping = aes(yintercept = y),
   #            color = "white", linewidth = 1.5, linetype = "dashed")+
   # geom_vline(data.frame(system = c("EBS", "GOA"), x = c(0.64, 0.47)), mapping = aes(xintercept = x),
@@ -258,7 +279,11 @@ ggplot()+
   scale_x_continuous(expand = c(0, 0))+
   scale_y_continuous(expand = c(0, 0))+
   theme(axis.text = element_text(size = 16),
+        legend.position = "bottom",
+        legend.direction = "horizontal",
         axis.title = element_text(size = 16),
         strip.text = element_text(size = 16),
         legend.text = element_text(size = 16),
-        legend.title = element_text(size = 16))
+        legend.title = element_text(size = 16)) -> heat.out
+
+ggsave(plot = heat.out, "./Figures/ar1.sim.out.png", height = 5, width = 8, units = "in")
