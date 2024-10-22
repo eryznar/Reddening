@@ -60,10 +60,10 @@ sst_df %>%
 
 sst_df %>%
   mutate(month = as.numeric(as.character(month)),
-         year = as.numeric(as.character(year)),
-         year = case_when((month %in% c(11, 12)) ~ (year +1),
-                          TRUE ~ year)) %>%
-  filter(month %in% c(11,12, 1, 2, 3)) %>%
+         year = as.numeric(as.character(year))) %>%
+         # year = case_when((month %in% c(11, 12)) ~ (year +1),
+         #                  TRUE ~ year)) %>%
+  #filter(month %in% c(11,12, 1, 2, 3)) %>%
   group_by(year, LME, LME_NUM) %>%
   reframe(mean.sst = mean(mean.sst),
           mean.anom = mean(mean.anom)) -> sst_df2
