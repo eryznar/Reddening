@@ -28,6 +28,46 @@ width = 15 # rolling window length
   
   rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"),
         goa.sst %>% mutate(region = "Gulf of Alaska")) -> sst
+  
+  
+  ggplot(ebs.sst, aes(x = Year, y = mean.sst))+
+    geom_line(color = "#6A6DB7", linewidth = 1.5)+
+    theme_bw()+
+    geom_point(size = 2.25, color = "#6A6DB7")+
+    scale_x_continuous(breaks = seq(min(ebs.sst$Year), max(ebs.sst$Year), by = 10))+
+    ylab("Anomaly (°C)")+
+    xlab("Year")+
+    #ggtitle("Eastern Bering Sea sea surface temperature")
+    theme(legend.position = "none",
+          axis.text = element_text(size = 16),
+          #axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+          axis.title = element_text(size = 16),
+          strip.text = element_text(size = 16),
+          legend.text = element_text(size = 14),
+          title = element_text(size = 16))
+  
+  ggsave("./Figures/ebs.sst.png", width = 9, height = 3, units="in")
+  
+  
+  
+  ggplot(goa.sst, aes(x = Year, y = mean.sst))+
+    geom_line(color = "#A34242", linewidth = 1.5)+
+    theme_bw()+
+    geom_point(size = 2.25, color = "#A34242")+
+    scale_x_continuous(breaks = seq(min(goa.sst$Year), max(goa.sst$Year), by = 10))+
+    ylab("Anomaly (°C)")+
+    xlab("Year")+
+    #ggtitle("Eastern Bering Sea sea surface temperature")
+    theme(legend.position = "none",
+          axis.text = element_text(size = 16),
+          #axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
+          axis.title = element_text(size = 16),
+          strip.text = element_text(size = 16),
+          legend.text = element_text(size = 14),
+          title = element_text(size = 16))
+  
+  ggsave("./Figures/goa.sst.png", width = 9, height = 3, units="in")
+  
 
   # Detrend data
   trend.fun(ebs.sst, "SST", width) -> ebs.sst.out
@@ -245,7 +285,7 @@ width = 15 # rolling window length
                psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
                                 TRUE ~ plab)) -> lab.dat
       
-      labs <- paste0(r0.labs.bsai, " \n(k=", lab.dat$k, ", sst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
+      labs <- paste0(r0.labs.bsai, " \nsst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
                      lab.dat$psig, ")")
       names(labs) <- names(r0.labs.bsai)
       
@@ -258,7 +298,7 @@ width = 15 # rolling window length
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = labs),
                    ncol = 4)+
         theme_bw()+
-        ggtitle("BSAI groundfish/crab recruitment and SST")+
+        #ggtitle("BSAI groundfish/crab recruitment and SST")+
         ylab("log(millions of recruits)")+
         xlab("°C")+
         theme(axis.text = element_text(size = 10),
@@ -329,7 +369,7 @@ width = 15 # rolling window length
                psig = case_when((sig == TRUE) ~ paste0(plab, "*"),
                                 TRUE ~ plab)) -> lab.dat
       
-      labs <- paste0(r0.labs.goa, " \n(k=", lab.dat$k, ", sst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
+      labs <- paste0(r0.labs.goa, " \nsst=", lab.dat$sst.smooth, ", R2=", lab.dat$rsq, ", ",
                      lab.dat$psig, ")")
       names(labs) <- names(r0.labs.goa)
       
@@ -342,7 +382,7 @@ width = 15 # rolling window length
         facet_wrap(~TS, scales = "free", labeller = labeller(TS = labs),
                    ncol = 4)+
         theme_bw()+
-        ggtitle("GOA groundfish recruitment and SST")+
+        #ggtitle("GOA groundfish recruitment and SST")+
         ylab("log(millions of recruits)")+
         xlab("°C")+
         theme(axis.text = element_text(size = 10),
