@@ -19,7 +19,8 @@ ar1var.goa.sst %>%
   dplyr::select(year, val, LME) %>%
   rename(mean.anom = val) -> goa
 
- rbind(sst.lme, ebs, goa)  -> sst.lme
+ rbind(sst.lme, ebs, goa) -> sst.lme
+   #filter(year>1960 & year<2024)
 
 # PLOT DATA ---------------------------------------------------------------------
 ggplot(sst.lme, aes(year, mean.anom))+
@@ -45,8 +46,8 @@ for(ii in 1:length(lme)){
   width = 15
   
   # Detrend data
-  detrend.dat <- loess(mean.anom ~ year, TS.dat, span = 0.25, degree = 1)
-  
+   detrend.dat <- loess(mean.anom ~ year, TS.dat, span = 0.25, degree = 1)
+   
   # Extract residuals
   TS.dat <- data.frame(year = TS.dat$year, mean.anom = detrend.dat$residuals)
   
@@ -134,12 +135,12 @@ ggplot(data, aes(LME, tau.ar1))+
   ylim(c(-0.45, 0.55))+
   theme_bw()+
   ylab("Kendall's tau")+
-  ggtitle("AR1")+
+  ggtitle("Autocorrelation")+
   xlab("")+
   theme(axis.text.x  = element_text(angle=60, hjust=1,  size=16), legend.title = element_blank(), legend.position = 'top',
         axis.text.y = element_text(size = 16),
         axis.title = element_text(size = 16),
-        strip.text = element_text(size = 10),
+        strip.text = element_text(size = 16),
         legend.text = element_text(size = 16),
         title = element_text(size = 18))
 
@@ -191,7 +192,7 @@ pivot_longer(., c(tau.ar1, tau.sd), values_to = "value", names_to = "name") %>%
                          TRUE ~ FALSE)) %>%
   dplyr::select(!c(tau.ar1.sig, tau.sd.sig)) -> data2
 
-labs <- c("AR1", "Standard deviation")
+labs <- c("Autocorrelation", "Standard deviation (°C)")
 names(labs) <- c("tau.ar1", "tau.sd")
 
 ggplot()+
@@ -204,6 +205,7 @@ ggplot()+
   ylab("Kendall's tau")+
   xlab("")+
   coord_flip()+
+  scale_y_continuous(limits = c(-0.6, 0.8))+
   theme(axis.text.x  = element_text(angle=60, hjust=1,  size=16), legend.title = element_blank(),
         axis.text.y = element_text(size = 16),
         axis.title = element_text(size = 16),
@@ -212,7 +214,7 @@ ggplot()+
         title = element_text(size = 18))
 
 
-ggsave("./Figures/lme.tau.combined.png", height = 9, width = 15, units = "in")
+ggsave("./Figures/lme.tau.combined.png", height = 6, width = 10, units = "in")
 
   
 
