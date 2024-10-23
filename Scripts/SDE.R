@@ -4,29 +4,62 @@ library(tidyverse)
 library(sde)
 library(rstan)
 library(ggpubr)
-library(FactoMineR)
+library(pracma)
+library(nlme)
 
 # plot settings
 theme_set(theme_bw())
+
 cb <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
+# load slp & sst data
+slp <- read.csv("./Data/monthlySLPanomalies.csv", row.names = 1) %>%
+  group_by(Month) %>%
+  mutate(scaled_slp = scale(month.anom)[,1]) %>%
+  ungroup()
 
-# begin with North Pacific SLP EOF1
+goa.sst <- read.csv("./Data/goa.monthlySSTanomalies.csv", row.names = 1) %>%
+  filter(Year >= 1948) %>%
+  group_by(Month) %>%
+  mutate(scaled_sst = scale(month.anom)[,1]) %>%
+  ungroup() %>%
+  mutate(scaled_sst = detrend(scaled_sst))
+  
 
-# load slp and cell weights
-slp <- read.csv("./data/north.pacific.slp.anom.csv", row.names = 1)
+ebs.sst <- read.csv("./Data/ebs.monthlySSTanomalies.csv", row.names = 1) %>%
+  filter(Year >= 1948) %>%
+  group_by(Month) %>%
+  mutate(scaled_sst = scale(month.anom)[,1]) %>%
+  ungroup() %>%
+  mutate(scaled_sst = detrend(scaled_sst))
 
-weights <- read.csv("./data/north.pacific.slp.weights.csv", row.names = 1)
+# plot
+plot_slp <- slp %>%
+  mutate(dec.yr = Year + (Month - 0.5)/12,
+         variable = "SLP") %>%
+  rename(anomaly = scaled_slp) %>%
+  dplyr::select(dec.yr, anomaly, variable)
 
-pca <- svd.triplet(cov(slp), col.w=weights[,1]) #weighting the columns
+plot_goa <- goa.sst %>%
+  mutate(dec.yr = Year + (Month - 0.5)/12,
+         variable = "GOA SST") %>%
+  rename(anomaly = scaled_sst) %>%
+  dplyr::select(dec.yr, anomaly, variable)
 
-pc1 <- as.matrix(slp) %*% pca$U[,1]
+plot_ebs <- ebs.sst %>%
+  mutate(dec.yr = Year + (Month - 0.5)/12,
+         variable = "EBS SST") %>%
+  rename(anomaly = scaled_sst) %>%
+  dplyr::select(dec.yr, anomaly, variable)
 
-# and scale!
-pc1 <- as.vector(scale(pc1))
+plot_dat <- rbind(plot_slp, plot_goa, plot_ebs)
 
-# load regional sst anomaly
-sst <- read.csv("./data/regional_monthly_sst.csv")
+ggplot(plot_dat, aes(dec.yr, anomaly)) +
+  geom_line() +
+  facet_wrap(~variable, ncol = 1) +
+  geom_hline(yintercept = 0, lty = 2, col = "red") # looks like SST needs to be detrended - will do that in t
+
+
 
 
 # define functions
@@ -60,6 +93,13 @@ decor <- 1:12
 # object to catch results
 cor.out <- p.out <-  data.frame()
 
+# create sst df
+sst <- plot_dat %>%
+  filter(variable != "SLP") %>%
+  rename(date = dec.yr,
+         sst = anomaly,
+         region = variable)
+
 regions <- unique(sst$region)
 
 for(r in 1:length(regions)){ # loop through regions
@@ -71,22 +111,22 @@ temp.sst <- sst %>%
 
   dat <- data.frame(date = temp.sst$date,
                     sst = temp.sst[,2],
-                    slp.0 = pc1,
-                    slp.1 = c(NA, pc1[1:767]),
-                    slp.2 = c(NA, NA, pc1[1:766]),
-                    slp.3 = c(NA, NA, NA, pc1[1:765]),
-                    slp.4 = c(NA, NA, NA, NA, pc1[1:764]),
-                    slp.5 = c(NA, NA, NA, NA, NA, pc1[1:763]),
-                    slp.6 = c(NA, NA, NA, NA, NA, NA, pc1[1:762]))
+                    slp.0 = slp$month.anom,
+                    slp.1 = c(NA, slp$month.anom[1:919]),
+                    slp.2 = c(NA, NA, slp$month.anom[1:918]),
+                    slp.3 = c(NA, NA, NA, slp$month.anom[1:917]),
+                    slp.4 = c(NA, NA, NA, NA, slp$month.anom[1:916]),
+                    slp.5 = c(NA, NA, NA, NA, NA, slp$month.anom[1:915]),
+                    slp.6 = c(NA, NA, NA, NA, NA, NA, slp$month.anom[1:914]))
   
   
   # and drop NAs
   dat <- na.omit(dat)
 
 for(l in 3:ncol(dat)){ # loop through lags
-
+# l <- 1
 for(i in 1:length(decor)){ # loop through decorrelation scale
-  
+  # i <- 1
 pred_ts = ar_ls(1:nrow(dat), forcing=dat[,l],
                 gamma = 1/decor[i])
 
@@ -149,18 +189,16 @@ ggplot(filter(cor.out, region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska")), a
 ggsave("./figs/sst-slp_lag_decorrelation_by_region_EBS_GOA.png", width = 9, height = 6, units = 'in')
 
 decor.use <- cor.out %>%
-  filter(region != "North_Pacific") %>%
   group_by(region) %>%
   summarise(decor = decor[which.max(cor)])
 
 # check SST decor scale for GOA and EBS
-report.sst <- sst %>%
-  filter(region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska"))
+# report.sst <- sst
 
 
-decor.EBS <- acf(report.sst$monthly.anom[report.sst$region == "Eastern_Bering_Sea"])
+# decor.EBS <- acf(report.sst$monthly.anom[report.sst$region == "EBS SST"])
 
-decor.GOA <- acf(report.sst$monthly.anom[report.sst$region == "Gulf_of_Alaska"])
+# decor.GOA <- acf(report.sst$monthly.anom[report.sst$region == "GOA SST"])
 
 
 # now loop through and fit at the best decorrelation scale for each region
@@ -175,7 +213,7 @@ for(i in 1:nrow(decor.use)){
   
   dat <- data.frame(date = temp.sst$date,
                     sst = temp.sst[,2],
-                    slp.0 = pc1)
+                    slp.0 = slp$month.anom)
   
   pred_ts = ar_ls(1:nrow(dat), forcing=dat$slp.0,
                   gamma = 1/decor.use$decor[i])
@@ -183,8 +221,8 @@ for(i in 1:nrow(decor.use)){
   
   predicted.sst = rbind(predicted.sst,
                         data.frame(region = decor.use$region[i],
-                        t = as.Date(temp.sst$date),
-                        sst = dat$sst,
+                        t = temp.sst$date,
+                        sst = temp.sst$sst,
                         integrated.slp = c(0,-as.numeric(pred_ts))))
 
 }
@@ -198,40 +236,61 @@ ggplot(predicted.sst, aes(t, value, color = name)) +
   facet_wrap(~region)
   # could add correlations for each!
   
-# plot EBS and GOA for report
-ggplot(filter(predicted.sst, region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska")), aes(t, value, color = name)) +
-  geom_hline(yintercept = 0) +
-  geom_line() +
-  scale_color_manual(values = cb[c(2,6)], labels = c("Integrated SLP", "SST")) +
-  facet_wrap(~region, scales = "free_y", ncol = 1) +
-  theme(legend.title = element_blank(),
-        axis.title.x = element_blank()) +
-  ylab("Anomaly")
+# # plot EBS and GOA for report
+# ggplot(filter(predicted.sst, region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska")), aes(t, value, color = name)) +
+#   geom_hline(yintercept = 0) +
+#   geom_line() +
+#   scale_color_manual(values = cb[c(2,6)], labels = c("Integrated SLP", "SST")) +
+#   facet_wrap(~region, scales = "free_y", ncol = 1) +
+#   theme(legend.title = element_blank(),
+#         axis.title.x = element_blank()) +
+#   ylab("Anomaly")
+# 
+# ggsave("./figs/EBS_GOA_SST_integrated_SLP_time_series.png", width = 7, height = 5)
 
-ggsave("./figs/EBS_GOA_SST_integrated_SLP_time_series.png", width = 7, height = 5)
+
 
 # get statistics to report
 ## first ebs
 temp.ebs <- predicted.sst %>%
-  filter(region == "Eastern_Bering_Sea") %>%
+  filter(region == "EBS SST") %>%
   dplyr::select(t, name, value) %>%
   pivot_wider(names_from = name)
 
-cor(temp.ebs$sst, temp.ebs$integrated.slp) # r = 0.245
+cor(temp.ebs$sst, temp.ebs$integrated.slp) # r = 0.219
 
 mod <- nlme::gls(sst ~ integrated.slp, corAR1(), data = temp.ebs)
-summary(mod)$tTable[2,4] # 0.0251
+summary(mod)$tTable[2,4] # p = 0.0175
 
 ## now goa
 temp.goa <- predicted.sst %>%
-  filter(region == "Gulf_of_Alaska") %>%
+  filter(region == "GOA SST") %>%
   dplyr::select(t, name, value) %>%
   pivot_wider(names_from = name)
 
-cor(temp.goa$sst, temp.goa$integrated.slp) # r = 0.370
+cor(temp.goa$sst, temp.goa$integrated.slp) # r = 0.365
 
 mod <- nlme::gls(sst ~ integrated.slp, corAR1(), data = temp.goa)
-summary(mod)$tTable[2,4] # 0.0000123
+summary(mod)$tTable[2,4] # p = 2.31748e-07
+
+
+# calculate AR(1) and SD
+out_ar <- data.frame(region = rep(c("GOA", "EBS"), each = 2),
+                  time_series = rep(c("SST", "int_SLP"), 2),
+                  AR1 = c(sapply(rollapply(temp.goa$sst, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+                          sapply(rollapply(temp.goa$integrated.slp, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+                          sapply(rollapply(temp.ebs$sst, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+                          sapply(rollapply(temp.ebs$integrated.slp, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)))
+
+# something is wrong!!
+
+
+                  
+  goa.ar.sst <- sapply(rollapply(temp.goa, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+  
+
+
+
 
 
 # now loop through on 240-month (20 year) rolling windows
