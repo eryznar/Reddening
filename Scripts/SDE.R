@@ -285,6 +285,7 @@ out_ar <- data.frame(region = rep(c("GOA", "EBS"), each = 2),
 # something is wrong!!
 
 
+## below is old
                   
   goa.ar.sst <- sapply(rollapply(temp.goa, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
   
