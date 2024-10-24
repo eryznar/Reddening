@@ -172,21 +172,21 @@ ggplot(cor.out, aes(decor, cor, color = as.factor(lag))) +
   geom_point() +
   facet_wrap(~region) # very different decorrelation scales!
 
-ggsave("./figs/sst-slp_lag_decorrelation_by_region.png", width = 9, height = 6, units = 'in')
+ggsave("./Figures/sst-slp_lag_decorrelation_by_region.png", width = 9, height = 6, units = 'in')
 
 # plot EBS and GOA for report
 
-
-ggplot(filter(cor.out, region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska")), aes(decor, cor, color = as.factor(lag))) + 
-  geom_line() +
-  geom_point() +
-  facet_wrap(~region) + # very different decorrelation scales!
-  labs(x = "Decorrelation scale (months)",
-       y = "Correlation coefficient",
-       color = "Lag (months)") +
-  scale_x_continuous(breaks = 1:12)
-  
-ggsave("./figs/sst-slp_lag_decorrelation_by_region_EBS_GOA.png", width = 9, height = 6, units = 'in')
+# 
+# ggplot(filter(cor.out, region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska")), aes(decor, cor, color = as.factor(lag))) + 
+#   geom_line() +
+#   geom_point() +
+#   facet_wrap(~region) + # very different decorrelation scales!
+#   labs(x = "Decorrelation scale (months)",
+#        y = "Correlation coefficient",
+#        color = "Lag (months)") +
+#   scale_x_continuous(breaks = 1:12)
+#   
+# ggsave("./Figures/sst-slp_lag_decorrelation_by_region_EBS_GOA.png", width = 9, height = 6, units = 'in')
 
 decor.use <- cor.out %>%
   group_by(region) %>%
@@ -275,12 +275,54 @@ summary(mod)$tTable[2,4] # p = 2.31748e-07
 
 
 # calculate AR(1) and SD
-out_ar <- data.frame(region = rep(c("GOA", "EBS"), each = 2),
-                  time_series = rep(c("SST", "int_SLP"), 2),
+out_ar <- data.frame(region = c(rep("GOA", 461*2), rep("EBS", 461*2)),
+                     time_series = c(rep("SST", 461), rep("int_SLP", 461), rep("SST", 461), rep("int_SLP", 461)),
                   AR1 = c(sapply(rollapply(temp.goa$sst, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
                           sapply(rollapply(temp.goa$integrated.slp, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
                           sapply(rollapply(temp.ebs$sst, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
                           sapply(rollapply(temp.ebs$integrated.slp, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)))
+                  
+                  
+ out_sd <- data.frame(t = rep(temp.goa$t, 4), 
+                      region = c(rep("GOA", 920*2), rep("EBS", 920*2)),
+                      time_series = c(rep("SST", 920), rep("int_SLP", 920), rep("SST", 920), rep("int_SLP", 920)),
+                      SD = c(rollapply(temp.goa$sst, width = 460, FUN = sd, fill = NA),
+                             rollapply(temp.goa$integrated.slp, width = 460, FUN = sd, fill = NA),
+                             rollapply(temp.ebs$sst, width = 460, FUN = sd, fill = NA),
+                             rollapply(temp.ebs$integrated.slp, width = 460, FUN = sd, fill = NA)))
+
+
+ 
+ # Calculate windows
+ t <- na.omit(out_sd) %>% pull(t)
+ 
+ # Make data frame of ar1
+ cbind(t, out_ar) -> ar.dat
+ 
+ # Join
+ left_join(out_sd, ar.dat, relationship = "many-to-many") -> ar.sd.dat
+   
+   
+ggplot(ar.sd.dat, aes(t, AR1, color = time_series)) +
+  facet_wrap(~region, scales = "free_y", nrow= 2)+
+  geom_line()
+
+ggplot(ar.sd.dat, aes(t, SD, color = time_series)) +
+  facet_wrap(~region, scales = "free_y", nrow = 2)+
+  geom_line()
+
+ggplot() +
+  geom_line(ar.sd.dat %>% filter(time_series == "int_SLP"), mapping = aes(t, SD, color = time_series))+
+  geom_line(ar.sd.dat %>% filter(time_series == "SST"), mapping = aes(t, AR1, color = time_series))+
+  facet_wrap(~region, scales = "free_y", nrow = 2)+
+  ylab("Value")+
+  scale_color_manual(values = c("salmon", "steelblue"), labels = c("int_SLP SD", "SST AR1"))
+
+
+
+# Calculate rolling window SD
+sd <-  rollapply(temp.goa$sst, width = 460, FUN = sd)
+
 
 # something is wrong!!
 
