@@ -222,9 +222,9 @@ ggplot(wtd.sum.out, aes(year, ar1_wtdavg, color = region, linetype = experiment)
   #geom_ribbon(wtd.sum.out, mapping = aes(ymin = ar1_wtdavg - ar1_wtdsd, ymax = ar1_wtdavg + ar1_wtdsd, fill = region), color = NA, alpha = 0.5)+
   scale_x_continuous(breaks = seq(min(wtd.sum.out$year), max(wtd.sum.out$year), by = 20),
                      labels = seq(min(wtd.sum.out$year), max(wtd.sum.out$year), by = 20))+
-  scale_color_manual(values = c("#6A6DB7", "#A34242"), guide = "none")+
-  scale_fill_manual(values = c("#6A6DB7", "#A34242"), name = "")+
-  scale_linetype_manual(values = c("solid", "twodash"), labels = c("Anthropogenic radiative forcing", "Preindustrial control"), name = "")+
+  scale_color_manual(values = c("#00AFBA", "#C28600"), guide = "none")+
+  scale_fill_manual(values = c("#00AFBA", "#C28600"), name = "")+
+  scale_linetype_manual(values = c("solid", "twodash"), labels = c("Anthropogenic radiative forcing\n(SSP245)", "Preindustrial\ncontrol"), name = "")+
   theme_bw()+
   ggtitle("Autocorrelation")+
   xlab("Year")+
@@ -237,7 +237,7 @@ ggplot(wtd.sum.out, aes(year, ar1_wtdavg, color = region, linetype = experiment)
         legend.text = element_text(size = 14),
         title = element_text(size = 16))
 
-ggsave("./Figures/CMIP6SST.AR1.png", width = 8, height = 7,units = "in")
+ggsave("./Figures/CMIP6SST.AR1.png", width = 7, height = 7,units = "in")
 
 ggplot(wtd.sum.out, aes(year, sd_wtdavg, color = region, linetype = experiment)) +
   geom_line(size = 1.25) +
@@ -246,9 +246,9 @@ ggplot(wtd.sum.out, aes(year, sd_wtdavg, color = region, linetype = experiment))
   #geom_ribbon(wtd.sum.out, mapping = aes(ymin = ar1_wtdavg - ar1_wtdsd, ymax = ar1_wtdavg + ar1_wtdsd, fill = region), color = NA, alpha = 0.5)+
   scale_x_continuous(breaks = seq(min(wtd.sum.out$year), max(wtd.sum.out$year), by = 20),
                      labels = seq(min(wtd.sum.out$year), max(wtd.sum.out$year), by = 20))+
-  scale_color_manual(values = c("#6A6DB7", "#A34242"), guide = "none")+
-  scale_fill_manual(values = c("#6A6DB7", "#A34242"), name = "")+
-  scale_linetype_manual(values = c("solid", "twodash"), labels = c("Anthropogenic radiative forcing", "Preindustrial control"), name = "")+
+  scale_color_manual(values = c("#00AFBA", "#C28600"), guide = "none")+
+  scale_fill_manual(values = c("#00AFBA", "#C28600"), name = "")+
+  scale_linetype_manual(values = c("solid", "twodash"), labels = c("Anthropogenic radiative forcing\n(SSP245)", "Preindustrial\ncontrol"), name = "")+
   theme_bw()+
   ggtitle("Standard deviation (°C)")+
   xlab("Year")+
@@ -261,5 +261,5 @@ ggplot(wtd.sum.out, aes(year, sd_wtdavg, color = region, linetype = experiment))
         legend.text = element_text(size = 14),
         title = element_text(size = 16))
 
-ggsave("./Figures/CMIP6SST.SD.png", width = 8, height = 7, units = "in")
+ggsave("./Figures/CMIP6SST.SD.png", width = 7, height = 7, units = "in")
   

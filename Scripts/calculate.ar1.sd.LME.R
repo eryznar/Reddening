@@ -8,16 +8,21 @@ sst.lme <- read.csv("./Output/lme.sst_df.csv") %>%
          year > 1960 & year < 2024) %>%
   dplyr::select(year, LME, mean.anom)
 
+# Load goa and ebs sst
+ebs.sst <- read.csv("./Output/SST.anom.ebs.csv") %>%
+  filter(Year %in% 1948:2024)
+goa.sst <- read.csv("./Output/SST.anom.goa.csv")%>%
+  filter(Year %in% 1948:2024)
 
-ar1var.EBS.sst %>%
+ebs.sst %>%
   mutate(LME = "Eastern Bering Sea") %>%
-  dplyr::select(year, val, LME) %>%
-  rename(mean.anom = val) -> ebs
+  dplyr::select(!X) %>%
+  rename(mean.anom = mean.sst, year = Year) -> ebs
 
-ar1var.goa.sst %>%
+goa.sst %>%
   mutate(LME = "Gulf of Alaska") %>%
-  dplyr::select(year, val, LME) %>%
-  rename(mean.anom = val) -> goa
+  dplyr::select(!X) %>%
+  rename(mean.anom = mean.sst, year=Year) -> goa
 
  rbind(sst.lme, ebs, goa) -> sst.lme
    #filter(year>1960 & year<2024)
@@ -46,20 +51,19 @@ for(ii in 1:length(lme)){
   width = 15
   
   # Detrend data
-   detrend.dat <- loess(mean.anom ~ year, TS.dat, span = 0.25, degree = 1)
-   
+   detrend.dat <- lm(mean.anom ~ year, TS.dat)
+
   # Extract residuals
-  TS.dat <- data.frame(year = TS.dat$year, mean.anom = detrend.dat$residuals)
-  
-  
+  TS.dat2 <- data.frame(year = TS.dat$year, mean.anom = detrend.dat$residuals)
+
   # Calculate rolling window AR1
-  ar1 <- sapply(rollapply(TS.dat$mean.anom, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
+  ar1 <- sapply(rollapply(TS.dat2$mean.anom, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
   
   # Calculate rolling window SD
-  sd <-  rollapply(TS.dat$mean.anom, width = width, FUN = sd, fill = NA)
+  sd <-  rollapply(TS.dat2$mean.anom, width = width, FUN = sd, fill = NA)
   
   # Make data frame of sd-cv
-  data.frame(year = unique(TS.dat$year), val = TS.dat$mean.anom, sd = sd) -> win.dat
+  data.frame(year = unique(TS.dat2$year), val = TS.dat2$mean.anom, sd = sd) -> win.dat
   
   # Calculate windows
   win.yr <- na.omit(win.dat) %>% pull(year)

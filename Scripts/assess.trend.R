@@ -31,9 +31,9 @@ width = 15 # rolling window length
   
   
   ggplot(ebs.sst, aes(x = Year, y = mean.sst))+
-    geom_line(color = "#6A6DB7", linewidth = 1.5)+
+    geom_line(color = "#00AFBA", linewidth = 1.5)+
     theme_bw()+
-    geom_point(size = 2.25, color = "#6A6DB7")+
+    geom_point(size = 2.25, color = "#00AFBA")+
     scale_x_continuous(breaks = seq(min(ebs.sst$Year), max(ebs.sst$Year), by = 10))+
     ylab("Anomaly (°C)")+
     xlab("Year")+
@@ -46,14 +46,14 @@ width = 15 # rolling window length
           legend.text = element_text(size = 14),
           title = element_text(size = 16))
   
-  ggsave("./Figures/ebs.sst.png", width = 9, height = 3, units="in")
+  ggsave("./Figures/ebs.sst.png", width = 6, height = 4, units="in")
   
   
   
   ggplot(goa.sst, aes(x = Year, y = mean.sst))+
-    geom_line(color = "#A34242", linewidth = 1.5)+
+    geom_line(color = "#C28600", linewidth = 1.5)+
     theme_bw()+
-    geom_point(size = 2.25, color = "#A34242")+
+    geom_point(size = 2.25, color = "#C28600")+
     scale_x_continuous(breaks = seq(min(goa.sst$Year), max(goa.sst$Year), by = 10))+
     ylab("Anomaly (°C)")+
     xlab("Year")+
@@ -66,7 +66,8 @@ width = 15 # rolling window length
           legend.text = element_text(size = 14),
           title = element_text(size = 16))
   
-  ggsave("./Figures/goa.sst.png", width = 9, height = 3, units="in")
+  
+  ggsave("./Figures/goa.sst.png", width = 6, height = 4, units="in")
   
 
   # Detrend data
@@ -113,7 +114,7 @@ width = 15 # rolling window length
                              TRUE ~ plab)) -> lab.dat
    
   labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
-  labs <- data.frame(x = c(2010, 2010), y = c(-0.5, -0.39),
+  labs <- data.frame(x = c(2010, 2010), y = c(-0.4, -0.33),
                      rlab = round(lab.dat$rsq, 2), plab = lab.dat$psig,
                      region = c("Eastern Bering Sea", "Gulf of Alaska"))
   
@@ -125,8 +126,8 @@ width = 15 # rolling window length
                 mapping = aes(x = year, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
     geom_point(plot.dat.sst2, mapping=aes(x =  year, y = observed), color = "black")+
     geom_line(plot.dat.sst2, mapping = aes(x =  year, y = pred, color = region), size = 1.25)+
-    scale_color_manual(values = c("#6A6DB7", "#A34242"))+
-    scale_fill_manual(values = c("#6A6DB7", "#A34242"))+
+    scale_color_manual(values = c("#00AFBA", "#C28600"))+
+    scale_fill_manual(values = c("#00AFBA", "#C28600"))+
     facet_wrap(~region, scales = "free_y",
                ncol = 1)+
     theme_bw()+
@@ -163,7 +164,7 @@ width = 15 # rolling window length
   labs <- paste0(lab.dat$region, " \n(k=", lab.dat$k, ", R2=", round(lab.dat$rsq, 2), ", ", lab.dat$psig, ")")
   names(labs) <- c("Eastern Bering Sea", "Gulf of Alaska")
   
-  labs <- data.frame(x = c(2010, 2010), y = c(0.3, 0.25),
+  labs <- data.frame(x = c(2010, 2010), y = c(0.3, 0.38),
                      rlab = round(lab.dat$rsq, 2), plab = lab.dat$psig,
                      region = c("Eastern Bering Sea", "Gulf of Alaska"))
   
@@ -175,8 +176,8 @@ width = 15 # rolling window length
                 mapping = aes(x = year, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
     geom_point(plot.dat.sst2, mapping=aes(x =  year, y = observed), color = "black")+
     geom_line(plot.dat.sst2, mapping = aes(x =  year, y = pred, color = region), size = 1.25)+
-    scale_color_manual(values = c("#6A6DB7", "#A34242"))+
-    scale_fill_manual(values = c("#6A6DB7", "#A34242"))+
+   scale_color_manual(values = c("#00AFBA", "#C28600"))+
+    scale_fill_manual(values = c("#00AFBA", "#C28600"))+
     facet_wrap(~region, scales = "free_y", labeller = labeller(region = labs),
                ncol = 1)+
     theme_bw()+
@@ -658,15 +659,36 @@ width = 15 # rolling window length
      names(labs) <- c("ar1", "sd")
     
      # Plot AR1
-     ggplot(na.omit(dd),  mapping=aes(x = year, y = value))+
-       facet_wrap(~name, scales = "free_y", labeller = labeller(name = labs), nrow = 2)+
+     ggplot(na.omit(dd) %>% filter(name == "ar1"),  mapping=aes(x = year, y = value))+
+       #facet_wrap(~name, scales = "free_y", labeller = labeller(name = labs), nrow = 2)+
        geom_point(size = 2.25, color = "steelblue")+
        geom_line(linewidth = 1.5, color = "steelblue")+
        theme_bw()+
-       #ggtitle("SLP AR1")+
+       ggtitle("Aleutian Low sea level pressure")+
        #scale_x_continuous(limits = c(min(ar1var.slp$year), max(ar1var.slp$year)), breaks = seq(min(ar1var.slp$year), max(ar1var.slp$year), by = 10))+
        scale_x_continuous(breaks= seq(min(na.omit(ar1var.slp)$year), max(na.omit(ar1var.slp)$year), by = 10))+
-       ylab("Value")+
+       ylab("AR1")+
+       xlab("Year")+
+       geom_vline(xintercept = 1988.5, linetype = "dashed")+
+       theme(legend.position = "none",
+             legend.direction= "horizontal",
+             axis.text = element_text(size = 14),
+             axis.title = element_text(size = 16),
+             strip.text = element_text(size = 16),
+             legend.text = element_text(size = 14),
+             title = element_text(size = 16)) 
+     
+     
+     # Plot AR1
+     ggplot(na.omit(dd) %>% filter(name == "sd"),  mapping=aes(x = year, y = value))+
+       #facet_wrap(~name, scales = "free_y", labeller = labeller(name = labs), nrow = 2)+
+       geom_point(size = 2.25, color = "steelblue")+
+       geom_line(linewidth = 1.5, color = "steelblue")+
+       theme_bw()+
+       ggtitle("Aleutian Low sea level pressure")+
+       #scale_x_continuous(limits = c(min(ar1var.slp$year), max(ar1var.slp$year)), breaks = seq(min(ar1var.slp$year), max(ar1var.slp$year), by = 10))+
+       scale_x_continuous(breaks= seq(min(na.omit(ar1var.slp)$year), max(na.omit(ar1var.slp)$year), by = 10))+
+       ylab("Standard deviation (pa)")+
        xlab("Year")+
        geom_vline(xintercept = 1988.5, linetype = "dashed")+
        theme(legend.position = "none",
@@ -725,15 +747,23 @@ width = 15 # rolling window length
                    mutate(region = case_when((grepl("goa", region) == TRUE) ~ "Gulf of Alaska",
                                              TRUE ~ "Eastern Bering Sea"))) %>%
       group_by(region) %>%
-      mutate(slp.sd.norm = (slp.sd-min(slp.sd))/(max(slp.sd)-min(slp.sd)),
-             sst.sd.norm = (sd-min(sd))/(max(sd)-min(sd)),
-             sst.ar1.norm = (ar1-min(ar1))/(max(ar1)-min(ar1))) %>%
+      # mutate(slp.sd.norm = (slp.sd-min(slp.sd))/(max(slp.sd)-min(slp.sd)),
+      #        sst.sd.norm = (sd-min(sd))/(max(sd)-min(sd)),
+      #        sst.ar1.norm = (ar1-min(ar1))/(max(ar1)-min(ar1))) %>%
+      mutate(slp.sd.norm = scale(slp.sd),
+             sst.sd.norm = scale(sd),
+             sst.ar1.norm = scale(ar1)) %>%
       ungroup() -> plot.dat2
     
-    p =data.frame(plab = c("p<0.001*", "p<0.01*"),
-                  rlab = c("0.46", "0.13"),
+    cor.dat <- plot.dat2 %>% filter(region == "Eastern Bering Sea")
+    cor.test(cor.dat$sst.ar1.norm, cor.dat$slp.sd.norm)
+    cor.dat <- plot.dat2 %>% filter(region == "Gulf of Alaska")
+    cor.test(cor.dat$sst.ar1.norm, cor.dat$slp.sd.norm)
+    
+    p =data.frame(plab = c("p <0.001*", "p<0.001*"),
+                  rlab = c("0.7", "0.61"),
                      x = c(1960.5, 1960.5),
-                     y = c(0.91, 0.91),
+                     y = c(2, 2),
                      region= c("Eastern Bering Sea", "Gulf of Alaska"))
   
     
@@ -744,14 +774,14 @@ width = 15 # rolling window length
       facet_wrap(~region)+
       geom_point(plot.dat2, mapping = aes(year, slp.sd.norm, color = "steelblue"), size = 2.25)+
       theme_bw()+
-      scale_color_manual(name = "", values = c("salmon", "steelblue"), labels = c("Sea surface temperature (°C)\nautocorrelation", "Sea level pressure (pa)\nstandard deviation"))+
+      scale_color_manual(name = "", values = c("salmon", "steelblue"), labels = c("Sea surface temperature (°C)\nautocorrelation", "Aleutian Low (pa)\nstandard deviation"))+
       theme_bw()+
       scale_x_continuous(breaks= seq(min(plot.dat2$year), max(plot.dat2$year), by = 10))+
       ylab("Normalized value")+
       xlab("Year")+
       #geom_richtext(data = p, aes(x = x,  y = y, label = lab))+
       geom_richtext(data = p, aes(x = x,  y = y, 
-                              label = paste0(plab, "<br>\nr<sup>2</sup> = ", rlab)), size = 4)+
+                              label = paste0(plab, "<br>\nr = ", rlab)), size = 4)+
       theme(legend.position = "bottom",
             legend.direction= "horizontal",
             axis.text = element_text(size = 14),
