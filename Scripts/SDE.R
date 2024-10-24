@@ -24,7 +24,16 @@ goa.sst <- read.csv("./Data/goa.monthlySSTanomalies.csv", row.names = 1) %>%
   mutate(scaled_sst = scale(month.anom)[,1]) %>%
   ungroup() %>%
   mutate(scaled_sst = detrend(scaled_sst))
-  
+
+# Recreating AR1 that I sent
+    # Detrend data
+    detrend.dat <- loess(month.anom ~ Year, goa.sst, span = 0.25, degree = 1)
+    
+    # Extract residuals
+    TS.dat <- data.frame(Year = goa.sst$Year, month.anom = detrend.dat$residuals)
+    pp <- sapply(rollapply(TS.dat$month.anom, width = 460, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)
+    plot(pp, type = "l")
+
 
 ebs.sst <- read.csv("./Data/ebs.monthlySSTanomalies.csv", row.names = 1) %>%
   filter(Year >= 1948) %>%
