@@ -45,14 +45,6 @@ SST <- aperm(SST, 3:1)
   
   SST.ebs[,!check] <- NA
   
-  # plot to check
-  z <- colMeans(SST.ebs)
-  z <- t(matrix(z, length(y)))
-  image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(50,66), xlim=c(180,208))
-  contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
-  map('world2Hires',fill=F, ylim=c(50,66), xlim=c(180,208),add=T, lwd=1)
-  # looks good
-  
   SST.ebs %>%
     as.data.frame(.) %>%
     mutate(date = rownames(.)) %>%
@@ -171,14 +163,7 @@ SST <- aperm(SST, 3:1)
   
   SST.goa[,!check] <- NA
   
-  # plot to check
-  z <- colMeans(SST.goa)
-  z <- t(matrix(z, length(y)))
-  image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(53,66), xlim=c(199,230))
-  contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
-  map('world2Hires',fill=F, ylim=c(53,66), xlim=c(199,230),add=T, lwd=1)
-  # looks good
-  
+
   SST.goa %>%
     as.data.frame(.) %>%
     mutate(date = rownames(.)) %>%
@@ -392,18 +377,18 @@ SLP.anom2%>%
   rename(month.anom = slp) -> month.slp
 
 write.csv(month.slp, "./Output/monthlySLPanomalies.csv")
-#write.csv(month.slp, "./Output/monthlywinterSLPanomalies.csv")
 
-# Shift winter years
-win.yr <- win.yr[m %in% c(11,12,1:3)]
-SLP.win.anom <- tapply(SLP.win.anom, win.yr, mean)
 
-# save data
-data.frame(year = names(SLP.win.anom), SLP.win.anom = SLP.win.anom) -> SLP.dat
+# Calculate winter means
+SLP.anom2 %>%
+  filter(Month %in% c(11, 12, 1:3)) %>%
+  group_by(Win.year) %>%
+  reframe(SLP.win.anom = mean(slp)) -> SLP.dat
 
-rownames(SLP.dat) = NULL
 
-write.csv(SLP.dat, "./Output/SLP.winter.anom.csv")
+write.csv(SLP.dat, "./Output/monthlywinterSLPanomalies.csv")
+
+
 
 ### Calculate EOF on SLP data ----
 # first, load data
@@ -497,11 +482,7 @@ mu <- rbind(mu, mu[1:xtra,])
 
 slp.anom <- SLP.m[,1:35] - mu 
 
-# get anomalies
-# save for SDE analysis!
-#write.csv(slp.anom, "./Data/north.pacific.slp.anom.csv")
 
-# and also save weights for EOF!
 # get a vector of weights (square root of the cosine of latitude)
 
 # identify columns containing NA
@@ -510,21 +491,6 @@ X.lats <- as.numeric(str_split(temp1, "N", simplify = T)[,2])
 
 weight <- sqrt(cos(X.lats*pi/180)) 
 
-# # save
-# write.csv(weight, "./Data/north.pacific.slp.weights.csv")
-# 
-# # limit to FMA
-# d <- dates(rownames(slp))
-# year <- as.numeric(as.character(years(d)))
-# change <-  year > 2013
-# year[change] <- year[change]-100
-# 
-# month <- months(d)
-# 
-# slp_fma <- slp[m %in% c("Feb", "Mar", "Apr"),]
-# yr.fma <- year[m %in% c("Feb", "Mar", "Apr")]
-# 
-# weights <- read.csv("./Data/north.pacific.slp.weights.csv", row.names = 1)
 
 pca <- FactoMineR::svd.triplet(cov(slp.anom), col.w=na.omit(weight)) #weighting the columns
 
