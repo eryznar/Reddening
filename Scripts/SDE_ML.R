@@ -438,3 +438,69 @@ ggplot(out, aes(year, ar1)) +
   geom_line() +
   facet_wrap(~window, scales = "free_y")
 
+## look at AR1 and SD of winter SLP time series --------------
+
+# reload slp
+slp <- read.csv("./Data/monthlySLPanomalies.csv", row.names = 1) 
+
+# limit to winter months and assign year corresponding to January and remove incomplete 1948 
+
+slp <- slp %>%
+  filter(Month %in% c(11,12,1:3)) %>%
+  mutate(winter.year = if_else(Month %in% c(11,12), Year+1, Year)) %>%
+  filter(winter.year > 1948) %>%
+  group_by(winter.year) %>%
+  summarise(slp = mean(month.anom))
+
+slp$slp <- as.vector(scale(slp$slp))
+
+ggplot(slp, aes(winter.year, slp)) +
+  geom_point() +
+  geom_line()
+
+acf(slp$slp) # white noise!
+
+# plot 15-yr windows
+ar.15 <- sapply(rollapply(slp$slp, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)
+mean.year <- rollapply(as.numeric(slp$winter.year), width = 15, FUN = mean)
+sd.15 <- rollapply(as.numeric(slp$slp), width = 15, FUN = sd)
+
+plot_dat <- data.frame(year = mean.year,
+                       ar.15 = ar.15,
+                       sd.15 = sd.15)
+
+ggplot(plot_dat, aes(year, ar.15)) +
+  geom_point() +
+  geom_line()
+# around 0, which we expect
+
+ggplot(plot_dat, aes(year, sd.15)) +
+  geom_point() +
+  geom_line()
+
+# matches past papers
+
+# how does sd in slp link to ar1 in sst?
+
+sd <- seq(0.65, 1.25, by = 0.01)
+
+out <- data.frame() 
+
+for(i in 1:length(sd)){
+
+  temp.slp <- rnorm(n = 10000, mean = 0, sd = sd[i])
+  
+  pred_ts = ar_ls(1:10000, forcing=temp.slp,
+                  gamma = 1/4)
+  
+  out <- rbind(out,
+               data.frame(sd = sd[i],
+                          ar = ar(pred_ts, order.max = 1, AIC = F)$ar))
+  
+}
+
+ggplot(out, aes(sd, ar)) +
+  geom_point() +
+  geom_line()
+
+# no relationship with this model!
