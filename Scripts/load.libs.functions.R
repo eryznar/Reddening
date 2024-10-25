@@ -192,7 +192,7 @@ trend.fun <- function(TS.dat, data.type, wind){
         na.omit()
       
       # Detrend data
-      detrend.dat <- loess(log.recruitment ~ Lagged.Year, dat, span = 0.25, degree = 1)
+      detrend.dat <- lm(log.recruitment ~ Lagged.Year, dat)
       
       # Extract residuals
       detrend.dat.resid <- data.frame(TS = rep(names[ii], length(unique(dat$Lagged.Year))),
@@ -212,7 +212,7 @@ trend.fun <- function(TS.dat, data.type, wind){
     dat <- TS.dat
     
     # Detrend data
-    detrend.dat <- loess(mean.sst ~ Year, dat, span = 0.25, degree = 1)
+    detrend.dat <- lm(mean.sst ~ Year, dat)
     
     # Extract residuals
     
@@ -233,7 +233,7 @@ trend.fun <- function(TS.dat, data.type, wind){
     dat <- TS.dat
     
     # Detrend data
-    detrend.dat <- loess(SLP.win.anom ~ Year, dat, span = 0.25, degree = 1)
+    detrend.dat <- lm(SLP.win.anom ~ Year, dat)
     
     # Extract residuals
     detrend.dat.resid <- data.frame(TS = rep("SLP", length(unique(dat$Year))),
