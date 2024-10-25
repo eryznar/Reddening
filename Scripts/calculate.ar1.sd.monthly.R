@@ -139,20 +139,21 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     
 
 # AR1 and SD for monthly PDO index values ----
-    pdo <- read.csv("./Data/pdo.timeseries.ersstv5.csv")
+    pdo <- read.csv("./Data/pdo.timeseries.hadisst1-1.csv") #HADISST
+    #pdo <- read.csv("./Data/pdo.timeseries.ersstv5.csv") #ERRST
+    
     names(pdo) <- c("Date", "index")
     
     pdo %>%
       mutate(year = as.numeric(substr(Date, 1, 4)),
              month = as.numeric(substr(Date, 6, 7)),
              dec.yr = year + (month - 0.5)/12) %>%
-      filter(year %in% 1900:2012)-> pdo2 
+      filter(year %in% 1900:2012, index > -2000)-> pdo2 
     
     
     plot(pdo2$dec.yr, pdo2$index, type = "l")
     
     width = nrow(pdo2)/2 # per Boulton and Lenton
-    
     
     # Calculate rolling window AR1
     ar1 <- sapply(rollapply(pdo2$index, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
@@ -175,7 +176,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     left_join(win.dat, ar1.dat, relationship = "many-to-many") -> win.dat.pdo
     
     ggplot(win.dat.pdo, aes(dec.yr, ar1))+
-      ggtitle("PDO")+
+      ggtitle("PDO AR1 (ERSST)")+
       geom_line()+
       xlab("Year")+
       theme(legend.position = "none",
@@ -187,7 +188,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
             title = element_text(size = 16))
     
     ggplot(win.dat.pdo, aes(dec.yr, sd))+
-      ggtitle("PDO SD")+
+      ggtitle("PDO SD (ERSST)")+
       geom_line()+
       xlab("Year")+
       theme(legend.position = "none",
