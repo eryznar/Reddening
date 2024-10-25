@@ -315,3 +315,126 @@ ggplot() +
 ## integrate slp to recreate PDO
 
 # load PDO
+
+pdo <- read.csv("./Data/pdo.timeseries.ersstv5.csv") 
+
+names(pdo) <- c("date", "pdo")
+
+pdo <- pdo %>%
+  mutate(year = str_sub(date, 1, 4),
+         month = str_sub(date, 6, 7)) %>%
+  dplyr::select(year, month, pdo) %>%
+  filter(year >= 1900, 
+         pdo > -999)
+
+pdo$time_step <- 1:nrow(pdo)
+
+# look at AR(1) patterns depending on window length
+
+nrow(pdo) / 2 # 750 ~ 1/2 time series
+
+windows <- seq(150, 750, by = 50)
+
+out <- data.frame()
+
+for(i in 1:length(windows)){
+  
+  ar.temp <- sapply(rollapply(pdo$pdo, width = windows[i], FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)
+  mean.year <- rollapply(as.numeric(pdo$year), width = windows[i], FUN = mean)
+  
+  out <- rbind(out, 
+               data.frame(year = mean.year, 
+                          ar1 = ar.temp,
+                          window = as.character(windows[i])))
+  
+}
+
+ggplot(out, aes(year, ar1, color = window)) +
+  geom_line() +
+  scale_color_viridis_d()
+
+ggplot(out, aes(year, ar1)) +
+  geom_line() +
+  facet_wrap(~window, scales = "free_y") +
+  geom_vline(xintercept = 1988.5, lty = 2)
+
+#### integrate slp to predict PDO --------------
+
+pdo <- pdo %>%
+  mutate(dec.yr = as.numeric(year) + (as.numeric(month) - 0.5)/12)
+
+# reload slp
+slp <- read.csv("./Data/monthlySLPanomalies.csv", row.names = 1) %>%
+  mutate(scaled_slp = scale(month.anom)[,1]) %>%
+  mutate(dec.yr = Year + (Month - 0.5)/12)
+
+
+dat <- left_join(slp, pdo) %>%
+  dplyr::select(dec.yr,
+                scaled_slp,
+                pdo)
+
+decor.use <- 6 # from Di Lorenzo and Ohman
+
+
+
+  pred_ts = ar_ls(1:nrow(dat), forcing=dat$scaled_slp,
+                  gamma = 1/decor.use)
+  
+  
+  predicted.pdo = data.frame(date = dat$dec.yr,
+                          pdo = dat$pdo,
+                          integrated.slp = c(0,-as.numeric(pred_ts)))
+  
+predicted.pdo <- predicted.pdo %>%
+  pivot_longer(cols = -date)
+
+ggplot(predicted.pdo, aes(date, value, color = name)) +
+  geom_line() +
+  scale_color_manual(values = cb[c(2,6)], labels = c("Integrated SLP", "PDO")) 
+
+predicted.pdo <- predicted.pdo %>%
+  pivot_wider(names_from = name,
+              values_from = value)
+
+cor(predicted.pdo$pdo, predicted.pdo$integrated.slp) # r = 0.521
+
+mod <- nlme::gls(pdo ~ integrated.slp, corAR1(), data = predicted.pdo)
+summary(mod)$tTable[2,4] # p = 0.023
+
+## evaluate AR(1) patterns of PDO & integrated slp ----------------
+
+# look at AR(1) patterns depending on window length
+
+nrow(predicted.pdo) / 2 # 460 = 1/2 time series
+
+windows <- seq(150, 450, by = 50)
+
+out_predicted_pdo <- data.frame()
+
+for(i in 1:length(windows)){
+  
+  ar.temp_pdo <- sapply(rollapply(predicted.pdo$pdo, width = windows[i], FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)
+  ar.temp_integrated.slp <- sapply(rollapply(predicted.pdo$integrated.slp, width = windows[i], FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2)  
+  mean.year <- rollapply(predicted.pdo$date, width = windows[i], FUN = mean)
+  
+  out_predicted_pdo <- rbind(out_predicted_pdo, 
+               data.frame(year = mean.year, 
+                          ar1_pdo = ar.temp_pdo,
+                          ar1_integrated.slp = ar.temp_integrated.slp,
+                          window = as.character(windows[i])))
+  
+}
+
+out_predicted_pdo <- out_predicted_pdo %>%
+  pivot_longer(cols = c(-year, -window))
+
+ggplot(out_predicted_pdo, aes(year, value, color = name)) +
+  geom_line() +
+  scale_color_manual(values = cb[c(2,6)]) +
+  facet_wrap(~window, scales = "free_y")
+
+ggplot(out, aes(year, ar1)) +
+  geom_line() +
+  facet_wrap(~window, scales = "free_y")
+
