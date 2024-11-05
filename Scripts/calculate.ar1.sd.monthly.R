@@ -18,7 +18,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
 
   # EBS SST ----
   # Detrend data
-  detrend.dat <- lm(month.anom ~ dec.yr, ebs.sst)
+  detrend.dat <- lm(month.anom ~ Year, ebs.sst)
   
   # Extract residuals
   resid <- data.frame(Year = ebs.sst$Year, month = ebs.sst$Month, month.anom = detrend.dat$residuals)
@@ -77,7 +77,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
   
   # GOA SST ----
   # Detrend data
-  detrend.dat <- lm(month.anom ~ dec.yr, goa.sst)
+  detrend.dat <- lm(month.anom ~ Year, goa.sst)
   
   # Extract residuals
   resid <- data.frame(Year = goa.sst$Year, month = goa.sst$Month, month.anom = detrend.dat$residuals)
@@ -139,20 +139,21 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     
 
 # AR1 and SD for monthly PDO index values ----
-    pdo <- read.csv("./Data/pdo.timeseries.ersstv5.csv")
+    pdo <- read.csv("./Data/pdo.timeseries.hadisst1-1.csv") #HADISST
+    #pdo <- read.csv("./Data/pdo.timeseries.ersstv5.csv") #ERRST
+    
     names(pdo) <- c("Date", "index")
     
     pdo %>%
       mutate(year = as.numeric(substr(Date, 1, 4)),
              month = as.numeric(substr(Date, 6, 7)),
              dec.yr = year + (month - 0.5)/12) %>%
-      filter(year %in% 1948:2024, index > -2000)-> pdo2 
+      filter(year %in% 1900:2012, index > -2000)-> pdo2 
     
     
     plot(pdo2$dec.yr, pdo2$index, type = "l")
     
-    width = 460 # per Boulton and Lenton
-    
+    width = nrow(pdo2)/2 # per Boulton and Lenton
     
     # Calculate rolling window AR1
     ar1 <- sapply(rollapply(pdo2$index, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
@@ -175,7 +176,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     left_join(win.dat, ar1.dat, relationship = "many-to-many") -> win.dat.pdo
     
     ggplot(win.dat.pdo, aes(dec.yr, ar1))+
-      ggtitle("PDO")+
+      ggtitle("PDO AR1 (ERSST)")+
       geom_line()+
       xlab("Year")+
       theme(legend.position = "none",
@@ -187,7 +188,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
             title = element_text(size = 16))
     
     ggplot(win.dat.pdo, aes(dec.yr, sd))+
-      ggtitle("PDO SD")+
+      ggtitle("PDO SD (ERSST)")+
       geom_line()+
       xlab("Year")+
       theme(legend.position = "none",
@@ -203,15 +204,22 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
   slp <- read.csv("./Output/monthlySLPanomalies.csv") %>%
       filter(Year %in% 1948:2024) %>%
       mutate(dec.yr = Year + (Month - 0.5)/12)
+
+    
+    # Detrend data
+    detrend.dat <- lm(month.anom ~ Year, slp)
+    
+    # Extract residuals
+    resid <- data.frame(Year = slp$Year, month = slp$Month, month.anom = detrend.dat$residuals)
     
     width = 460 # per Boulton and Lenton
     
     
     # Calculate rolling window AR1
-    ar1 <- sapply(rollapply(slp$month.anom, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
+    ar1 <- sapply(rollapply(resid$month.anom, width = width, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2) 
     
     # Calculate rolling window SD
-    sd <-  rollapply(slp$month.anom, width = width, FUN = sd, fill = NA)
+    sd <-  rollapply(resid$month.anom, width = width, FUN = sd, fill = NA)
     
     
     # Make data frame of sd-cv
@@ -231,6 +239,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
       ggtitle("SLP AR1")+
       geom_line()+
       xlab("Year")+
+      geom_vline(xintercept = 1988.5, linetype = "dashed")+
       theme(legend.position = "none",
             axis.text = element_text(size = 16),
             #axis.text.x = element_text(angle = 45, vjust = 1, hjust=1),
