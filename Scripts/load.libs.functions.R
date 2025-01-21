@@ -24,6 +24,7 @@ library(FactoMineR)
 library(cowplot)
 library(ggpubr)
 library(ggtext)
+library(patchwork)
 
 
 ### FUNCTIONS --------------------------------------------------------------------------
