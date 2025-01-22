@@ -12,7 +12,7 @@ goa.SSTa <- read.csv(paste0(dir, "Output/SST.winter.anom.goa.csv")) %>%
 
 ### PROCESS SLPa for NORTH PACIFIC REGION -----------------------------------------
 # first, load data
-nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1f05_6ec6_fbce5-90N.nc"))
+nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
 
 # process SLP data - first, extract dates
 raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
@@ -50,9 +50,9 @@ SLP[,!check] <- NA
 # plot to check
 z <- colMeans(SLP*100)
 z <- t(matrix(z, length(y)))
-image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(5,70), xlim=c(130,250))
+image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(23,70), xlim=c(130,250))
 contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
-map('world2Hires',fill=F, xlim=c(130,250), ylim=c(5,70),add=T, lwd=1)
+map('world2Hires',fill=F, xlim=c(130,250), ylim=c(23,70),add=T, lwd=1)
 # looks good
 
 SLP %>%
@@ -102,7 +102,7 @@ mu <- rbind(mu, mu[1:xtra,])
 
 slp.anom <- cbind(SLP.m[,1:(ncol(SLP.m)-2)]  - mu, data.frame(year = SLP.m$year, month = SLP.m$month))
 
-# Pivot longer into a format I recognize!
+# Pivot longer 
 SLPa.long <- pivot_longer(slp.anom, cols = c(-month, -year), names_to = "crds", values_to = "anom") %>%
                 mutate(lat = str_split(crds, "E", simplify = T)[,1],
                        lat = as.numeric(str_split(lat, "N", simplify = T)[,2]), # pull out lat
@@ -142,15 +142,15 @@ ggplot() +
   geom_tile(SLPa.red, mapping = aes(lon, lat, fill = slp.win.anom))+
   stat_contour(SLPa.red, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(15, 70), xlim = c(160, 250), expand = FALSE)+
+  coord_sf(ylim = c(25, 70), xlim = c(160, 250), expand = FALSE)+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
   ggtitle("Winter SLPa during red noise (2005-2024)")
 
 ggplot() +
-  geom_tile(SLPa.white2, mapping = aes(lon, lat, fill = slp.win.anom))+
-  stat_contour(SLPa.white2, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
+  geom_tile(SLPa.white, mapping = aes(lon, lat, fill = slp.win.anom))+
+  stat_contour(SLPa.white, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(15, 70), xlim = c(160, 250), expand = FALSE)+
+  coord_sf(ylim = c(25, 70), xlim = c(160, 250), expand = FALSE)+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
   ggtitle("Winter SLPa during white noise (1975-1995)")
 
