@@ -23,7 +23,7 @@ goa.sst <- read.csv("./Data/goa.monthlySSTanomalies.csv", row.names = 1) %>%
   group_by(Month) %>%
   mutate(scaled_sst = scale(month.anom)[,1]) %>%
   ungroup() %>%
-  mutate(scaled_sst = detrend(scaled_sst))
+  mutate(scaled_sst = pracma::detrend(scaled_sst))
 
 # Recreating AR1 that I sent
     # Detrend data
@@ -40,7 +40,7 @@ ebs.sst <- read.csv("./Data/ebs.monthlySSTanomalies.csv", row.names = 1) %>%
   group_by(Month) %>%
   mutate(scaled_sst = scale(month.anom)[,1]) %>%
   ungroup() %>%
-  mutate(scaled_sst = detrend(scaled_sst))
+  mutate(scaled_sst = pracma::detrend(scaled_sst))
 
 # plot
 plot_slp <- slp %>%
