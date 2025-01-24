@@ -21,9 +21,9 @@ width = 15 # rolling window length
  # APPROACH: fit GAMs between SST AR1/SD and time
 
  # Load 
-  ebs.sst <- read.csv("./Output/SST.anom.ebs.csv") %>%
+  ebs.sst <- read.csv(paste0(dir, "Output/SST.anom.ebs.csv")) %>%
     filter(Year %in% 1948:2024)
-  goa.sst <- read.csv("./Output/SST.anom.goa.csv")%>%
+  goa.sst <- read.csv(paste0(dir, "Output/SST.anom.goa.csv")) %>%
     filter(Year %in% 1948:2024)
   
   rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"),
@@ -206,9 +206,9 @@ width = 15 # rolling window length
   # APPROACH: fit GAMS between BSAI and GOA recruitment (not detrended) and SST (not detrended)
   
   # Load (trying anomaly data)  
-  ebs.sst <- read.csv("./Output/SST.anom.ebs.csv") %>%
+  ebs.sst <- read.csv(paste0(dir, "Output/SST.anom.ebs.csv")) %>%
     filter(Year %in% 1948:2024)
-  goa.sst <- read.csv("./Output/SST.anom.goa.csv")%>%
+  goa.sst <- read.csv(paste0(dir, "Output/SST.anom.goa.csv"))%>%
     filter(Year %in% 1948:2024)
   
   rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"),
@@ -641,7 +641,7 @@ width = 15 # rolling window length
  # APPROACH: fit models between sea level pressure SD/AR1 and SST AR1
  
  # Calculate SLP AR1 and SD 
-     slp <- read.csv("./Output/SLP.winter.anom.csv") %>%
+     slp <- read.csv(paste0(dir, "Output/SLP.winter.anom.csv")) %>%
        #filter(year %in% ebs.sst$Year) %>%
        dplyr::select(!X) %>%
        rename(Year = year)
@@ -704,9 +704,9 @@ width = 15 # rolling window length
     
  # Load and process winter sst data
     # Load 
-   ebs.sst <- read.csv("./Output/SST.winter.anom.ebs.csv") %>%
+   ebs.sst <- read.csv(paste0(dir, "Output/SST.winter.anom.ebs.csv")) %>%
      filter(Year %in% 1948:2024)
-   goa.sst <- read.csv("./Output/SST.winter.anom.goa.csv")%>%
+   goa.sst <- read.csv(paste0(dir, "Output/SST.winter.anom.goa.csv"))%>%
      filter(Year %in% 1948:2024)
    
    # Detrend data
@@ -1115,14 +1115,14 @@ width = 15 # rolling window length
   # GAM models as in question 2 on simulated timeseries
   
   # Load data
-  read.csv("./Output/SST.anom.ebs.csv") -> sst.ebs
-  read.csv("./Output/SST.anom.goa.csv") -> sst.goa
+  read.csv(paste0(dir, "Output/SST.anom.ebs.csv")) -> sst.ebs
+  read.csv(paste0(dir, "Output/SST.anom.goa.csv")) -> sst.goa
   
   # Calculate 2- and 3-year running means
   # Load (trying anomaly data)  
-  ebs.sst <- read.csv("./Output/SST.anom.ebs.csv") %>%
+  ebs.sst <- read.csv(paste0(dir, "Output/SST.anom.ebs.csv")) %>%
     filter(Year %in% 1948:2024)
-  goa.sst <- read.csv("./Output/SST.anom.goa.csv")%>%
+  goa.sst <- read.csv(paste0(dir, "Output/SST.anom.goa.csv"))%>%
     filter(Year %in% 1948:2024)
   
   rbind(ebs.sst %>% mutate(region = "Eastern Bering Sea"),
@@ -1287,7 +1287,7 @@ width = 15 # rolling window length
              "Null significant proportion" = c(ebs.null.sig, goa.null.sig)) -> sum.df
   
   # Save output summary table
-  write.csv(sum.df, "./Output/true.vs.null.significance.csv")
+  write.csv(sum.df, paste0(dir, "Output/true.vs.null.significance.csv"))
   
   
 ### Test question 7: What are the impacts of increasing ar1? -----------------------------------------------------------------

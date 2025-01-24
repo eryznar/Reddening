@@ -5,22 +5,22 @@
 
 ### LOAD DATA -----------------------------------------------------------------------------------------------------------
   # BSAI and GOA community timeseries
-    bsai.ts <- read.csv("./Data/BSAItimeseries.csv", stringsAsFactors=FALSE, fileEncoding="latin1") 
+    bsai.ts <- read.csv(paste0(dir, "Data/BSAItimeseries.csv"), stringsAsFactors=FALSE, fileEncoding="latin1") 
 
-    goa.ts <- read.csv("./Data/GOAtimeseries.csv", stringsAsFactors=FALSE, fileEncoding="latin1") 
+    goa.ts <- read.csv(paste0(dir, "Data/GOAtimeseries.csv"), stringsAsFactors=FALSE, fileEncoding="latin1") 
     #dplyr::select(grep("X", colnames(.), invert = TRUE)) 
 
 
 ### PROCESS DATA ----------------------------------------------------------------------------------------------------------
   # SST --------------------------
     # BSAI and GOA ERA5 SST
-    goa.sst <- read.csv("./Output/sst_GOA_ERA5.csv") %>%
+    goa.sst <- read.csv(paste0(dir, "Output/sst_GOA_ERA5.csv")) %>%
       rename(Year = year) %>%
       group_by(Year) %>%
       reframe(mean.sst = mean(mean.sst)) %>%
       filter(Year < 2024)
     
-    ebs.sst <- read.csv("./Output/sst_EBS_ERA5.csv") %>%
+    ebs.sst <- read.csv(paste0(dir, "Output/sst_EBS_ERA5.csv")) %>%
       rename(Year = year) %>%
       group_by(Year) %>%
       reframe(mean.sst = mean(mean.sst)) %>%

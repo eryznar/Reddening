@@ -7,7 +7,7 @@ source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
 
 ### Process SST -----------------------------------------------------------------------------------------------------
 # Load data
-nc.sst <- nc_open("./Data/nceiErsstv5_ee08_74ee_6f8f.nc")
+nc.sst <- nc_open(paste0(dir, "Data/nceiErsstv5_ee08_74ee_6f8f.nc"))
 
 # process sst data - first, extract dates
 raw <- ncvar_get(nc.sst, "time")  # seconds since 1-1-1970
@@ -119,28 +119,28 @@ SST <- aperm(SST, 3:1)
     dplyr::select(!c(Date, Win.year)) %>%
     rename(month.anom = sst) -> month.ebs
   
-  write.csv(month.ebs, "./Output/ebs.monthlySSTanomalies.csv")
+  write.csv(month.ebs, paste0("Output/ebs.monthlySSTanomalies.csv"))
   
-  sst.anom.ebs2 %>%
+  SST.anom.ebs2 %>%
     group_by(Year) %>%
     reframe(mean.sst = mean(sst)) -> SST.anom.ebs.regyr
   
-  sst.anom.ebs2 %>%
+  SST.anom.ebs2 %>%
     group_by(Win.year) %>%
     reframe(mean.sst = mean(sst)) %>%
     rename(Year = Win.year)-> SST.anom.ebs.winyr
   
   
-  sst.anom.ebs2 %>%
+  SST.anom.ebs2 %>%
     filter(Month %in% c(11:12, 1:3)) %>%
     group_by(Win.year) %>%
     reframe(mean.sst = mean(sst)) %>%
     rename(Year = Win.year)-> SST.anom.ebs.winter
   
   # write csv
-  write.csv(SST.anom.ebs.regyr, "./Output/SST.anom.ebs.csv") # regular years
-  write.csv(SST.anom.ebs.winyr, "./Output/SST.anom.ebs.winyr.csv") # Oct-Sept, year of January
-  write.csv(SST.anom.ebs.winter, "./Output/SST.winter.anom.ebs.csv") # winter months, year of January
+  write.csv(SST.anom.ebs.regyr, paste0(dir, "Output/SST.anom.ebs.csv")) # regular years
+  write.csv(SST.anom.ebs.winyr, paste0(dir, "Output/SST.anom.ebs.winyr.csv")) # Oct-Sept, year of January
+  write.csv(SST.anom.ebs.winter, paste0(dir, "Output/SST.winter.anom.ebs.csv")) # winter months, year of January
   
   
   # GOA: ----
@@ -240,33 +240,33 @@ SST <- aperm(SST, 3:1)
     dplyr::select(!c(Date, Win.year)) %>%
     rename(month.anom = sst) -> month.goa
   
-  write.csv(month.goa, "./Output/goa.monthlySSTanomalies.csv")
+  write.csv(month.goa, paste0(dir, "Output/goa.monthlySSTanomalies.csv"))
   
-  sst.anom.goa2 %>%
+  SST.anom.goa2 %>%
     group_by(Year) %>%
     reframe(mean.sst = mean(sst)) -> SST.anom.goa.regyr
   
-  sst.anom.goa2 %>%
+  SST.anom.goa2 %>%
     group_by(Win.year) %>%
     reframe(mean.sst = mean(sst)) %>%
     rename(Year = Win.year)-> SST.anom.goa.winyr
   
-  sst.anom.goa2 %>%
+  SST.anom.goa2 %>%
     filter(Month %in% c(11:12, 1:3)) %>%
     group_by(Win.year) %>%
     reframe(mean.sst = mean(sst)) %>%
     rename(Year = Win.year)-> SST.anom.goa.winter
   
   # write csv
-  write.csv(SST.anom.goa.regyr, "./Output/SST.anom.goa.csv")
-  write.csv(SST.anom.goa.winyr, "./Output/SST.anom.goa.winyr.csv")
-  write.csv(SST.anom.goa.winter, "./Output/SST.winter.anom.goa.csv")
+  write.csv(SST.anom.goa.regyr, paste0(dir, "Output/SST.anom.goa.csv"))
+  write.csv(SST.anom.goa.winyr, paste0(dir, "Output/SST.anom.goa.winyr.csv"))
+  write.csv(SST.anom.goa.winter, paste0(dir, "Output/SST.winter.anom.goa.csv"))
   
   
 
 ### Process SLP -----------------------------------------------------------------------------------------------------
 # first, load data
-nc.slp <- nc_open("Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc")
+nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
 
 # process SLP data - first, extract dates
 raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
@@ -376,7 +376,7 @@ SLP.anom2%>%
   dplyr::select(!c(Date, Win.year)) %>%
   rename(month.anom = slp) -> month.slp
 
-write.csv(month.slp, "./Output/monthlySLPanomalies.csv")
+write.csv(month.slp, paste0(dir, "Output/monthlySLPanomalies.csv"))
 
 
 # Calculate winter means
@@ -386,13 +386,13 @@ SLP.anom2 %>%
   reframe(SLP.win.anom = mean(slp)) -> SLP.dat
 
 
-write.csv(SLP.dat, "./Output/monthlywinterSLPanomalies.csv")
+write.csv(SLP.dat, paste0(dir, "Output/monthlywinterSLPanomalies.csv"))
 
 
 
 ### Calculate EOF on SLP data ----
 # first, load data
-nc.slp <- nc_open("Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc")
+nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
 
 # process SLP data - first, extract dates
 raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
@@ -499,5 +499,5 @@ pc1_slp <- as.matrix(slp.anom) %*% pca$U[,1]
 # and scale!
 pc1_slp <- as.vector(scale(pc1_slp))
 
-write.csv(pc1_slp, "./Output/PC1slp.monthlyanomalies.csv")
+write.csv(pc1_slp, paste0(dir, "Output/PC1slp.monthlyanomalies.csv"))
 

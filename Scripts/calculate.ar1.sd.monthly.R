@@ -3,10 +3,10 @@ source("./Scripts/load.libs.functions.R")
 
 # AR1 and SD for monthly SST anomalies ----
 # Load 
-ebs.sst <- read.csv("./Output/ebs.monthlySSTanomalies.csv") %>%
+ebs.sst <- read.csv(paste0(dir, "Output/ebs.monthlySSTanomalies.csv")) %>%
   filter(Year %in% 1948:2024) %>%
   mutate(dec.yr = Year + (Month - 0.5)/12)
-goa.sst <- read.csv("./Output/goa.monthlySSTanomalies.csv")%>%
+goa.sst <- read.csv(paste0(dir, "Output/goa.monthlySSTanomalies.csv"))%>%
   filter(Year %in% 1948:2024) %>%
   mutate(dec.yr = Year + (Month - 0.5)/12)
 
@@ -139,7 +139,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     
 
 # AR1 and SD for monthly PDO index values ----
-    pdo <- read.csv("./Data/pdo.timeseries.hadisst1-1.csv") #HADISST
+    pdo <- read.csv(paste0(dir, "Data/pdo.timeseries.hadisst1-1.csv")) #HADISST
     #pdo <- read.csv("./Data/pdo.timeseries.ersstv5.csv") #ERRST
     
     names(pdo) <- c("Date", "index")
@@ -148,7 +148,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
       mutate(year = as.numeric(substr(Date, 1, 4)),
              month = as.numeric(substr(Date, 6, 7)),
              dec.yr = year + (month - 0.5)/12) %>%
-      filter(year %in% 1900:2012, index > -2000)-> pdo2 
+      filter(year %in% 1948:2024, index > -2000)-> pdo2 
     
     
     plot(pdo2$dec.yr, pdo2$index, type = "l")
@@ -176,7 +176,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     left_join(win.dat, ar1.dat, relationship = "many-to-many") -> win.dat.pdo
     
     ggplot(win.dat.pdo, aes(dec.yr, ar1))+
-      ggtitle("PDO AR1 (ERSST)")+
+      ggtitle("PDO AR1 (HADISST)")+
       geom_line()+
       xlab("Year")+
       theme(legend.position = "none",
@@ -188,7 +188,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
             title = element_text(size = 16))
     
     ggplot(win.dat.pdo, aes(dec.yr, sd))+
-      ggtitle("PDO SD (ERSST)")+
+      ggtitle("PDO SD (HADISST)")+
       geom_line()+
       xlab("Year")+
       theme(legend.position = "none",
@@ -201,7 +201,7 @@ width = nrow(ebs.sst)/2 # per Boulton and Lenton
     
 # AR1 and SD for monthly SLP anomalies ----
 # Load 
-  slp <- read.csv("./Output/monthlySLPanomalies.csv") %>%
+  slp <- read.csv(paste0(dir, "Output/monthlySLPanomalies.csv")) %>%
       filter(Year %in% 1948:2024) %>%
       mutate(dec.yr = Year + (Month - 0.5)/12)
 
