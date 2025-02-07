@@ -25,6 +25,7 @@ library(cowplot)
 library(ggpubr)
 library(ggtext)
 library(patchwork)
+library(googledrive)
 
 ### DIRECTORIES ------------------------------
 dir <- "Y:/KOD_Research/Ryznar/Reddening/"
