@@ -1,6 +1,13 @@
+# PURPOSE: to download CESM2 fcm and mdm SST/SLP model outputs and calculate ar1/SD
+
+# Note: 
+
+# Author: Emily Ryznar
+
+# 
 source("./Scripts/load.libs.functions.R")
 
-# DOWNLOAD CESM2 MODEL OUTPUTS ----------------------------------------------
+# 1) DOWNLOAD CESM2 MODEL OUTPUTS ----------------------------------------------
 # Authenticate google account
 drive_auth()
 
@@ -61,7 +68,7 @@ for (ii in 1:nrow(files)){
   drive_download(as_id(files$id[ii]), path = paste0(dir2, files$name[ii]), overwrite = TRUE)
 }
 
-# LOAD AND STACK CESM MODEL OUTPUTS --------------------------------
+# 2) LOAD, STACK, and PROCESS CESM MODEL OUTPUTS --------------------------------
 # Identify folders to download files from
 fcm.sst.dir <- paste0(dir, "Data/CESM2 ensemble/SST/FCM/") #FCM SST
 mdm.sst.dir <- paste0(dir, "Data/CESM2 ensemble/SST/MDM/") #MDM SST
@@ -82,181 +89,169 @@ origin_date <- ymd_hms(unit_parts[2])
 mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
 
 
-# FCM SST ----  
-files <- list.files(fcm.sst.dir, full.names = TRUE)
-fcm.sst <- tibble()
+  # FCM SST ----  
+  files <- list.files(fcm.sst.dir, full.names = TRUE)
+  fcm.sst <- tibble()
+  
+  for(ii in 1:length(files)){
+    
+    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+    
+    # load and process file
+    tidync(files[ii]) %>%
+      hyper_filter(lon = lon >= 125 & lon <= 255,
+                   lat = lat >= 0 & lat <= 75) %>% # north pacific region
+                   #time = time > 711475) %>% # greater than 1947
+      activate("SST") %>%
+      hyper_tibble() %>%
+      mutate(time = origin_date + lubridate::days(time),
+             year = lubridate::year(time),
+             month = lubridate::month(time),
+             member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+      group_by(lon, lat, member) %>%
+      mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years
+      ungroup() %>%
+      mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
+      group_by(lon, lat, year, member) %>%
+      reframe(mean.SSTa = mean(SSTa), # calculate mean
+              mean.SST = mean(SST))-> out
+    
+    # Detrend data and extract residuals
+    resid.SST <- lm(mean.SST ~ year, out)$residuals
+    resid.SSTa <- lm(mean.SSTa ~ year, out)$residuals
+    
+    # Bind with output df
+    detrend.dat <- cbind(out, resid.SST, resid.SSTa)
+    
+    # Calculate grid cell AR1
+    detrend.dat %>%
+      group_by(lon, lat, member) %>%
+      reframe(ar1.SSTa = sapply(rollapply(resid.SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+              ar1.sd = sd(ar1.SSTa),
+              mean.residSSTa = mean(resid.SSTa),
+              mean.SSTa = mean(mean.SSTa),
+              mean.SST = mean(mean.SST)) %>%
+      mutate(lon = as.numeric(lon),
+             lat = as.numeric(lat)) %>%
+      dplyr::select(!ar1.SSTa) %>%
+      distinct() -> ar1.dat
+    
+    # stack processed files
+    fcm.sst <- bind_rows(fcm.sst, ar1.dat)
+    
+  }
 
-
-for(ii in 1:length(files)){
+  # Save file
+  saveRDS(fcm.sst, paste0(dir, "Output/processed.fcm.sst.rda"))
   
-  print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+  # MDM SST ----
+  files <- list.files(mdm.sst.dir, full.names = TRUE)
+  mdm.sst <- tibble()
   
-  # load and process file
-  tidync(files[ii]) %>%
-    hyper_filter(lon = lon >= 125 & lon <= 255,
-                 lat = lat >= 0 & lat <= 75) %>% # north pacific region
-                 #time = time > 711475) %>% # greater than 1947
-    activate("SST") %>%
-    hyper_tibble() %>%
-    mutate(time = origin_date + lubridate::days(time),
-           year = lubridate::year(time),
-           month = lubridate::month(time),
-           model = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
-    group_by(lon, lat, model) %>%
-    mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years
-    ungroup() %>%
-    mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
-    group_by(lon, lat, year, model) %>%
-    reframe(mean.SSTa = mean(SSTa), # calculate mean
-            mean.SST = mean(SST))-> out
+  for(ii in 1:length(files)){
+    
+    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+    
+    # load and process file
+    tidync(files[ii]) %>%
+      hyper_filter(lon = lon >= 125 & lon <= 255,
+                   lat = lat >= 0 & lat <= 75) %>% # north pacific region
+      #time = time > 711475) %>% # greater than 1947
+      activate("SST") %>%
+      hyper_tibble() %>%
+      mutate(time = origin_date + lubridate::days(time),
+             year = lubridate::year(time),
+             month = lubridate::month(time),
+             member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+      group_by(lon, lat, member) %>%
+      mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years
+      ungroup() %>%
+      mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
+      group_by(lon, lat, year, member) %>%
+      reframe(mean.SSTa = mean(SSTa), # calculate mean
+              mean.SST = mean(SST))-> out
+    
+    # Detrend data and extract residuals
+    resid.SST <- lm(mean.SST ~ year, out)$residuals
+    resid.SSTa <- lm(mean.SSTa ~ year, out)$residuals
+    
+    # Bind with output df
+    detrend.dat <- cbind(out, resid.SST, resid.SSTa)
+    
+    # Calculate grid cell AR1
+    detrend.dat %>%
+      group_by(lon, lat, member) %>%
+      reframe(ar1.SSTa = sapply(rollapply(resid.SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+              ar1.sd = sd(ar1.SSTa),
+              mean.residSSTa = mean(resid.SSTa),
+              mean.SSTa = mean(mean.SSTa),
+              mean.SST = mean(mean.SST)) %>%
+      mutate(lon = as.numeric(lon),
+             lat = as.numeric(lat)) %>%
+      dplyr::select(!ar1.SSTa) %>%
+      distinct() -> ar1.dat
+    
+    
+    # stack processed files
+    mdm.sst <- bind_rows(mdm.sst, ar1.dat)
+    
+  }
   
-  # Detrend data and extract residuals
-  resid.SST <- lm(mean.SST ~ year, out)$residuals
-  resid.SSTa <- lm(mean.SSTa ~ year, out)$residuals
+  # Save file
+  saveRDS(mdm.sst, paste0(dir, "Output/processed.mdm.sst.rda"))
   
-  # Bind with output df
-  detrend.dat <- cbind(out, resid.SST, resid.SSTa)
   
-  # Calculate grid cell AR1
-  detrend.dat %>%
-    group_by(lon, lat, model) %>%
-    reframe(ar1.SSTa = sapply(rollapply(resid.SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
-            mean.residSSTa = mean(resid.SSTa),
-            mean.SSTa = mean(mean.SSTa),
-            mean.SST = mean(mean.SST)) %>%
-    mutate(lon = as.numeric(lon),
-           lat = as.numeric(lat)) %>%
-    rename(member = model) -> ar1.dat
   
-  # stack processed files
-  fcm.sst <- bind_rows(fcm.sst, ar1.dat)
-  
-}
-rbind(fcm.sst, fcm.sst2) -> fcm.sst.new
-
+# 3) CALCULATE/PLOT CELL-WISE AR1 SD, SSTa SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
 # Calculate SD in AR1 by grid cell across ensemble members
-fcm.sst.new %>%
+fcm.sst <- readRDS(paste0(dir, "Output/processed.fcm.sst.rda"))
+
+fcm.sst %>%
   group_by(lon, lat) %>%
-  reframe(ar1.sd = sd(ar1.SSTa),
-          SST.sd = sd(mean.SSTa),
-          mean.ar1 = mean(ar1.SSTa)) -> fcm.sst.ar1sd
+  reframe(ar1.sd = mean(ar1.sd),
+          SST.sd = sd(mean.SSTa)) %>%
+  mutate(type = "FCM") -> fcm.sst.ar1sd
 
-# Plot
-ggplot()+
-  geom_tile(fcm.sst.ar1sd, mapping= aes(lon, lat, fill = ar1.sd))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
-  ggtitle("Ensemble AR1 SD")+
-  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(fcm.sst.ar1sd$ar1.sd))
+mdm.sst <- readRDS(paste0(dir, "Output/processed.mdm.sst.rda"))
 
-ggplot()+
-  geom_tile(fcm.sst.ar1sd, mapping= aes(lon, lat, fill = SST.sd))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
-  ggtitle("Ensemble SSTa SD")+
-  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(fcm.sst.ar1sd$SST.sd))
-
-ggplot()+
-  geom_tile(fcm.sst.ar1sd, mapping= aes(lon, lat, fill = mean.ar1))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
-  ggtitle("Ensemble mean AR1")+
-  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(fcm.sst.ar1sd$mean.ar1))
-
-# MDM SST ----
-files <- list.files(mdm.sst.dir, full.names = TRUE)
-mdm.sst <- tibble()
-
-for(ii in 1:length(files)){
-  
-  print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
-  
-  # load and process file
-  tidync(files[ii]) %>%
-    hyper_filter(lon = lon >= 125 & lon <= 255,
-                 lat = lat >= 0 & lat <= 75) %>% # north pacific region
-    #time = time > 711475) %>% # greater than 1947
-    activate("SST") %>%
-    hyper_tibble() %>%
-    mutate(time = origin_date + lubridate::days(time),
-           year = lubridate::year(time),
-           month = lubridate::month(time),
-           model = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
-    group_by(lon, lat, model) %>%
-    mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years
-    ungroup() %>%
-    mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
-    group_by(lon, lat, year, model) %>%
-    reframe(mean.SSTa = mean(SSTa), # calculate mean
-            mean.SST = mean(SST))-> out
-  
-  # Detrend data and extract residuals
-  resid.SST <- lm(mean.SST ~ year, out)$residuals
-  resid.SSTa <- lm(mean.SSTa ~ year, out)$residuals
-  
-  # Bind with output df
-  detrend.dat <- cbind(out, resid.SST, resid.SSTa)
-  
-  # Calculate grid cell AR1
-  detrend.dat %>%
-    group_by(lon, lat, model) %>%
-    reframe(ar1.SSTa = sapply(rollapply(resid.SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
-            mean.residSSTa = mean(resid.SSTa),
-            mean.SSTa = mean(mean.SSTa),
-            mean.SST = mean(mean.SST)) %>%
-    mutate(lon = as.numeric(lon),
-           lat = as.numeric(lat)) %>%
-    rename(member = model) -> ar1.dat
-  
-  # stack processed files
-  mdm.sst <- bind_rows(mdm.sst, ar1.dat)
-  
-}
-
-# Calculate SD in AR1 by grid cell across ensemble members
 mdm.sst %>%
   group_by(lon, lat) %>%
-  reframe(ar1.sd = sd(ar1)) -> mdm.sst.ar1sd
+  reframe(ar1.sd = mean(ar1.sd),
+          SST.sd = sd(mean.SSTa)) %>%
+  mutate(type = "MDM") -> mdm.sst.ar1sd
+
+# Join
+plot.dat <- rbind(fcm.sst.ar1sd, mdm.sst.ar1sd)
+
 
 # Plot
 ggplot()+
-  geom_tile(mdm.sst.ar1sd, mapping= aes(lon, lat, fill = ar1.sd))+
+  geom_tile(plot.dat, mapping= aes(lon, lat, fill = ar1.sd))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)
+  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  facet_wrap(~type, nrow = 2)+
+  #ggtitle("Ensemble SST AR1 SD")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  median(plot.dat$ar1.sd))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 10),
+        axis.title = element_text(size = 10))  -> ar1.sd.plot
 
-# Calculate SSTa SD by grid cell across ensemble members
+ggplot()+
+  geom_tile(plot.dat, mapping= aes(lon, lat, fill = SST.sd))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
+  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  #ggtitle("Ensemble SSTa SD")+
+  facet_wrap(~type, nrow = 2)+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  median(plot.dat$SST.sd))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 10),
+        axis.title = element_text(size = 10)) -> SSTa.sd.plot
 
 
-### PROCESS SLPa for NORTH PACIFIC REGION -----------------------------------------
-# first, load data
-nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
+ggsave(plot = ar1.sd.plot, "./Figures/CESM2_AR1_SD.png", width = 5, height = 5, units = "in")
+ggsave(plot = SSTa.sd.plot, "./Figures/CESM2_SSTa_SD.png", width = 5, height = 5, units = "in")
 
-# process SLP data - first, extract dates
-raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
-h <- raw/(24*60*60)
-d <- dates(h, origin = c(1,1,1970))
-
-# extract coordinates
-x <- ncvar_get(nc.slp, "longitude")
-y <- ncvar_get(nc.slp, "latitude")
-
-# extract data
-SLP <- ncvar_get(nc.slp, "slp", verbose = F)
-
-# Change data to a matrix
-SLP <- aperm(SLP, 3:1)  
-
-# Change to matrix
-SLP <- matrix(SLP, nrow=dim(SLP)[1], ncol=prod(dim(SLP)[2:3]))  
-
-# Get lat/long vectors and add names to SLP matrix
-lat <- rep(y, length(x))   
-lon <- rep(x, each = length(y))   
-dimnames(SLP) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
-
-# Filter to area of interest
-poly.x <- c(130, 130, 250, 250, 130) 
-poly.y <- c(5, 70, 70, 5, 5)
