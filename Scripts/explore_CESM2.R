@@ -109,7 +109,7 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
              month = lubridate::month(time),
              member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
       group_by(lon, lat, member) %>%
-      mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years
+      mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years and months
       ungroup() %>%
       mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
       group_by(lon, lat, year, member) %>%
@@ -130,7 +130,10 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
               ar1.sd = sd(ar1.SSTa),
               mean.residSSTa = mean(resid.SSTa),
               mean.SSTa = mean(mean.SSTa),
-              mean.SST = mean(mean.SST)) %>%
+              mean.SST = mean(mean.SST),
+              resid.SSTa.sd = sd(resid.SSTa),
+              SSTa.sd = sd(mean.SSTa),
+              SST.sd = sd(mean.SST)) %>%
       mutate(lon = as.numeric(lon),
              lat = as.numeric(lat)) %>%
       dplyr::select(!ar1.SSTa) %>%
@@ -185,7 +188,10 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
               ar1.sd = sd(ar1.SSTa),
               mean.residSSTa = mean(resid.SSTa),
               mean.SSTa = mean(mean.SSTa),
-              mean.SST = mean(mean.SST)) %>%
+              mean.SST = mean(mean.SST),
+              resid.SSTa.sd = sd(resid.SSTa),
+              SSTa.sd = sd(mean.SSTa),
+              SST.sd = sd(mean.SST)) %>%
       mutate(lon = as.numeric(lon),
              lat = as.numeric(lat)) %>%
       dplyr::select(!ar1.SSTa) %>%
@@ -210,7 +216,7 @@ fcm.sst %>%
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
           SST.sd = sd(mean.SSTa)) %>%
-  mutate(type = "FCM") -> fcm.sst.ar1sd
+  mutate(type = "Fully coupled") -> fcm.sst.ar1sd
 
 mdm.sst <- readRDS(paste0(dir, "Output/processed.mdm.sst.rda"))
 
@@ -218,7 +224,7 @@ mdm.sst %>%
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
           SST.sd = sd(mean.SSTa)) %>%
-  mutate(type = "MDM") -> mdm.sst.ar1sd
+  mutate(type = "Mechanically decoupled") -> mdm.sst.ar1sd
 
 # Join
 plot.dat <- rbind(fcm.sst.ar1sd, mdm.sst.ar1sd)
@@ -231,8 +237,11 @@ ggplot()+
   coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type, nrow = 2)+
   #ggtitle("Ensemble SST AR1 SD")+
+  xlab("Latitude")+
+  ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(plot.dat$ar1.sd))+
+                       midpoint=  median(plot.dat$ar1.sd),
+                       name = "AR1 sd")+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 10),
@@ -243,9 +252,12 @@ ggplot()+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
   coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
   #ggtitle("Ensemble SSTa SD")+
+  xlab("Latitude")+
+  ylab("Longitude")+
   facet_wrap(~type, nrow = 2)+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(plot.dat$SST.sd))+
+                       midpoint=  median(plot.dat$SST.sd),
+                       name = "SST sd")+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 10),
