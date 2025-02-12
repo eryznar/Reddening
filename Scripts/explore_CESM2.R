@@ -1,10 +1,11 @@
 # PURPOSE: to download CESM2 fcm and mdm SST/SLP model outputs and calculate ar1/SD
 
-# Note: 
+# Note: steps 1) and 2) take some time to process. If you just need to modify the final outputs/figures, proceed
+# to step 3)
 
 # Author: Emily Ryznar
 
-# 
+# LOAD LIBS/FUNCTIONS ----------------------------------
 source("./Scripts/load.libs.functions.R")
 
 # 1) DOWNLOAD CESM2 MODEL OUTPUTS ----------------------------------------------
