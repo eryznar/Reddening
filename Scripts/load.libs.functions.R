@@ -26,6 +26,7 @@ library(ggpubr)
 library(ggtext)
 library(patchwork)
 library(googledrive)
+library(tidync)
 
 ### DIRECTORIES ------------------------------
 dir <- "Y:/KOD_Research/Ryznar/Reddening/"
