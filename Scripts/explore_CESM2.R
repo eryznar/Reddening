@@ -77,8 +77,10 @@ mdm.sst.dir <- paste0(dir, "Data/CESM2 ensemble/SST/MDM/") #MDM SST
 fcm.slp.dir <- paste0(dir, "Data/CESM2 ensemble/SLP/FCM/") #FCM SLP
 mdm.slp.dir <- paste0(dir, "Data/CESM2 ensemble/SLP/MDM/") #MDM SLP
 
-# Extract time info for processing below
-time_units <- ncmeta::nc_atts(files[1], "time") %>%
+# Extract time info for processing below (same across files)
+files <- list.files(fcm.sst.dir, full.names = TRUE)
+
+time_units <- ncmeta::nc_atts(files[1], "time") %>% 
   filter(name == "units") %>%
   pull(value)
 
