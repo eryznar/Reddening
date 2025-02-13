@@ -115,27 +115,27 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
       mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
       ungroup() %>%
       mutate(SSTa = SST - mean.month.SST) %>% # compute anomalies
-      group_by(lon, lat, year, member) %>% # calculate mean annual SSTa by grid cell
-      reframe(mean.SSTa = mean(SSTa))-> out
+      group_by(lon, lat, year, member) %>% 
+      reframe(mean.SSTa = mean(SSTa))-> out # calculate mean annual SSTa by grid cell
     
     
     # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
     setDT(out) # convert to data.table
 
-    out[, detrended_SSTa := {
-      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each group
+    out[, detrended_SSTa := { # output data table column
+      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each lat/lon group
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon)]
     
     # Calculate grid cell AR1
     out %>%
       group_by(lon, lat, member) %>%
-      reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
-              sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd),
-              ar1.sd = sd(ar1.SSTa),
-              ar1.mean = mean(ar1.SSTa),
-              sd.sd = sd(sd.SSTa),
-              sd.mean = mean(sd.SSTa)) %>%
+      reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2), # ar1 over 15 year rolling windows
+              sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd), # sd over 15-year rolling windows
+              ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
+              ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
+              sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
+              sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
       mutate(lon = as.numeric(lon),
              lat = as.numeric(lat)) %>%
       dplyr::select(!c(ar1.SSTa, sd.SSTa)) %>%
@@ -172,27 +172,27 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
       mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
       ungroup() %>%
       mutate(SSTa = SST - mean.month.SST) %>% # compute anomalies
-      group_by(lon, lat, year, member) %>% # calculate mean annual SSTa by grid cell
-      reframe(mean.SSTa = mean(SSTa))-> out
+      group_by(lon, lat, year, member) %>% 
+      reframe(mean.SSTa = mean(SSTa)) -> out # calculate mean annual SSTa by grid cell
     
     
     # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
     setDT(out) # convert to data.table
     
-    out[, detrended_SSTa := {
-      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each group
+    out[, detrended_SSTa := { # output column name
+      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each lat/lon group
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon)]
     
     # Calculate grid cell AR1
     out %>%
       group_by(lon, lat, member) %>%
-      reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
-              sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd),
-              ar1.sd = sd(ar1.SSTa),
-              ar1.mean = mean(ar1.SSTa),
-              sd.sd = sd(sd.SSTa),
-              sd.mean = mean(sd.SSTa)) %>%
+      reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2), # ar1 over 15 year rolling windows
+              sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd), # sd over 15-year rolling windows
+              ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
+              ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
+              sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
+              sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
       mutate(lon = as.numeric(lon),
              lat = as.numeric(lat)) %>%
       dplyr::select(!c(ar1.SSTa, sd.SSTa)) %>%
@@ -209,14 +209,15 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
   
   
   
-# 3) CALCULATE/PLOT CELL-WISE AR1 SD, SSTa SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
+# 3) CALCULATE/PLOT CELL-WISE AR1 SD, SST SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
 # Calculate SD in AR1 by grid cell across ensemble members
 fcm.sst <- readRDS(paste0(dir, "Output/processed.fcm.sst.rda"))
 
 fcm.sst %>%
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
-          SST.sd = sd(mean.SSTa)) %>%
+          ar1.mean = mean(ar1.mean),
+          sd.mean = mean(sd.mean)) %>%
   mutate(type = "Fully coupled") -> fcm.sst.ar1sd
 
 mdm.sst <- readRDS(paste0(dir, "Output/processed.mdm.sst.rda"))
@@ -224,20 +225,34 @@ mdm.sst <- readRDS(paste0(dir, "Output/processed.mdm.sst.rda"))
 mdm.sst %>%
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
-          SST.sd = sd(mean.SSTa)) %>%
+          ar1.mean = mean(ar1.mean),
+          sd.mean = mean(sd.mean)) %>%
   mutate(type = "Mechanically decoupled") -> mdm.sst.ar1sd
 
 # Join
 plot.dat <- rbind(fcm.sst.ar1sd, mdm.sst.ar1sd)
 
+# Calculate differences
+plot.dat %>%
+  # group_by(type) %>%
+  # mutate(ar1.sd = scale(ar1.sd)[,1],
+  #        ar1.mean = scale(ar1.mean)[,1],
+  #        sd.mean = scale(sd.mean)[,1]) %>%
+  # ungroup() %>%
+  pivot_wider(names_from = type, values_from = c(ar1.sd, ar1.mean, sd.mean)) %>%
+  mutate(ar1.sd.diff = scale(`ar1.sd_Fully coupled` - `ar1.sd_Mechanically decoupled`)[,1],
+         ar1.mean.diff = scale(`ar1.mean_Fully coupled` - `ar1.mean_Mechanically decoupled`)[,1],
+         sd.mean.diff = scale(`sd.mean_Fully coupled` - `sd.mean_Mechanically decoupled`)[,1],
+         type = "Difference") %>%
+  dplyr::select(lon, lat, ar1.sd.diff, ar1.mean.diff, sd.mean.diff, type) -> diff.dat
 
-# Plot
+
+# Plot AR1 SD and difference
 ggplot()+
   geom_tile(plot.dat, mapping= aes(lon, lat, fill = ar1.sd))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type, nrow = 2)+
-  #ggtitle("Ensemble SST AR1 SD")+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
@@ -245,26 +260,112 @@ ggplot()+
                        name = "AR1 sd")+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
-        legend.title = element_text(size = 10),
-        axis.title = element_text(size = 10))  -> ar1.sd.plot
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10)) -> ar1.sd.plot
 
 ggplot()+
-  geom_tile(plot.dat, mapping= aes(lon, lat, fill = SST.sd))+
+  geom_tile(diff.dat, mapping= aes(lon, lat, fill = ar1.sd.diff))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
-  #ggtitle("Ensemble SSTa SD")+
+  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  facet_wrap(~type)+
   xlab("Latitude")+
   ylab("Longitude")+
-  facet_wrap(~type, nrow = 2)+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(plot.dat$SST.sd),
-                       name = "SST sd")+
+                       midpoint=  0,
+                       name = "AR1 sd diff",
+                       limits = c(max(abs(diff.dat$ar1.sd.diff))*-1, max(abs(diff.dat$ar1.sd.diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
-        legend.title = element_text(size = 10),
-        axis.title = element_text(size = 10)) -> SSTa.sd.plot
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10)) -> ar1.sd.diffplot
 
 
-ggsave(plot = ar1.sd.plot, "./Figures/CESM2_AR1_SD.png", width = 5, height = 5, units = "in")
-ggsave(plot = SSTa.sd.plot, "./Figures/CESM2_SSTa_SD.png", width = 5, height = 5, units = "in")
+ar1.sd.plot + ar1.sd.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
+                                            widths = c(1, 1), heights = c(1, 0.45),
+                                            axes = "collect")
+
+ggsave("./Figures/CESM2_AR1_SD.png", height= 7, width = 5, units = "in")
+
+# Plot AR1 mean and difference
+ggplot()+
+  geom_tile(plot.dat, mapping= aes(lon, lat, fill = ar1.mean))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
+  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  facet_wrap(~type, nrow = 2)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  median(plot.dat$ar1.mean),
+                       name = "mean AR1")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10)) -> ar1.mean.plot
+
+ggplot()+
+  geom_tile(diff.dat, mapping= aes(lon, lat, fill = ar1.mean.diff))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
+  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  facet_wrap(~type)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  0,
+                       name = "mean AR1 diff",
+                       limits = c(max(abs(diff.dat$ar1.mean.diff))*-1, max(abs(diff.dat$ar1.mean.diff))))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10)) -> ar1.mean.diffplot
+
+
+ar1.mean.plot + ar1.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
+                                            widths = c(1, 1), heights = c(1, 0.45),
+                                            axes = "collect")
+
+ggsave("./Figures/CESM2_AR1_MEAN.png", height= 7, width = 5, units = "in")
+
+# Plot SD mean and difference
+ggplot()+
+  geom_tile(plot.dat, mapping= aes(lon, lat, fill = sd.mean))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
+  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  facet_wrap(~type, nrow = 2)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  median(plot.dat$sd.mean),
+                       name = "mean SD")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10)) -> sd.mean.plot
+
+ggplot()+
+  geom_tile(diff.dat, mapping= aes(lon, lat, fill = sd.mean.diff))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
+  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  facet_wrap(~type)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  0,
+                       name = "mean SD diff",
+                       limits = c(max(abs(diff.dat$sd.mean.diff))*-1, max(abs(diff.dat$sd.mean.diff))))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10)) -> sd.mean.diffplot
+
+
+sd.mean.plot + sd.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
+                                                widths = c(1, 1), heights = c(1, 0.45),
+                                                axes = "collect")
+
+ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
+
+
+
+
+
 
