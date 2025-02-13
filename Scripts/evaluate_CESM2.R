@@ -8,6 +8,10 @@
 # LOAD LIBS/FUNCTIONS ----------------------------------
 source("./Scripts/load.libs.functions.R")
 
+# Get map layers
+mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
+
+
 # 1) DOWNLOAD CESM2 MODEL OUTPUTS ----------------------------------------------
 # Authenticate google account
 drive_auth()
@@ -87,10 +91,6 @@ time_units <- ncmeta::nc_atts(files[1], "time") %>%
 unit_parts <- str_split(time_units, " since ")[[1]]
 time_unit <- unit_parts[1]
 origin_date <- ymd_hms(unit_parts[2])
-
-# Get map layers
-mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
-
 
   # FCM SST ----  
   files <- list.files(fcm.sst.dir, full.names = TRUE)
@@ -210,10 +210,11 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
   
   
 # 3) CALCULATE/PLOT CELL-WISE AR1 SD, SST SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
-# Calculate SD in AR1 by grid cell across ensemble members
+# Calculate mean SD AR1 and AR1 by grid cell across ensemble members
 fcm.sst <- readRDS(paste0(dir, "Output/processed.fcm.sst.rda"))
 
 fcm.sst %>%
+  filter(lat >=20 & lat<=68) %>% # isolate extra tropical N. pacific
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
           ar1.mean = mean(ar1.mean),
@@ -223,6 +224,7 @@ fcm.sst %>%
 mdm.sst <- readRDS(paste0(dir, "Output/processed.mdm.sst.rda"))
 
 mdm.sst %>%
+  filter(lat >=20 & lat<=68) %>% # isolate extra tropical N. pacific
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
           ar1.mean = mean(ar1.mean),
@@ -250,8 +252,8 @@ plot.dat %>%
 # Plot AR1 SD and difference
 ggplot()+
   geom_tile(plot.dat, mapping= aes(lon, lat, fill = ar1.sd))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type, nrow = 2)+
   xlab("Latitude")+
   ylab("Longitude")+
@@ -265,14 +267,14 @@ ggplot()+
 
 ggplot()+
   geom_tile(diff.dat, mapping= aes(lon, lat, fill = ar1.sd.diff))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
                        midpoint=  0,
-                       name = "AR1 sd diff",
+                       name = "FCM-MDM diff",
                        limits = c(max(abs(diff.dat$ar1.sd.diff))*-1, max(abs(diff.dat$ar1.sd.diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
@@ -281,7 +283,7 @@ ggplot()+
 
 
 ar1.sd.plot + ar1.sd.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
-                                            widths = c(1, 1), heights = c(1, 0.45),
+                                            widths = c(1, 1), heights = c(1, 0.5),
                                             axes = "collect")
 
 ggsave("./Figures/CESM2_AR1_SD.png", height= 7, width = 5, units = "in")
@@ -289,8 +291,8 @@ ggsave("./Figures/CESM2_AR1_SD.png", height= 7, width = 5, units = "in")
 # Plot AR1 mean and difference
 ggplot()+
   geom_tile(plot.dat, mapping= aes(lon, lat, fill = ar1.mean))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type, nrow = 2)+
   xlab("Latitude")+
   ylab("Longitude")+
@@ -304,14 +306,14 @@ ggplot()+
 
 ggplot()+
   geom_tile(diff.dat, mapping= aes(lon, lat, fill = ar1.mean.diff))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
                        midpoint=  0,
-                       name = "mean AR1 diff",
+                       name = "FCM-MDM diff",
                        limits = c(max(abs(diff.dat$ar1.mean.diff))*-1, max(abs(diff.dat$ar1.mean.diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
@@ -320,7 +322,7 @@ ggplot()+
 
 
 ar1.mean.plot + ar1.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
-                                            widths = c(1, 1), heights = c(1, 0.45),
+                                            widths = c(1, 1), heights = c(1, 0.5),
                                             axes = "collect")
 
 ggsave("./Figures/CESM2_AR1_MEAN.png", height= 7, width = 5, units = "in")
@@ -328,8 +330,8 @@ ggsave("./Figures/CESM2_AR1_MEAN.png", height= 7, width = 5, units = "in")
 # Plot SD mean and difference
 ggplot()+
   geom_tile(plot.dat, mapping= aes(lon, lat, fill = sd.mean))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type, nrow = 2)+
   xlab("Latitude")+
   ylab("Longitude")+
@@ -343,14 +345,14 @@ ggplot()+
 
 ggplot()+
   geom_tile(diff.dat, mapping= aes(lon, lat, fill = sd.mean.diff))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_cartesian(ylim = c(0, 75), xlim = c(125, 255), expand = FALSE)+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
   facet_wrap(~type)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
                        midpoint=  0,
-                       name = "mean SD diff",
+                       name = "FCM-MDM diff",
                        limits = c(max(abs(diff.dat$sd.mean.diff))*-1, max(abs(diff.dat$sd.mean.diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
@@ -359,7 +361,7 @@ ggplot()+
 
 
 sd.mean.plot + sd.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
-                                                widths = c(1, 1), heights = c(1, 0.45),
+                                                widths = c(1, 1), heights = c(1, 0.5),
                                                 axes = "collect")
 
 ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
