@@ -132,9 +132,11 @@ origin_date <- ymd_hms(unit_parts[2])
     fcm.sst <- bind_rows(fcm.sst, out)
     
   }
-
+  
+  setDT(fcm.sst)
+  
   # Save file
-  saveRDS(fcm.sst, paste0(dir, "Output/processed.fcm.sstYEAR.rda"))
+  saveRDS(fcm.sst, paste0(dir, "Output/FCMmean_annual_SSTa.rda"))
   
   # MDM SST ----
   files <- list.files(mdm.sst.dir, full.names = TRUE)
@@ -177,65 +179,135 @@ origin_date <- ymd_hms(unit_parts[2])
     
   }
   
+  setDT(mdm.sst)
+  
   # Save file
-  saveRDS(mdm.sst, paste0(dir, "Output/processed.mdm.sstYEAR.rda"))
+  saveRDS(mdm.sst, paste0(dir, "Output/MDMmean_annual_SSTa.rda"))
+  
+  # FCM SLP ----
+  files <- list.files(fcm.slp.dir, full.names = TRUE)
+  mdm.sst <- tibble()
+  
+  for(ii in 1:length(files)){
+    
+    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+    poly.x <- c(191, 191, 208, 208, 191) 
+    poly.y <- c(44, 55, 55, 44, 44)
+    
+    # load and process file
+    tidync(files[ii]) %>%
+      hyper_filter(lon = lon >= 191 & lon <= 208,
+                   lat = lat >= 44 & lat <= 55) %>% # high activity AL area
+      #time = time > 711475) %>% # greater than 1947
+      activate("PSL") %>%
+      hyper_tibble() %>%
+      mutate(time = origin_date + lubridate::days(time),
+             year = lubridate::year(time),
+             month = lubridate::month(time),
+             member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+      group_by(lat, lon, month, member) %>%
+      mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
+      ungroup() %>%
+      mutate(SSTa = SST - mean.month.SST) %>% # compute anomalies
+      group_by(lon, lat, year, member) %>% 
+      reframe(mean.SSTa = mean(SSTa)) -> out # calculate mean annual SSTa by grid cell
+    
+    
+    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+    setDT(out) # convert to data.table
+    
+    out[, detrended_SSTa := { # output column name
+      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each lat/lon group
+      residuals(fit)           # Extract residuals as detrended values
+    }, by = .(lat, lon)]
+    
+    # stack processed files
+    mdm.sst <- bind_rows(mdm.sst, out)
+    
+    
+  }
+  
+  setDT(mdm.sst)
+  
+  # Save file
+  saveRDS(mdm.sst, paste0(dir, "Output/MDMmean_annual_SSTa.rda"))
+  
   
   
   
 # 3) CALCULATE/PLOT CELL-WISE AR1 SD, SST SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
-  # Calculate grid cell AR1
-  out %>%
-    group_by(lon, lat, member) %>%
-    reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2), # ar1 over 15 year rolling windows
-            sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd), # sd over 15-year rolling windows
-            ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
-            ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
-            sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
-            sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
-    mutate(lon = as.numeric(lon),
-           lat = as.numeric(lat)) %>%
-    dplyr::select(!c(ar1.SSTa, sd.SSTa)) %>%
-    distinct() -> ar1.sd.dat
+  
+  # FCM SST
+  fcm.sst <- readRDS(paste0(dir, "Output/FCMmean_annual_SSTa.rda"))
+  
+  # Calculate rolling window AR1 within data.table
+  fcm.sst[, ar1.SSTa := frollapply(detrended_SSTa, n = 15, FUN = function(x) {
+    acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
+    return(acf_result$acf[2])
+  }, align = "center"), by = c("lon", "lat", "member")]
+  
+  # Calculate rolling window SD within data.table
+  fcm.sst[, sd.SSTa := frollapply(detrended_SSTa, n = 15, FUN = sd, 
+                               align = "center"), by = c("lon", "lat", "member")]
   
   # Calculate grid cell AR1
-  out %>%
+  fcm.sst %>%
     group_by(lon, lat, member) %>%
-    reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2), # ar1 over 15 year rolling windows
-            sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd), # sd over 15-year rolling windows
-            ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
+    reframe(ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
+            ar1.cv = cv(ar1.SSTa), # sd of AR1 of rolling window timeseries
             ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
             sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
             sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
     mutate(lon = as.numeric(lon),
            lat = as.numeric(lat)) %>%
-    dplyr::select(!c(ar1.SSTa, sd.SSTa)) %>%
-    distinct() -> ar1.sd.dat
+    distinct() -> fcm.ar1.sd.dat
+  
+  # MDM SST
+  mdm.sst <- readRDS(paste0(dir, "Output/MDMmean_annual_SSTa.rda"))
+  
+  # Calculate rolling window AR1 within data.table
+  mdm.sst[, ar1.SSTa := frollapply(detrended_SSTa, n = 15, FUN = function(x) {
+    acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
+    return(acf_result$acf[2])
+  }, align = "center"), by = c("lon", "lat", "member")]
+  
+  # Calculate rolling window SD within data.table
+  mdm.sst[, sd.SSTa := frollapply(detrended_SSTa, n = 15, FUN = sd, 
+                                  align = "center"), by = c("lon", "lat", "member")]
+  
+  # Calculate grid cell AR1
+  mdm.sst %>%
+    group_by(lon, lat, member) %>%
+    reframe(ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
+            ar1.cv = cv(ar1.SSTa), # sd of AR1 of rolling window timeseries
+            ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
+            sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
+            sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
+    mutate(lon = as.numeric(lon),
+           lat = as.numeric(lat)) %>%
+    distinct() -> mdm.ar1.sd.dat
   
   
   
 # Calculate mean SD AR1 and AR1 by grid cell across ensemble members
-fcm.sst <- readRDS(paste0(dir, "Output/processed.fcm.sst.rda"))
+fcm.ar1.sd.dat %>%
+  group_by(lon, lat) %>%
+  reframe(ar1.sd = mean(ar1.sd),
+          ar1.mean = mean(ar1.mean),
+          sd.mean = mean(sd.mean)) %>%
+  mutate(type = "Fully coupled") -> fcm.ar1.sd.dat2
 
-fcm.sst %>%
+
+mdm.ar1.sd.dat %>%
   filter(lat >=20 & lat<=68) %>% # isolate extra tropical N. pacific
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
           ar1.mean = mean(ar1.mean),
           sd.mean = mean(sd.mean)) %>%
-  mutate(type = "Fully coupled") -> fcm.sst.ar1sd
-
-mdm.sst <- readRDS(paste0(dir, "Output/processed.mdm.sst.rda"))
-
-mdm.sst %>%
-  filter(lat >=20 & lat<=68) %>% # isolate extra tropical N. pacific
-  group_by(lon, lat) %>%
-  reframe(ar1.sd = mean(ar1.sd),
-          ar1.mean = mean(ar1.mean),
-          sd.mean = mean(sd.mean)) %>%
-  mutate(type = "Mechanically decoupled") -> mdm.sst.ar1sd
+  mutate(type = "Mechanically decoupled") -> mdm.ar1.sd.dat2
 
 # Join
-plot.dat <- rbind(fcm.sst.ar1sd, mdm.sst.ar1sd)
+plot.dat <- rbind(fcm.ar1.sd.dat2, mdm.ar1.sd.dat2)
 
 # Calculate differences
 plot.dat %>%
