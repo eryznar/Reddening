@@ -111,39 +111,38 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
              year = lubridate::year(time),
              month = lubridate::month(time),
              member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
-      group_by(lon, lat, member) %>%
-      mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years and months
+      group_by(lat, lon, month, member) %>%
+      mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
       ungroup() %>%
-      mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
-      group_by(lon, lat, year, member) %>%
-      reframe(mean.SSTa = mean(SSTa), # calculate mean
-              mean.SST = mean(SST))-> out
+      mutate(SSTa = SST - mean.month.SST) %>% # compute anomalies
+      group_by(lon, lat, year, member) %>% # calculate mean annual SSTa by grid cell
+      reframe(mean.SSTa = mean(SSTa))-> out
     
-    # Detrend data and extract residuals
-    resid.SST <- lm(mean.SST ~ year, out)$residuals
-    resid.SSTa <- lm(mean.SSTa ~ year, out)$residuals
     
-    # Bind with output df
-    detrend.dat <- cbind(out, resid.SST, resid.SSTa)
+    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+    setDT(out) # convert to data.table
+
+    out[, detrended_SSTa := {
+      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each group
+      residuals(fit)           # Extract residuals as detrended values
+    }, by = .(lat, lon)]
     
     # Calculate grid cell AR1
-    detrend.dat %>%
+    out %>%
       group_by(lon, lat, member) %>%
-      reframe(ar1.SSTa = sapply(rollapply(resid.SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+      reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+              sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd),
               ar1.sd = sd(ar1.SSTa),
-              mean.residSSTa = mean(resid.SSTa),
-              mean.SSTa = mean(mean.SSTa),
-              mean.SST = mean(mean.SST),
-              resid.SSTa.sd = sd(resid.SSTa),
-              SSTa.sd = sd(mean.SSTa),
-              SST.sd = sd(mean.SST)) %>%
+              ar1.mean = mean(ar1.SSTa),
+              sd.sd = sd(sd.SSTa),
+              sd.mean = mean(sd.SSTa)) %>%
       mutate(lon = as.numeric(lon),
              lat = as.numeric(lat)) %>%
-      dplyr::select(!ar1.SSTa) %>%
-      distinct() -> ar1.dat
+      dplyr::select(!c(ar1.SSTa, sd.SSTa)) %>%
+      distinct() -> ar1.sd.dat
     
     # stack processed files
-    fcm.sst <- bind_rows(fcm.sst, ar1.dat)
+    fcm.sst <- bind_rows(fcm.sst, ar1.sd.dat)
     
   }
 
@@ -157,7 +156,7 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
   for(ii in 1:length(files)){
     
     print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
-    
+
     # load and process file
     tidync(files[ii]) %>%
       hyper_filter(lon = lon >= 125 & lon <= 255,
@@ -169,40 +168,39 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
              year = lubridate::year(time),
              month = lubridate::month(time),
              member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
-      group_by(lon, lat, member) %>%
-      mutate(mean.cell.SST = mean(SST)) %>% # compute grid cell mean across years
+      group_by(lat, lon, month, member) %>%
+      mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
       ungroup() %>%
-      mutate(SSTa = SST - mean.cell.SST) %>% # compute anomalies
-      group_by(lon, lat, year, member) %>%
-      reframe(mean.SSTa = mean(SSTa), # calculate mean
-              mean.SST = mean(SST))-> out
+      mutate(SSTa = SST - mean.month.SST) %>% # compute anomalies
+      group_by(lon, lat, year, member) %>% # calculate mean annual SSTa by grid cell
+      reframe(mean.SSTa = mean(SSTa))-> out
     
-    # Detrend data and extract residuals
-    resid.SST <- lm(mean.SST ~ year, out)$residuals
-    resid.SSTa <- lm(mean.SSTa ~ year, out)$residuals
     
-    # Bind with output df
-    detrend.dat <- cbind(out, resid.SST, resid.SSTa)
+    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+    setDT(out) # convert to data.table
+    
+    out[, detrended_SSTa := {
+      fit <- lm(mean.SSTa ~ year)  # Fit linear model for each group
+      residuals(fit)           # Extract residuals as detrended values
+    }, by = .(lat, lon)]
     
     # Calculate grid cell AR1
-    detrend.dat %>%
+    out %>%
       group_by(lon, lat, member) %>%
-      reframe(ar1.SSTa = sapply(rollapply(resid.SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+      reframe(ar1.SSTa = sapply(rollapply(detrended_SSTa, width = 15, FUN = acf, lag.max = 1, plot = FALSE)[,1], "[[",2),
+              sd.SSTa = rollapply(detrended_SSTa, width = 15, FUN = sd),
               ar1.sd = sd(ar1.SSTa),
-              mean.residSSTa = mean(resid.SSTa),
-              mean.SSTa = mean(mean.SSTa),
-              mean.SST = mean(mean.SST),
-              resid.SSTa.sd = sd(resid.SSTa),
-              SSTa.sd = sd(mean.SSTa),
-              SST.sd = sd(mean.SST)) %>%
+              ar1.mean = mean(ar1.SSTa),
+              sd.sd = sd(sd.SSTa),
+              sd.mean = mean(sd.SSTa)) %>%
       mutate(lon = as.numeric(lon),
              lat = as.numeric(lat)) %>%
-      dplyr::select(!ar1.SSTa) %>%
-      distinct() -> ar1.dat
-    
+      dplyr::select(!c(ar1.SSTa, sd.SSTa)) %>%
+      distinct() -> ar1.sd.dat
     
     # stack processed files
-    mdm.sst <- bind_rows(mdm.sst, ar1.dat)
+    mdm.sst <- bind_rows(mdm.sst, ar1.sd.dat)
+    
     
   }
   
