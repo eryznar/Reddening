@@ -27,6 +27,7 @@ library(ggtext)
 library(patchwork)
 library(googledrive)
 library(tidync)
+library(data.table)
 
 ### DIRECTORIES ------------------------------
 dir <- "Y:/KOD_Research/Ryznar/Reddening/"
