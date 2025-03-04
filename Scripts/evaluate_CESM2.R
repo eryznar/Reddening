@@ -338,9 +338,10 @@ origin_date <- ymd_hms(unit_parts[2])
   
   # Calculate grid cell AR1
   fcm.sst %>%
+    na.omit() %>%
     group_by(lon, lat, member) %>%
     reframe(ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
-            ar1.cv = cv(ar1.SSTa), # sd of AR1 of rolling window timeseries
+            ar1.cv = sd(ar1.SSTa)/(abs(mean(ar1.SSTa))), # sd of AR1 of rolling window timeseries
             ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
             sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
             sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
@@ -353,9 +354,10 @@ origin_date <- ymd_hms(unit_parts[2])
   
   # Calculate grid cell AR1
   mdm.sst %>%
+    na.omit() %>%
     group_by(lon, lat, member) %>%
     reframe(ar1.sd = sd(ar1.SSTa), # sd of AR1 of rolling window timeseries
-            ar1.cv = cv(ar1.SSTa), # sd of AR1 of rolling window timeseries
+            ar1.cv = sd(ar1.SSTa)/(abs(mean(ar1.SSTa))), # sd of AR1 of rolling window timeseries
             ar1.mean = mean(ar1.SSTa), # mean AR1 of rolling window timeseries
             sd.sd = sd(sd.SSTa), # sd of SD of rolling window timeseries
             sd.mean = mean(sd.SSTa)) %>% # mean SD of rolling window timeseries
@@ -369,15 +371,16 @@ origin_date <- ymd_hms(unit_parts[2])
 fcm.ar1.sd.dat %>%
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
+          ar1.cv = mean(ar1.cv),
           ar1.mean = mean(ar1.mean),
           sd.mean = mean(sd.mean)) %>%
   mutate(type = "Fully coupled") -> fcm.ar1.sd.dat2
 
 
 mdm.ar1.sd.dat %>%
-  filter(lat >=20 & lat<=68) %>% # isolate extra tropical N. pacific
   group_by(lon, lat) %>%
   reframe(ar1.sd = mean(ar1.sd),
+          ar1.cv = mean(ar1.cv),
           ar1.mean = mean(ar1.mean),
           sd.mean = mean(sd.mean)) %>%
   mutate(type = "Mechanically decoupled") -> mdm.ar1.sd.dat2
@@ -387,17 +390,13 @@ plot.dat <- rbind(fcm.ar1.sd.dat2, mdm.ar1.sd.dat2)
 
 # Calculate differences
 plot.dat %>%
-  # group_by(type) %>%
-  # mutate(ar1.sd = scale(ar1.sd)[,1],
-  #        ar1.mean = scale(ar1.mean)[,1],
-  #        sd.mean = scale(sd.mean)[,1]) %>%
-  # ungroup() %>%
-  pivot_wider(names_from = type, values_from = c(ar1.sd, ar1.mean, sd.mean)) %>%
+  pivot_wider(names_from = type, values_from = c(ar1.sd, ar1.cv, ar1.mean, sd.mean)) %>%
   mutate(ar1.sd.diff = scale(`ar1.sd_Fully coupled` - `ar1.sd_Mechanically decoupled`)[,1],
+         ar1.cv.diff = scale(`ar1.cv_Fully coupled` - `ar1.cv_Mechanically decoupled`)[,1],
          ar1.mean.diff = scale(`ar1.mean_Fully coupled` - `ar1.mean_Mechanically decoupled`)[,1],
          sd.mean.diff = scale(`sd.mean_Fully coupled` - `sd.mean_Mechanically decoupled`)[,1],
          type = "Difference") %>%
-  dplyr::select(lon, lat, ar1.sd.diff, ar1.mean.diff, sd.mean.diff, type) -> diff.dat
+  dplyr::select(lon, lat, ar1.sd.diff, ar1.cv.diff, ar1.mean.diff, sd.mean.diff, type) -> diff.dat
 
 
 # Plot AR1 SD and difference
@@ -408,7 +407,7 @@ ggplot()+
   facet_wrap(~type, nrow = 2)+
   xlab("Latitude")+
   ylab("Longitude")+
-  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
                        midpoint=  median(plot.dat$ar1.sd),
                        name = "AR1 sd")+
   theme_bw()+
@@ -518,19 +517,15 @@ sd.mean.plot + sd.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE,
 ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
 
 
-
-
-
-
-
 # 4) EVALUATE PERIODS OF HIGH SLP VARIABILITY ----
+# slp fcm
 slp.fcm <- readRDS(paste0(dir, "Output/FCM_winterSLPa_ar1sd.rda"))
 
 mems <- unique(slp.fcm$member)
 
 
 slp.fcm %>%
-  filter(member == mems[16]) %>% # isolating one ensemble member
+  #filter(member == mems[16]) %>% # isolating one ensemble member
   group_by(win.year) %>%
   reframe(sd = mean(sd.SLPa)) %>%
   na.omit()-> tt
@@ -544,6 +539,32 @@ ggplot(tt %>% filter(win.year > 1857), aes(win.year, sd))+
   ylab("SLP standard deviation")+
   ggtitle("AL high activity area winter SLPa")
 
+#slp mdm
+slp.mdm <- readRDS(paste0(dir, "Output/mdm_winterSLPa_ar1sd.rda"))
+
+mems <- unique(slp.mdm$member)
+
+
+slp.mdm %>%
+  #filter(member == mems[16]) %>% # isolating one ensemble member
+  group_by(win.year) %>%
+  reframe(sd = mean(sd.SLPa)) %>%
+  na.omit()-> tt
+
+# Seems like 1984-1921 has high AL variability and 1922-1947 has low
+ggplot(tt %>% filter(win.year > 1857), aes(win.year, sd))+
+  geom_point()+
+  geom_line() + 
+  scale_x_continuous(breaks = seq(min(tt$win.year), max(tt$win.year), by = 10))+
+  theme_bw() +
+  ylab("SLP standard deviation")+
+  ggtitle("AL high activity area winter SLPa")
+
+#1916-1935 low
+#1966-1990 high
+
+length(1916:1935) #low
+length(1966:1985) #high
 # # By ensemble member
 # slp.fcm %>%
 #   group_by(win.year, member) %>%
@@ -560,8 +581,8 @@ ggplot(tt %>% filter(win.year > 1857), aes(win.year, sd))+
 #   ggtitle("AL high activity area winter SLPa")+
 #   theme(legend.position = "none")
 
-highyrs <- 1884:1918
-lowyrs <- 1919:1947
+highyrs <- 1966:1985
+lowyrs <- 1916:1935
 
 # Process FCM and MDM SST in winter for comparison in high and low SLP var periods ----
 files <- list.files(fcm.sst.dir, full.names = TRUE)
@@ -577,7 +598,7 @@ origin_date <- ymd_hms(unit_parts[2])
 # FCM SST  
 files <- list.files(fcm.sst.dir, full.names = TRUE)
 
-fcm.win.sst <- tibble()
+fcm.win.sst2 <- tibble()
 
 for(ii in 1:length(files)){
   
@@ -628,7 +649,7 @@ for(ii in 1:length(files)){
                               align = "center"), by = c("lon", "lat", "member", "period")]
   
   # stack processed files
-  fcm.win.sst <- bind_rows(fcm.win.sst, out)
+  fcm.win.sst2 <- bind_rows(fcm.win.sst2, out)
   
 }
 
@@ -752,157 +773,328 @@ mdm.ar1.sd.dat %>%
   mutate(type = "MDM") -> mdm.ar1.sd.dat2
 
 # Join
-plot.dat <- rbind(fcm.ar1.sd.dat2, mdm.ar1.sd.dat2)
+plot.dat <- rbind(fcm.ar1.sd.dat2, mdm.ar1.sd.dat2) %>%
+  mutate(period = case_when((period == "high") ~ "High",
+                            TRUE ~ "Low"))
 
-# Calculate differences
-plot.dat %>%
-  group_by(period, lon, lat) %>%
-  reframe(ar1.sd.diff = ar1.sd[type == `Fully coupled`] - ar1.sd[type == `Mechanically decoupled`]) ,
-          ar1.cv.diff = scale(ar1.cv[type == "Fully coupled"] - ar1.cv[type == "Mechanically decoupled"])[,1],
-          ar1.mean.diff = scale(ar1.mean[type == "Fully coupled"] - ar1.mean[type == "Mechanically decoupled"])[,1],
-          sd.mean.diff = scale(sd.mean[type == "Fully coupled"] - sd.mean[type == "Mechanically decoupled"])[,1]) %>%
-  mutate(type = "Difference") -> diff.dat
-
-plot.dat %>%
-  pivot_wider(names_from = c("type", "period"), values_from = c("ar1.sd", "ar1.cv", "ar1.mean", "sd.mean")) %>%
-  mutate(ar1.sd.high = scale(ar1.sd_FCM_high - ar1.sd_MDM_high)[,1],
-         ar1.sd.low = scale(ar1.sd_FCM_low - ar1.sd_MDM_low)[,1],
-         ar1.cv.high = scale(ar1.cv_FCM_high - ar1.cv_MDM_high)[,1],
-         ar1.cv.low = scale(ar1.cv_FCM_low - ar1.cv_MDM_low)[,1],
-         ar1.mean.high = scale(ar1.mean_FCM_high - ar1.mean_MDM_high)[,1],
-         ar1.mean.low = scale(ar1.mean_FCM_low - ar1.mean_MDM_low)[,1],
-         sd.mean.high = scale(sd.mean_FCM_high - sd.mean_MDM_high)[,1],
-         sd.mean.low = scale(sd.mean_FCM_low - sd.mean_MDM_low)[,1]) %>%
-  dplyr::select(lon, lat, ar1.sd.high, ar1.sd.low, ar1.cv.high, ar1.cv.low, ar1.mean.high, ar1.mean.low, sd.mean.high,
-                sd.mean.low) -> diff.dat
-
-diff.dat %>%
-  pivot_longer(!c(lon, lat)) %>%
-  mutate(name = rep(c("ar1.sd", "ar1.sd", "ar1.cv", "ar1.cv", "ar1.mean", "ar1.mean", "sd.mean", "sd.mean"),
-                     nrow(.)/8),
-         period = rep(c("high", "low"), nrow(.)/2)) %>%
-  mutate(type = "Difference") -> diff.dat2
+# Pivot longer and calculate differences
+diff.dat <- pivot_longer(cols = c(4:7), values_to = "value", names_to = "name", data = plot.dat) %>%
+            group_by(lon, lat, name, period) %>%
+            mutate(fcm.mdm_diff = value[type == "FCM"] - value[type == "MDM"]) %>%
+            ungroup() %>%
+            group_by(name, period) %>%
+            mutate(scale_diff = scale(fcm.mdm_diff)[,1]) %>% 
+            ungroup() %>%
+            mutate(type2 = "Difference")
 
 # Plot AR1 SD and difference
-ggplot()+
-  geom_tile(plot.dat %>% filter(period == "high"), mapping= aes(lon, lat, fill = ar1.sd))+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
-  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
-  facet_wrap(~type, nrow = 2)+
-  xlab("Latitude")+
-  ylab("Longitude")+
-  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(plot.dat$ar1.sd),
-                       name = "AR1 sd")+
-  theme_bw()+
-  theme(plot.title = element_text(size = 10),
-        legend.title = element_text(size = 8),
-        axis.title = element_text(size = 10)) -> ar1.sd.plot
+dat <- diff.dat %>% filter(name == "ar1.sd")
 
-dat <- diff.dat2 %>% filter(name == "ar1.sd", period == "high")
 ggplot()+
   geom_tile(dat, mapping= aes(lon, lat, fill = value))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
   coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
-  facet_wrap(~type)+
+  facet_grid(type~period)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  median(dat$value),
+                       name = "AR1 sd")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_blank()) -> ar1.sd.plot
+
+
+ggplot()+
+  geom_tile(dat, mapping= aes(lon, lat, fill = scale_diff))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
+  facet_grid(type2 ~ period)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
                        midpoint=  0,
                        name = "FCM-MDM diff",
-                       limits = c(max(abs(dat$value))*-1, max(abs(dat$value))))+
+                       limits = c(max(abs(dat$scale_diff))*-1, max(abs(dat$scale_diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 8),
-        axis.title = element_text(size = 10)) -> ar1.sd.diffplot
+        axis.title = element_text(size = 10),
+        strip.text.x = element_blank()) -> ar1.sd.diffplot
 
 
 ar1.sd.plot + ar1.sd.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
                                             widths = c(1, 1), heights = c(1, 0.5),
                                             axes = "collect")
 
-#ggsave("./Figures/CESM2_AR1_SD.png", height= 7, width = 5, units = "in")
+ggsave("./Figures/CESM2_AR1_SD_ALhighlow.png", height= 7, width = 7, units = "in")
 
 # Plot AR1 mean and difference
+dat <- diff.dat %>% filter(name == "ar1.mean")
+
 ggplot()+
-  geom_tile(plot.dat, mapping= aes(lon, lat, fill = ar1.mean))+
+  geom_tile(dat, mapping= aes(lon, lat, fill = value))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
   coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
-  facet_wrap(~type, nrow = 2)+
+  facet_grid(type~period)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(plot.dat$ar1.mean),
-                       name = "mean AR1")+
+                       midpoint=  median(dat$value),
+                       name = "AR1 mean")+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 8),
-        axis.title = element_text(size = 10)) -> ar1.mean.plot
+        axis.title = element_text(size = 10),
+        axis.text.x = element_blank()) -> plot.1
+
 
 ggplot()+
-  geom_tile(diff.dat, mapping= aes(lon, lat, fill = ar1.mean.diff))+
+  geom_tile(dat, mapping= aes(lon, lat, fill = scale_diff))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
   coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
-  facet_wrap(~type)+
+  facet_grid(type2 ~ period)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
                        midpoint=  0,
                        name = "FCM-MDM diff",
-                       limits = c(max(abs(diff.dat$ar1.mean.diff))*-1, max(abs(diff.dat$ar1.mean.diff))))+
+                       limits = c(max(abs(dat$scale_diff))*-1, max(abs(dat$scale_diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 8),
-        axis.title = element_text(size = 10)) -> ar1.mean.diffplot
+        axis.title = element_text(size = 10),
+        strip.text.x = element_blank()) -> plot.2
 
 
-ar1.mean.plot + ar1.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
-                                                widths = c(1, 1), heights = c(1, 0.5),
-                                                axes = "collect")
+plot.1 + plot.2 + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
+                                            widths = c(1, 1), heights = c(1, 0.5),
+                                            axes = "collect")
 
-ggsave("./Figures/CESM2_AR1_MEAN.png", height= 7, width = 5, units = "in")
+ggsave("./Figures/CESM2_AR1_MEAN_ALhighlow.png", height= 7, width = 7, units = "in")
+
 
 # Plot SD mean and difference
+dat <- diff.dat %>% filter(name == "sd.mean")
+
 ggplot()+
-  geom_tile(plot.dat, mapping= aes(lon, lat, fill = sd.mean))+
+  geom_tile(dat, mapping= aes(lon, lat, fill = value))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
   coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
-  facet_wrap(~type, nrow = 2)+
+  facet_grid(type~period)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
-                       midpoint=  median(plot.dat$sd.mean),
-                       name = "mean SD")+
+                       midpoint=  median(dat$value),
+                       name = "SD mean")+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 8),
-        axis.title = element_text(size = 10)) -> sd.mean.plot
+        axis.title = element_text(size = 10),
+        axis.text.x = element_blank()) -> plot.1
+
 
 ggplot()+
-  geom_tile(diff.dat, mapping= aes(lon, lat, fill = sd.mean.diff))+
+  geom_tile(dat, mapping= aes(lon, lat, fill = scale_diff))+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
   coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
-  facet_wrap(~type)+
+  facet_grid(type2 ~ period)+
   xlab("Latitude")+
   ylab("Longitude")+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
                        midpoint=  0,
                        name = "FCM-MDM diff",
-                       limits = c(max(abs(diff.dat$sd.mean.diff))*-1, max(abs(diff.dat$sd.mean.diff))))+
+                       limits = c(max(abs(dat$scale_diff))*-1, max(abs(dat$scale_diff))))+
   theme_bw()+
   theme(plot.title = element_text(size = 10),
         legend.title = element_text(size = 8),
-        axis.title = element_text(size = 10)) -> sd.mean.diffplot
+        axis.title = element_text(size = 10),
+        strip.text.x = element_blank()) -> plot.2
 
 
-sd.mean.plot + sd.mean.diffplot + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
-                                              widths = c(1, 1), heights = c(1, 0.5),
-                                              axes = "collect")
+plot.1 + plot.2 + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
+                                            widths = c(1, 1), heights = c(1, 0.5),
+                                            axes = "collect")
 
-ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
+ggsave("./Figures/CESM2_SD_MEAN_ALhighlow.png", height= 7, width = 7, units = "in")
+
+# Plot AR1 CV and difference
+dat <- diff.dat %>% filter(name == "ar1.cv")
+
+ggplot()+
+  geom_tile(dat, mapping= aes(lon, lat, fill = value))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
+  facet_grid(type~period)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  median(dat$value),
+                       name = "AR1 cv")+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        axis.text.x = element_blank()) -> plot.1
 
 
+ggplot()+
+  geom_tile(dat, mapping= aes(lon, lat, fill = scale_diff))+
+  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+  coord_cartesian(ylim = c(20, 68), xlim = c(125, 255), expand = FALSE)+
+  facet_grid(type2 ~ period)+
+  xlab("Latitude")+
+  ylab("Longitude")+
+  scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white", 
+                       midpoint=  0,
+                       name = "FCM-MDM diff",
+                       limits = c(max(abs(dat$scale_diff))*-1, max(abs(dat$scale_diff))))+
+  theme_bw()+
+  theme(plot.title = element_text(size = 10),
+        legend.title = element_text(size = 8),
+        axis.title = element_text(size = 10),
+        strip.text.x = element_blank()) -> plot.2
 
 
+plot.1 + plot.2 + plot_layout(nrow = 2, ncol = 1, byrow = TRUE, 
+                                            widths = c(1, 1), heights = c(1, 0.5),
+                                            axes = "collect")
+
+ggsave("./Figures/CESM2_AR1_CV_ALhighlow.png", height= 7, width = 7, units = "in")
+
+
+# What Kay said ----
+files <- list.files(fcm.sst.dir, full.names = TRUE)
+
+time_units <- ncmeta::nc_atts(files[1], "time") %>% 
+  filter(name == "units") %>%
+  pull(value)
+
+unit_parts <- str_split(time_units, " since ")[[1]]
+time_unit <- unit_parts[1]
+origin_date <- ymd_hms(unit_parts[2])
+
+# FCM SST  
+files <- list.files(fcm.sst.dir, full.names = TRUE)
+
+fcm.win.sst <- tibble()
+
+for(ii in 1:length(files)){
+  
+  print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+  
+  # load and process for high var periods
+  tidync(files[ii]) %>%
+    hyper_filter(lon = lon >= 125 & lon <= 255,
+                 lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+    #time = time > 711475) %>% # greater than 1947
+    activate("SST") %>%
+    hyper_tibble() %>%
+    mutate(time = origin_date + lubridate::days(time),
+           year = lubridate::year(time),
+           month = lubridate::month(time),
+           member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+    group_by(lat, lon, month, member) %>%
+    mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
+    ungroup() %>%
+    mutate(SSTa = SST - mean.month.SST,
+           win.year = case_when((month %in% 11:12) ~ year + 1,
+                                TRUE ~ year)) %>% # compute anomalies
+    filter(month %in% c(11:12, 1:3)) %>%
+    group_by(lon, lat, win.year, member) %>% 
+    reframe(mean.winSSTa = mean(SSTa))-> out # calculate mean annual winter SSTa by grid cell
+  
+  
+  # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+  setDT(out) # convert to data.table
+  
+  out[, detrended_winSSTa := { # output data table column
+    fit <- lm(mean.winSSTa ~ win.year)  # Fit linear model for each lat/lon group and period(?)
+    residuals(fit)           # Extract residuals as detrended values
+  }, by = .(lat, lon)]
+  
+  
+  # Calculate rolling window AR1 within data.table
+  out[, ar1.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = function(x) {
+    acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
+    return(acf_result$acf[2])
+  }, align = "center"), by = c("lon", "lat", "member")]
+  
+  # Calculate rolling window SD within data.table
+  out[, sd.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = sd, 
+                                 align = "center"), by = c("lon", "lat", "member")]
+  
+  # stack processed files
+  fcm.win.sst2 <- bind_rows(fcm.win.sst2, out)
+  
+}
+
+setDT(fcm.win.sst)
+
+# Save file
+saveRDS(fcm.win.sst, paste0(dir, "Output/FCM_winterSSTa_ar1sd.rda"))
+
+# MDM SST  
+files <- list.files(mdm.sst.dir, full.names = TRUE)
+
+mdm.win.sst <- tibble()
+
+for(ii in 1:length(files)){
+  
+  print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+  
+  
+  # load and process for high var periods
+  tidync(files[ii]) %>%
+    hyper_filter(lon = lon >= 125 & lon <= 255,
+                 lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+    #time = time > 711475) %>% # greater than 1947
+    activate("SST") %>%
+    hyper_tibble() %>%
+    mutate(time = origin_date + lubridate::days(time),
+           year = lubridate::year(time),
+           month = lubridate::month(time),
+           member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+    group_by(lat, lon, month, member) %>%
+    mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
+    ungroup() %>%
+    mutate(SSTa = SST - mean.month.SST,
+           win.year = case_when((month %in% 11:12) ~ year + 1,
+                                TRUE ~ year)) %>% # compute anomalies
+    filter(month %in% c(11:12, 1:3)) %>%
+    group_by(lon, lat, win.year, member) %>% 
+    reframe(mean.winSSTa = mean(SSTa))-> out # calculate mean annual winter SSTa by grid cell
+  
+  
+  # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+  setDT(out) # convert to data.table
+  
+  out[, detrended_winSSTa := { # output data table column
+    fit <- lm(mean.winSSTa ~ win.year)  # Fit linear model for each lat/lon group and period(?)
+    residuals(fit)           # Extract residuals as detrended values
+  }, by = .(lat, lon)]
+  
+  
+  # Calculate rolling window AR1 within data.table
+  out[, ar1.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = function(x) {
+    acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
+    return(acf_result$acf[2])
+  }, align = "center"), by = c("lon", "lat", "member")]
+  
+  # Calculate rolling window SD within data.table
+  out[, sd.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = sd, 
+                                 align = "center"), by = c("lon", "lat", "member")]
+  
+  # stack processed files
+  mdm.win.sst <- bind_rows(mdm.win.sst, out)
+  
+}
+
+setDT(mdm.win.sst)
+
+# Save file
+saveRDS(mdm.win.sst, paste0(dir, "Output/MDM_winterSSTa_ar1sd.rda"))
 
 
