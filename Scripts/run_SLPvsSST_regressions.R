@@ -4,15 +4,15 @@ source("./Scripts/load.libs.functions.R")
 source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
 
 ### READ IN WINTER SSTa ----------------------------------
-ebs.SSTa <- read.csv(paste0(dir, "Output/SST.winter.anom.ebs.csv")) %>%
+ebs.SSTa <- read.csv("./Output/SST.winter.anom.ebs.csv") %>%
   dplyr::select(!X)
-goa.SSTa <- read.csv(paste0(dir, "Output/SST.winter.anom.goa.csv")) %>%
+goa.SSTa <- read.csv("./Output/SST.winter.anom.goa.csv") %>%
   dplyr::select(!X)
 
 
 ### PROCESS SLPa for NORTH PACIFIC REGION -----------------------------------------
 # first, load data
-nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
+nc.slp <- nc_open("Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc")
 
 # process SLP data - first, extract dates
 raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
@@ -39,7 +39,7 @@ dimnames(SLP) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
 
 # Filter to area of interest
 poly.x <- c(130, 130, 250, 250, 130) 
-poly.y <- c(5, 70, 70, 5, 5)
+poly.y <- c(25, 70, 70, 25, 25)
 
 xp <- cbind(poly.x, poly.y)
 loc=cbind(lon, lat)
@@ -50,9 +50,9 @@ SLP[,!check] <- NA
 # plot to check
 z <- colMeans(SLP*100)
 z <- t(matrix(z, length(y)))
-image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(23,70), xlim=c(130,250))
+image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(25,70), xlim=c(130,250))
 contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
-map('world2Hires',fill=F, xlim=c(130,250), ylim=c(23,70),add=T, lwd=1)
+map('world2Hires',fill=F, xlim=c(130,250), ylim=c(20,66),add=T, lwd=1)
 # looks good
 
 SLP %>%
@@ -102,7 +102,7 @@ mu <- rbind(mu, mu[1:xtra,])
 
 slp.anom <- cbind(SLP.m[,1:(ncol(SLP.m)-2)]  - mu, data.frame(year = SLP.m$year, month = SLP.m$month))
 
-# Pivot longer 
+# Pivot longer into a format I recognize!
 SLPa.long <- pivot_longer(slp.anom, cols = c(-month, -year), names_to = "crds", values_to = "anom") %>%
                 mutate(lat = str_split(crds, "E", simplify = T)[,1],
                        lat = as.numeric(str_split(lat, "N", simplify = T)[,2]), # pull out lat
@@ -139,18 +139,18 @@ SLPa.white2 <- SLPa.white %>%
 
 
 ggplot() +
-  geom_tile(SLPa.red, mapping = aes(lon, lat, fill = slp.win.anom))+
-  stat_contour(SLPa.red, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
+  geom_tile(SLPa.red2, mapping = aes(lon, lat, fill = slp.win.anom))+
+  stat_contour(SLPa.red2, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(25, 70), xlim = c(160, 250), expand = FALSE)+
+  coord_sf(ylim = c(27, 70), xlim = c(160, 250), expand = FALSE)+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
   ggtitle("Winter SLPa during red noise (2005-2024)")
 
 ggplot() +
-  geom_tile(SLPa.white, mapping = aes(lon, lat, fill = slp.win.anom))+
-  stat_contour(SLPa.white, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
+  geom_tile(SLPa.white2, mapping = aes(lon, lat, fill = slp.win.anom))+
+  stat_contour(SLPa.white2, mapping = aes(lon, lat, z = slp.win.anom ), geom = "contour", position = "identity")+
   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "lightgrey", color = "darkgrey")+
-  coord_sf(ylim = c(25, 70), xlim = c(160, 250), expand = FALSE)+
+  coord_sf(ylim = c(27, 70), xlim = c(160, 250), expand = FALSE)+
   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
   ggtitle("Winter SLPa during white noise (1975-1995)")
 
@@ -175,26 +175,26 @@ ggplot() +
     # Red noise
     mod.r <- lm(SLP.r$slp.win.anom ~ sst.r$mean.sst)
     est <- summary(mod.r)$coef[2,1]
-    r <- sqrt(summary(mod.r)$r.squared)
+    R2 <- summary(mod.r)$r.squared
     
     df.r <- data.frame(crds = SLP.r$crds, 
                        lat = SLP.r$lat, 
                        lon = SLP.r$lon,
                        est = est,
-                       r= r)
+                       R2 = R2)
     
     goa.red <- rbind(goa.red, df.r)
     
     # White noise
     mod.w <- lm(SLP.w$slp.win.anom ~ sst.w$mean.sst)
     est <- summary(mod.w)$coef[2,1]
-    r <- sqrt(summary(mod.w)$r.squared)
+    R2 <- summary(mod.w)$r.squared
     
     df.w <- data.frame(crds = SLP.w$crds, 
                        lat = SLP.w$lat, 
                        lon = SLP.w$lon,
                        est = est,
-                       r = r)
+                       R2 = R2)
     
     goa.white <- rbind(goa.white, df.w)
     
@@ -220,8 +220,8 @@ ggplot() +
     theme_bw() -> r2
   
   ggplot() +
-    geom_tile(goa.red, mapping = aes(lon, lat, fill = r))+
-    stat_contour(goa.red, mapping = aes(lon, lat, z = r), geom = "contour", position = "identity", color = "lightgrey")+
+    geom_tile(goa.red, mapping = aes(lon, lat, fill = R2))+
+    stat_contour(goa.red, mapping = aes(lon, lat, z = R2), geom = "contour", position = "identity", color = "lightgrey")+
     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgrey", color = "black")+
     coord_sf(ylim = c(27, 70), xlim = c(160, 250), expand = FALSE)+
     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
@@ -229,15 +229,17 @@ ggplot() +
     theme_bw() -> r3
   
   ggplot() +
-    geom_tile(goa.white, mapping = aes(lon, lat, fill = r))+
-    stat_contour(goa.white, mapping = aes(lon, lat, z = r), geom = "contour", position = "identity", color = "lightgrey")+
+    geom_tile(goa.white, mapping = aes(lon, lat, fill = R2))+
+    stat_contour(goa.white, mapping = aes(lon, lat, z = R2), geom = "contour", position = "identity", color = "lightgrey")+
     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgrey", color = "black")+
     coord_sf(ylim = c(27, 70), xlim = c(160, 250), expand = FALSE)+
     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
     ggtitle("GOA SLP vs. SST (white noise: 1975-1995)")+
     theme_bw() -> r4
   
- 
+  cowplot::plot_grid(r1, r3, r2, r4) 
+  
+
   r1 + r3 + r2 + r4 +  plot_layout(ncol = 2) #warnings are ok because the contour is the same
   
   ggsave("./Figures/goaSLPv.SSTregression.png", width = 8, height = 5, units = "in")
@@ -262,26 +264,26 @@ ggplot() +
     # Red noise
     mod.r <- lm(SLP.r$slp.win.anom ~ sst.r$mean.sst)
     est <- summary(mod.r)$coef[2,1]
-    r <- sqrt(summary(mod.r)$r.squared)
+    R2 <- summary(mod.r)$r.squared
     
     df.r <- data.frame(crds = SLP.r$crds, 
                        lat = SLP.r$lat, 
                        lon = SLP.r$lon,
                        est = est,
-                       r = r)
+                       R2 = R2)
     
     ebs.red <- rbind(ebs.red, df.r)
     
     # White noise
     mod.w <- lm(SLP.w$slp.win.anom ~ sst.w$mean.sst)
     est <- summary(mod.w)$coef[2,1]
-    r <- sqrt(summary(mod.w)$r.squared)
+    R2 <- summary(mod.w)$r.squared
     
     df.w <- data.frame(crds = SLP.w$crds, 
                        lat = SLP.w$lat, 
                        lon = SLP.w$lon,
                        est = est,
-                      r = r)
+                       R2 = R2)
     
     ebs.white <- rbind(ebs.white, df.w)
     
@@ -307,8 +309,8 @@ ggplot() +
     theme_bw() -> r2
   
   ggplot() +
-    geom_tile(ebs.red, mapping = aes(lon, lat, fill = r))+
-    stat_contour(ebs.red, mapping = aes(lon, lat, z = r), geom = "contour", position = "identity", color = "lightgrey")+
+    geom_tile(ebs.red, mapping = aes(lon, lat, fill = R2))+
+    stat_contour(ebs.red, mapping = aes(lon, lat, z = R2), geom = "contour", position = "identity", color = "lightgrey")+
     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgrey", color = "black")+
     coord_sf(ylim = c(27, 70), xlim = c(160, 250), expand = FALSE)+
     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
@@ -316,8 +318,8 @@ ggplot() +
     theme_bw() -> r3
   
   ggplot() +
-    geom_tile(ebs.white, mapping = aes(lon, lat, fill = r))+
-    stat_contour(ebs.white, mapping = aes(lon, lat, z = r), geom = "contour", position = "identity", color = "lightgrey")+
+    geom_tile(ebs.white, mapping = aes(lon, lat, fill = R2))+
+    stat_contour(ebs.white, mapping = aes(lon, lat, z = R2), geom = "contour", position = "identity", color = "lightgrey")+
     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgrey", color = "black")+
     coord_sf(ylim = c(27, 70), xlim = c(160, 250), expand = FALSE)+
     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
