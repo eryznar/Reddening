@@ -757,10 +757,12 @@ width = 15 # rolling window length
     
     cor.dat <- plot.dat2 %>% filter(region == "Eastern Bering Sea")
     cor.test(cor.dat$sst.ar1.norm, cor.dat$slp.sd.norm)
+    cor.test.PP(cor.dat$sst.ar1.norm, cor.dat$slp.sd.norm)
     cor.dat <- plot.dat2 %>% filter(region == "Gulf of Alaska")
     cor.test(cor.dat$sst.ar1.norm, cor.dat$slp.sd.norm)
+    cor.test.PP(cor.dat$sst.ar1.norm, cor.dat$slp.sd.norm)
     
-    p =data.frame(plab = c("p <0.001*", "p<0.001*"),
+    p =data.frame(plab = c("p <0.05*", "p<0.05*"),
                   rlab = c("0.7", "0.61"),
                      x = c(1960.5, 1960.5),
                      y = c(2, 2),
@@ -827,289 +829,21 @@ width = 15 # rolling window length
     
     
     # Model: EBS sst AR1 x slp AR1 
-    rr <- model.dat$ebs.sst.ar1
-    pp <- model.dat$slp.ar1
+    mod.1 <- gls(ebs.sst.ar1~slp.sd, 
+               data= model.dat, correlation = corAR1(form = ~year))
     
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
+    mod.2 <- gamm(ebs.sst.ar1~s(slp.sd, bs = "cr"), data = model.dat, correlation = corAR1(form = ~year))
     
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#6A6DB7", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP AR1 vs. EBS SST AR1 (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly AR1")+
-      xlab("SLP anomaly AR1") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12)) 
-    
-    # Model: EBS sst AR1 x slp SD 
-    rr <- model.dat$ebs.sst.ar1
-    pp <- model.dat$slp.sd
-    
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
-    
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.se, ymax= pred +pred.se), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#6A6DB7", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP SD vs. EBS SST AR1 (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly AR1")+
-      xlab("SLP anomaly SD") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12)) -> plot.1
+    AICc(mod.1, mod.2)
     
     # Model: GOA sst AR1 x slp AR1 
-    rr <- model.dat$goa.sst.ar1
-    pp <- model.dat$slp.ar1
+    mod.1 <- gls(goa.sst.ar1~slp.sd, 
+                 data= model.dat, correlation = corAR1(form = ~year))
     
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
+    mod.2 <-  gamm(goa.sst.ar1~s(slp.sd, bs = "cr"), data = model.dat, correlation = corAR1(form = ~year))
     
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#A34242", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP AR1 vs. GOA SST AR1 (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly AR1")+
-      xlab("SLP anomaly AR1") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12)) 
-    
-    # Model: GOA sst AR1 x slp SD 
-    rr <- model.dat$goa.sst.ar1
-    pp <- model.dat$slp.sd
-    
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
-    
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.se, ymax= pred +pred.se), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#A34242", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP SD vs. GOA SST AR1 (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly AR1")+
-      xlab("SLP anomaly SD") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12)) -> plot.3
-    
-    
-    # Model: GOA sst AR1 x slp SD 
-    rr <- model.dat$goa.sst.ar1
-    pp <- model.dat$slp.sd
-    
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
-    
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.se, ymax= pred +pred.se), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#A34242", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP SD vs. GOA SST AR1 (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly AR1")+
-      xlab("SLP anomaly SD") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12))
-    
-    
-    
-    # Model: EBS sst AR1 x slp SD 
-    rr <- model.dat$ebs.sst.sd
-    pp <- model.dat$slp.sd
-    
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
-    
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.se, ymax= pred +pred.se), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#6A6DB7", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP SD vs. EBS SST SD (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly SD")+
-      xlab("SLP anomaly SD") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12)) -> plot.2
-    
-    # Model: GOA sst SD x slp SD 
-    rr <- model.dat$goa.sst.sd
-    pp <- model.dat$slp.sd
-    
-    mod <- gam(rr ~ pp, 
-               data= model.dat, correlation = corAR1())
-    
-    
-    p.val <- summary(mod)$pTerms.table[3]
-    p.val <- case_when((p.val < 0.001) ~ "p<0.001",
-                       (p.val < 0.01 & p.val >= 0.001) ~ "p<0.01",
-                       (p.val <0.05 & p.val >= 0.01) ~ "p<0.05",
-                       TRUE ~ paste0("p=", round(p.val, 2)))
-    r.sq <- round(summary(mod)$r.sq, 2)
-    
-    pred <- predict(mod, se=T)
-    pred.CI = 1.96*(predict(mod, se.fit =TRUE)$se.fit)
-    
-    plot.dat <- data.frame(rr = rr, pp = pp, pred = pred$fit, pred.se = pred$se, pred.CI = pred.CI)
-    
-    ggplot()+
-      geom_ribbon(plot.dat, 
-                  mapping = aes(x = pp, ymin = pred - pred.CI, ymax= pred +pred.CI), fill = "grey", alpha = 0.5)+
-      geom_point(plot.dat, mapping=aes(x = pp, y = rr), color = "black")+
-      geom_line(plot.dat, mapping = aes(x = pp, y = pred), color =  "#A34242", size = 1.25)+
-      theme_bw()+
-      ggtitle(paste0("SLP SD vs. GOA SST SD (", p.val, ", R2 = ", r.sq, ")"))+
-      ylab("SST anomaly SD")+
-      xlab("SLP anomaly SD") +
-      theme(axis.text = element_text(size = 10),
-            axis.title = element_text(size = 12),
-            strip.text = element_text(size = 10),
-            legend.text = element_text(size = 12)) -> plot.4
-    
-    plot_grid(plot.1, plot.2, plot.3, plot.4) -> pp
-    
-    ggsave(plot = pp, "./Figures/SLP.vs.SST.png", width = 11, height = 8.5, units = "in")
-    
-    
+    AICc(mod.1, mod.2)
 
- # Calculate correlations through time 
-      year <- data.frame(year = min(slp$Year):max(slp$Year))
-    
-      right_join(model.dat, year) %>%
-        mutate(cor.SD.ebsAR1 = NA,
-               cor.SD.goaAR1 = NA) %>%
-        arrange(year) -> cor.dat
-    
-      for(ii in (width+1):(nrow(cor.dat)-width)){ # 132 month rolling windows!
-        
-        cor.dat$cor.SD.ebsAR1[ii] <- cor(cor.dat$slp.sd[(ii-width):(ii+width)], cor.dat$ebs.sst.ar1[(ii-width):(ii+width)])
-        cor.dat$cor.SD.goaAR1[ii] <- cor(cor.dat$slp.sd[(ii-width):(ii+width)], cor.dat$goa.sst.ar1[(ii-width):(ii+width)])
-        
-      }
-      
-      ggplot()+
-        geom_line(na.omit(cor.dat), mapping = aes(year, cor.SD.ebsAR1, color = "salmon"), linewidth = 1.5)+
-        geom_line(na.omit(cor.dat), mapping = aes(year, cor.SD.goaAR1,color = "steelblue"), linewidth = 1.5)+
-        geom_vline(xintercept = 1988.5, linetype = "dashed", linewidth = 1.5)+
-        scale_color_manual(name = "", values = c("salmon", "steelblue"), labels = c("SLP SD x EBS SST AR1", "SLP SD x GOA SST AR1"))+
-        theme_bw()+
-        ylab("Pearson's correlation")+
-        xlab("Year")+
-        theme(legend.position = "bottom",
-              legend.direction= "horizontal",
-              axis.text = element_text(size = 14),
-              axis.title = element_text(size = 16),
-              strip.text = element_text(size = 16),
-              legend.text = element_text(size = 14),
-              title = element_text(size = 16)) -> cor.plot
-      
-      ggsave(plot = cor.plot, "./Figures/SLP.vs.SST.corplot.png", width = 11, height = 8.5, units = "in")
-        
- 
 ### Test question 6: Are recruitment-SST relationships actually valid or spurious? --------------------------------------------
   # APPROACH: simulate SST timeseries with same SD and AR1 of timeseries in each region, fit the same
   # GAM models as in question 2 on simulated timeseries
