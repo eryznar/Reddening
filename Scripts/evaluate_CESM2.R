@@ -970,259 +970,315 @@ lowyrs <- 1916:1935
   
   
 # 5) AL SLPa and WINTER SSTa REGRESSIONS ----
-## Process SST for winter and all years ----
-files <- list.files(fcm.sst.dir, full.names = TRUE)
-
-time_units <- ncmeta::nc_atts(files[1], "time") %>% 
-  filter(name == "units") %>%
-  pull(value)
-
-unit_parts <- str_split(time_units, " since ")[[1]]
-time_unit <- unit_parts[1]
-origin_date <- ymd_hms(unit_parts[2])
-
-# FCM SST  
-files <- list.files(fcm.sst.dir, full.names = TRUE)
-files <- files[c(1:48, 50)] # 49 is throwing an error
-
-fcm.win.sst <- tibble()
-
-for(ii in 1:length(files)){
+  # Process CESM2 SST for winter and all years ----
+  # files <- list.files(fcm.sst.dir, full.names = TRUE)
+  # 
+  # time_units <- ncmeta::nc_atts(files[1], "time") %>% 
+  #   filter(name == "units") %>%
+  #   pull(value)
+  # 
+  # unit_parts <- str_split(time_units, " since ")[[1]]
+  # time_unit <- unit_parts[1]
+  # origin_date <- ymd_hms(unit_parts[2])
+  # 
+  # # FCM SST  
+  # files <- list.files(fcm.sst.dir, full.names = TRUE)
+  # files <- files[c(1:48, 50)] # 49 is throwing an error
+  # 
+  # fcm.win.sst <- tibble()
+  # 
+  # for(ii in 1:length(files)){
+  #   
+  #   print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+  #   
+  #   # load and process for high var periods
+  #   tidync(files[1]) %>%
+  #     hyper_filter(lon = lon >= 125 & lon <= 255,
+  #                  lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+  #     #time = time > 711475) %>% # greater than 1947
+  #     activate("SST") %>%
+  #     hyper_tibble() %>%
+  #     mutate(time = origin_date + lubridate::days(time),
+  #            year = lubridate::year(time),
+  #            month = lubridate::month(time),
+  #            member = substr(files[1], 81, 88)) %>% # extracting ensemble member #
+  #     group_by(lat, lon, month, member) %>%
+  #     mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
+  #     ungroup() %>%
+  #     mutate(SSTa = SST - mean.month.SST,
+  #            win.year = case_when((month %in% 11:12) ~ year + 1,
+  #                                 TRUE ~ year)) %>% # compute anomalies
+  #     filter(month %in% c(11:12, 1:3),
+  #            year %in% yrs) %>%
+  #     group_by(lon, lat, win.year, member) %>% 
+  #     reframe(mean.winSSTa = mean(SSTa))-> out # calculate mean annual winter SSTa by grid cell
+  #   
+  #   
+  #   # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+  #   setDT(out) # convert to data.table
+  #   
+  #   out[, detrended_winSSTa := { # output data table column
+  #     fit <- lm(mean.winSSTa ~ win.year)  # Fit linear model for each lat/lon group and period(?)
+  #     residuals(fit)           # Extract residuals as detrended values
+  #   }, by = .(lat, lon)]
+  #   
+  #   
+  #   # Calculate rolling window AR1 within data.table
+  #   out[, ar1.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = function(x) {
+  #     acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
+  #     return(acf_result$acf[2])
+  #   }, align = "center"), by = c("lon", "lat", "member")]
+  #   
+  #   # Calculate rolling window SD within data.table
+  #   out[, sd.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = sd, 
+  #                                  align = "center"), by = c("lon", "lat", "member")]
+  #   
+  #   # stack processed files
+  #   fcm.win.sst <- bind_rows(fcm.win.sst, out)
+  #   
+  # }
+  # 
+  # setDT(fcm.win.sst)
+  # 
+  # # Save file
+  # saveRDS(fcm.win.sst, paste0(dir, "Output/FCM_winterSSTa_ar1sd.rda"))
+  # 
+  # # MDM SST  
+  # files <- list.files(mdm.sst.dir, full.names = TRUE)
+  # 
+  # mdm.win.sst <- tibble()
+  # 
+  # for(ii in 1:length(files)){
+  #   
+  #   print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+  #   
+  #   
+  #   # load and process for high var periods
+  #   tidync(files[ii]) %>%
+  #     hyper_filter(lon = lon >= 125 & lon <= 255,
+  #                  lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+  #     #time = time > 711475) %>% # greater than 1947
+  #     activate("SST") %>%
+  #     hyper_tibble() %>%
+  #     mutate(time = origin_date + lubridate::days(time),
+  #            year = lubridate::year(time),
+  #            month = lubridate::month(time),
+  #            member = substr(files[ii], 68, 78),
+  #            member= gsub(".postP.", ".", member)) %>% # extracting ensemble member #
+  #     group_by(lat, lon, month, member) %>%
+  #     mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
+  #     ungroup() %>%
+  #     mutate(SSTa = SST - mean.month.SST,
+  #            win.year = case_when((month %in% 11:12) ~ year + 1,
+  #                                 TRUE ~ year)) %>% # compute anomalies
+  #     filter(month %in% c(11:12, 1:3),
+  #            year %in% yrs) %>%
+  #     group_by(lon, lat, win.year, member) %>% 
+  #     reframe(mean.winSSTa = mean(SSTa))-> out # calculate mean annual winter SSTa by grid cell
+  #   
+  #   
+  #   # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+  #   setDT(out) # convert to data.table
+  #   
+  #   out[, detrended_winSSTa := { # output data table column
+  #     fit <- lm(mean.winSSTa ~ win.year)  # Fit linear model for each lat/lon group and period(?)
+  #     residuals(fit)           # Extract residuals as detrended values
+  #   }, by = .(lat, lon)]
+  #   
+  #   
+  #   # Calculate rolling window AR1 within data.table
+  #   out[, ar1.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = function(x) {
+  #     acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
+  #     return(acf_result$acf[2])
+  #   }, align = "center"), by = c("lon", "lat", "member")]
+  #   
+  #   # Calculate rolling window SD within data.table
+  #   out[, sd.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = sd, 
+  #                                  align = "center"), by = c("lon", "lat", "member")]
+  #   
+  #   # stack processed files
+  #   mdm.win.sst <- bind_rows(mdm.win.sst, out)
+  #   
+  # }
+  # 
+  # setDT(mdm.win.sst)
+  # 
+  # # Save file
+  # saveRDS(mdm.win.sst, paste0(dir, "Output/MDM_winterSSTa_ar1sd.rda"))
   
-  print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
-  
-  # load and process for high var periods
-  tidync(files[1]) %>%
-    hyper_filter(lon = lon >= 125 & lon <= 255,
-                 lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
-    #time = time > 711475) %>% # greater than 1947
-    activate("SST") %>%
-    hyper_tibble() %>%
-    mutate(time = origin_date + lubridate::days(time),
-           year = lubridate::year(time),
-           month = lubridate::month(time),
-           member = substr(files[1], 81, 88)) %>% # extracting ensemble member #
-    group_by(lat, lon, month, member) %>%
-    mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
-    ungroup() %>%
-    mutate(SSTa = SST - mean.month.SST,
-           win.year = case_when((month %in% 11:12) ~ year + 1,
-                                TRUE ~ year)) %>% # compute anomalies
-    filter(month %in% c(11:12, 1:3),
-           year %in% yrs) %>%
-    group_by(lon, lat, win.year, member) %>% 
-    reframe(mean.winSSTa = mean(SSTa))-> out # calculate mean annual winter SSTa by grid cell
-  
-  
-  # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
-  setDT(out) # convert to data.table
-  
-  out[, detrended_winSSTa := { # output data table column
-    fit <- lm(mean.winSSTa ~ win.year)  # Fit linear model for each lat/lon group and period(?)
-    residuals(fit)           # Extract residuals as detrended values
-  }, by = .(lat, lon)]
-  
-  
-  # Calculate rolling window AR1 within data.table
-  out[, ar1.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = function(x) {
-    acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
-    return(acf_result$acf[2])
-  }, align = "center"), by = c("lon", "lat", "member")]
-  
-  # Calculate rolling window SD within data.table
-  out[, sd.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = sd, 
-                                 align = "center"), by = c("lon", "lat", "member")]
-  
-  # stack processed files
-  fcm.win.sst <- bind_rows(fcm.win.sst, out)
-  
-}
-
-setDT(fcm.win.sst)
-
-# Save file
-saveRDS(fcm.win.sst, paste0(dir, "Output/FCM_winterSSTa_ar1sd.rda"))
-
-# MDM SST  
-files <- list.files(mdm.sst.dir, full.names = TRUE)
-
-mdm.win.sst <- tibble()
-
-for(ii in 1:length(files)){
-  
-  print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
-  
-  
-  # load and process for high var periods
-  tidync(files[ii]) %>%
-    hyper_filter(lon = lon >= 125 & lon <= 255,
-                 lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
-    #time = time > 711475) %>% # greater than 1947
-    activate("SST") %>%
-    hyper_tibble() %>%
-    mutate(time = origin_date + lubridate::days(time),
-           year = lubridate::year(time),
-           month = lubridate::month(time),
-           member = substr(files[ii], 68, 78),
-           member= gsub(".postP.", ".", member)) %>% # extracting ensemble member #
-    group_by(lat, lon, month, member) %>%
-    mutate(mean.month.SST = mean(SST)) %>% # compute monthly mean by grid cell and member
-    ungroup() %>%
-    mutate(SSTa = SST - mean.month.SST,
-           win.year = case_when((month %in% 11:12) ~ year + 1,
-                                TRUE ~ year)) %>% # compute anomalies
-    filter(month %in% c(11:12, 1:3),
-           year %in% yrs) %>%
-    group_by(lon, lat, win.year, member) %>% 
-    reframe(mean.winSSTa = mean(SSTa))-> out # calculate mean annual winter SSTa by grid cell
-  
-  
-  # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
-  setDT(out) # convert to data.table
-  
-  out[, detrended_winSSTa := { # output data table column
-    fit <- lm(mean.winSSTa ~ win.year)  # Fit linear model for each lat/lon group and period(?)
-    residuals(fit)           # Extract residuals as detrended values
-  }, by = .(lat, lon)]
-  
-  
-  # Calculate rolling window AR1 within data.table
-  out[, ar1.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = function(x) {
-    acf_result <- acf(x, lag.max = 1, plot = FALSE, na.action = na.pass)
-    return(acf_result$acf[2])
-  }, align = "center"), by = c("lon", "lat", "member")]
-  
-  # Calculate rolling window SD within data.table
-  out[, sd.winSSTa := frollapply(detrended_winSSTa, n = 15, FUN = sd, 
-                                 align = "center"), by = c("lon", "lat", "member")]
-  
-  # stack processed files
-  mdm.win.sst <- bind_rows(mdm.win.sst, out)
-  
-}
-
-setDT(mdm.win.sst)
-
-# Save file
-saveRDS(mdm.win.sst, paste0(dir, "Output/MDM_winterSSTa_ar1sd.rda"))
-
-## Read in files ----
-sst <- rbind(readRDS(paste0(dir, "Output/FCM_winterSSTa_ar1sd.rda")) %>%
-             mutate(model = "FCM"),
-             readRDS(paste0(dir, "Output/MDM_winterSSTa_ar1sd.rda")) %>%
-             mutate(model = "MDM")) %>%
-       mutate(lat = as.numeric(lat), lon = as.numeric(lon))
-
-slp <- rbind(readRDS(paste0(dir, "Output/FCM_winterSLPa_ar1sd.rda")) %>%
-             mutate(model = "FCM"),
-             readRDS(paste0(dir, "Output/MDM_winterSLPa_ar1sd.rda")) %>%
-             mutate(model = "MDM")) %>%
-       mutate(lat = as.numeric(lat), lon = as.numeric(lon)) %>%
-      filter(member %in% sst$member)
-
-
-## Filter sst to EBS and GOA
-# Specify EBS polygon
-ebs.x <- c(183, 183, 203, 203, 191)
-#ebs.x <- ifelse(ebs.x > 180, ebs.x-360, ebs.x)
-ebs.y <- c(53, 65, 65, 57.5, 53)
-
-# Filter sst initially to make things go quicker
-sst.check <- sst %>%
-            filter(lon >= 170 & lon <= 210,
-                   lat >= 50 & lat <= 70)
-
-# Create EBS polygon, filter sst not within that polygon
-xp <- cbind(ebs.x, ebs.y)
-loc= sst.check %>% dplyr::select(lon, lat)
-check <- in.poly(loc, xp=xp)
-
-sst.ebs <- cbind(sst.check, check) %>%
-            filter(check == TRUE) %>%
-            dplyr::select(!check) 
-
-# Plot to check
-sst.ebs %>%
-  filter(win.year == 1850, member == "1301.020", model == "FCM") -> tt
-
-ggplot()+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
-  coord_cartesian(ylim = c(50, 67), xlim = c(180, 205), expand = FALSE)+
-  geom_point(tt, mapping= aes(lon, lat))
-
-sst.ebs <- sst.ebs %>%
+  # Regressions using CESM output -----
+    ## Read in CESM2 output files
+    sst <- rbind(readRDS(paste0(dir, "Output/FCM_winterSSTa_ar1sd.rda")) %>%
+                 mutate(model = "FCM"),
+                 readRDS(paste0(dir, "Output/MDM_winterSSTa_ar1sd.rda")) %>%
+                 mutate(model = "MDM")) %>%
+           mutate(lat = as.numeric(lat), lon = as.numeric(lon))
+    
+    slp <- rbind(readRDS(paste0(dir, "Output/FCM_winterSLPa_ar1sd.rda")) %>%
+                 mutate(model = "FCM"),
+                 readRDS(paste0(dir, "Output/MDM_winterSLPa_ar1sd.rda")) %>%
+                 mutate(model = "MDM")) %>%
+           mutate(lat = as.numeric(lat), lon = as.numeric(lon)) %>%
+          filter(member %in% sst$member)
+    
+    
+    ## Filter sst to EBS and GOA
+    # Specify EBS polygon
+    ebs.x <- c(183, 183, 203, 203, 191)
+    #ebs.x <- ifelse(ebs.x > 180, ebs.x-360, ebs.x)
+    ebs.y <- c(53, 65, 65, 57.5, 53)
+    
+    # Filter sst initially to make things go quicker
+    sst.check <- sst %>%
+                filter(lon >= 170 & lon <= 210,
+                       lat >= 50 & lat <= 70)
+    
+    # Create EBS polygon, filter sst not within that polygon
+    xp <- cbind(ebs.x, ebs.y)
+    loc= sst.check %>% dplyr::select(lon, lat)
+    check <- in.poly(loc, xp=xp)
+    
+    sst.ebs <- cbind(sst.check, check) %>%
+                filter(check == TRUE) %>%
+                dplyr::select(!check) 
+    
+    # Plot to check
+    sst.ebs %>%
+      filter(win.year == 1850, member == "1301.020", model == "FCM") -> tt
+    
+    ggplot()+
+      geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+      coord_cartesian(ylim = c(50, 67), xlim = c(180, 205), expand = FALSE)+
+      geom_point(tt, mapping= aes(lon, lat))
+    
+    sst.ebs <- sst.ebs %>%
+                na.omit() %>%
+                group_by(win.year, member, model) %>%
+                reframe(ar1.winSSTa = mean(ar1.winSSTa))
+    
+    # Specify GOA polygon
+    goa.x <- c(201, 201, 205, 208, 225, 231, 201)
+    #goa.x <- ifelse(goa.x > 180, goa.x-360, goa.x)
+    goa.y <- c(55, 56.5, 59, 61, 61, 55, 55)
+    
+    # Filter sst initially to make things go quicker
+    sst.check <- sst %>%
+      filter(lon >= 190 & lon <= 250,
+             lat >= 50 & lat <= 70)
+    
+    # Create EBS polygon, filter sst not within that polygon
+    xp <- cbind(goa.x, goa.y)
+    loc= sst.check %>% dplyr::select(lon, lat)
+    check <- in.poly(loc, xp=xp)
+    
+    sst.goa <- cbind(sst.check, check) %>%
+      filter(check == TRUE) %>%
+      dplyr::select(!check)
+    
+    # Plot to check
+    sst.goa %>%
+      filter(win.year == 1850, member == "1301.020", model == "FCM") -> tt
+    
+    ggplot()+
+      geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+      coord_cartesian(ylim = c(50, 67), xlim = c(190, 250), expand = FALSE)+
+      geom_point(tt, mapping= aes(lon, lat))
+    
+    sst.goa <- sst.goa %>%
+                na.omit() %>%
+                group_by(win.year, member, model) %>%
+                reframe(ar1.winSSTa = mean(ar1.winSSTa))
+    
+    ## Run regressions 
+    slp <- slp %>%
             na.omit() %>%
             group_by(win.year, member, model) %>%
-            reframe(ar1.winSSTa = mean(ar1.winSSTa))
-
-# Specify GOA polygon
-goa.x <- c(201, 201, 205, 208, 225, 231, 201)
-#goa.x <- ifelse(goa.x > 180, goa.x-360, goa.x)
-goa.y <- c(55, 56.5, 59, 61, 61, 55, 55)
-
-# Filter sst initially to make things go quicker
-sst.check <- sst %>%
-  filter(lon >= 190 & lon <= 250,
-         lat >= 50 & lat <= 70)
-
-# Create EBS polygon, filter sst not within that polygon
-xp <- cbind(goa.x, goa.y)
-loc= sst.check %>% dplyr::select(lon, lat)
-check <- in.poly(loc, xp=xp)
-
-sst.goa <- cbind(sst.check, check) %>%
-  filter(check == TRUE) %>%
-  dplyr::select(!check)
-
-# Plot to check
-sst.goa %>%
-  filter(win.year == 1850, member == "1301.020", model == "FCM") -> tt
-
-ggplot()+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
-  coord_cartesian(ylim = c(50, 67), xlim = c(190, 250), expand = FALSE)+
-  geom_point(tt, mapping= aes(lon, lat))
-
-sst.goa <- sst.goa %>%
-            na.omit() %>%
-            group_by(win.year, member, model) %>%
-            reframe(ar1.winSSTa = mean(ar1.winSSTa))
-
-## Run regressions ----
-slp <- slp %>%
-        na.omit() %>%
-        group_by(win.year, member, model) %>%
-        reframe(sd.winSLPa = mean(sd.SLPa))
+            reframe(sd.winSLPa = mean(sd.SLPa))
+      
+    
+    # EBS
+    right_join(slp, sst.ebs) %>%
+      na.omit()-> mod.dat
+    
+    mod.ebs <- lme(ar1.winSSTa ~ sd.winSLPa+model, data = mod.dat, random = ~ 1| member, 
+                   correlation = corAR1(form = ~ win.year|member))
+    
+    summary(mod.ebs)
+    
+    mod.ebs2 <- gamm(
+      ar1.winSSTa ~ s(sd.winSLPa, bs = "cr") + model,  # Fixed effects
+      random = list(member = ~1),      # Random effects (named list)
+      correlation = corAR1(form = ~ win.year | member),  # AR(1) structure
+      data = mod.dat
+    )
+    
+    summary(mod.ebs2$gam)
+    
+    AICc(mod.ebs, mod.ebs2)
+    
+    # Effect plots
+    rr <- Effect(c("sd.winSLPa", "model"), mod.ebs, partial.residuals = TRUE)
+    plot(rr,  main = "EBS partial residuals", show_residuals = TRUE, show_residuals_line = FALSE)
+    
+    rr <- Effect(c("sd.winSLPa", "model"), mod.ebs, confidence.level = 0.95)
+    plot(rr, main = "EBS fitted values with 95% CI")
+    
+    tt <- predictorEffect("sd.winSLPa", mod.ebs)
+    
+    # GOA
+    right_join(slp, sst.goa) %>%
+      na.omit()-> mod.dat
+    
+    mod.goa <- lme(ar1.winSSTa ~ sd.winSLPa+model, data = mod.dat, random = ~ 1| member, 
+                  correlation = corAR1(form = ~ win.year|member))
+    
+    summary(mod.goa)
+    
+    mod.goa2 <- gamm(
+      ar1.winSSTa ~ s(sd.winSLPa)+model,  # Fixed effects
+      random = list(member = ~1),      # Random effects (named list)
+      correlation = corAR1(form = ~ win.year | member),  # AR(1) structure
+      data = mod.dat
+    )
+    
+    summary(mod.goa2$gam)
+    
+    AICc(mod.goa, mod.goa2)
+    
+    # Effect plots
+    rr <- Effect(c("sd.winSLPa", "model"), mod.goa, partial.residuals = TRUE)
+    plot(rr, partial.residuals = TRUE, main = "GOA partial residuals")
+    
+    rr <- Effect(c("sd.winSLPa", "model"), mod.goa, confidence.level = 0.95)
+    plot(rr, main = "GOA fitted values with 95% CI")
+   
+  # Regressions using observation data ----
+  ## Read in winter SST and SLP SD and AR1 data (data is detrended)
+  model.dat <- read.csv(paste0(dir, "Output/winSSTSLP_regressiondat.csv"))
   
-
-# EBS
-right_join(slp, sst.ebs) %>%
-  na.omit()-> mod.dat
-
-par(mfrow = c(2, 2))
-
-mod.ebs <- lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat, random = ~ 1| member, 
-               correlation = corAR1(form = ~ win.year|member))
-
-rr <- Effect(c("sd.winSLPa", "model"), mod.ebs, partial.residuals = TRUE)
-plot(rr,  main = "EBS partial residuals", show_residuals = TRUE, show_residuals_line = FALSE)
-
-rr <- Effect(c("sd.winSLPa", "model"), mod.ebs, confidence.level = 0.95)
-plot(rr, main = "EBS fitted values with 95% CI")
-
-tt <- predictorEffect("sd.winSLPa", mod.ebs)
-
-# GOA
-right_join(slp, sst.goa) %>%
-  na.omit()-> mod.dat
-
-mod.goa <- lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat, random = ~ 1| member, 
-              correlation = corAR1(form = ~ win.year|member))
-
-
-rr <- Effect(c("sd.winSLPa", "model"), mod.goa, partial.residuals = TRUE)
-plot(rr, partial.residuals = TRUE, main = "GOA partial residuals")
-
-rr <- Effect(c("sd.winSLPa", "model"), mod.goa, confidence.level = 0.95)
-plot(rr, main = "GOA fitted values with 95% CI")
-
+  ## Fit models
+    # Model: EBS sst AR1 x slp AR1 
+    mod.1 <- gls(ebs.sst.ar1~slp.sd, 
+                 data= model.dat, correlation = corAR1(form = ~year))
+    
+    summary(mod.1)
+    
+    mod.2 <- gamm(ebs.sst.ar1~s(slp.sd, bs = "cr"), data = model.dat, correlation = corAR1(form = ~year))
+    
+    summary(mod.2$gam)
+    
+    AICc(mod.1, mod.2)
+    
+    # Model: GOA sst AR1 x slp AR1 
+    mod.1 <- gls(goa.sst.ar1~slp.sd, 
+                 data= model.dat, correlation = corAR1(form = ~year))
+    
+    summary(mod.1)
+    
+    mod.2 <-  gamm(goa.sst.ar1~s(slp.sd, bs = "cr"), data = model.dat, correlation = corAR1(form = ~year))
+    
+    summary(mod.2$gam)
+    
+    AICc(mod.1, mod.2)
+    
+  
