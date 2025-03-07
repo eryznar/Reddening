@@ -10,6 +10,7 @@ library(nlme)
 library(MuMIn)
 library(oce)
 library(ggpubr)
+source("./Scripts/load.libs.functions.R")
 
 # load NCEP NCAR data
 
@@ -99,7 +100,8 @@ weight <- sqrt(cos(lat*pi/180))
 # restrict to NDJFM
 SLP.NDJFM <- anom.detr[m %in% c("Jan", "Feb", "Mar", "Nov", "Dec"),]
 
-SLP.raw <- SLP[m %in% c("Jan", "Feb", "Mar", "Nov", "Dec"),]
+SLP.raw <- SLP[m %in% c("Jan", "Feb", "Mar", "Nov", "Dec"),] # these just need to be assigned to winter year
+# corresponding to January, then mean values can be plotted by year for 1989:2024 
 
 # EOF by era 
 # weighting the columns
@@ -159,6 +161,7 @@ image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim.
 contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext(paste("EOF1 1948-2024 (", var.all[1], "%)", sep=""), cex=0.8)
+polygon(x = c(186.25, 208.75, 208.75, 186.25), y = c(56.25, 56.25, 46, 46), border = "white", lwd = 2)
 
 z  <- eig.2.all
 z <- t(matrix(z, length(y))) 
@@ -199,6 +202,7 @@ image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim.2
 contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext(paste("EOF2 2005-2024 (", var.2[2], "%)", sep=""), cex=0.8)
+
 
 ## so the loadings are very similar across the full time series and the two sub-eras
 
@@ -276,39 +280,218 @@ ggplot(plot_sd, aes(winter_year, value, color = name)) +
 
 ## now regressions
 
-## get winter means for each cell -------------
-SLP.winter <- matrix(NA, ncol = ncol(SLP.NDJFM), nrow = length(1948:2025))
-colnames(SLP.winter) <- colnames(SLP.NDJFM)
-rownames(SLP.winter) <- 1948:2025
+## plot regression of cellwise SST against mean SLP at center of EOF1 for SLP
 
-for(j in 1:ncol(SLP.NDJFM)){
+# get SLP in EOF1 box
+EOF1.x <- c(186.25, 208.75, 208.75, 186.25) 
+EOF1.y <- c(56.25, 56.25, 46, 46)
+
+xp <- cbind(EOF1.x, EOF1.y)
+loc=cbind(lon, lat)
+check <- in.poly(loc, xp=xp)
+
+SLP.box.NDJFM <- SLP.NDJFM
+SLP.box.NDJFM[,!check] <- NA
+
+SLP.box.monthly.mean <- rowMeans(SLP.box.NDJFM, na.rm = T)
+SLP.box.winter.mean <- as.vector(scale(tapply(SLP.box.monthly.mean, win.yr, mean)))
+names(SLP.box.winter.mean) <- 1948:2025
+SLP.box.winter.mean <- SLP.box.winter.mean[names(SLP.box.winter.mean) %in% 1948:2024]
+
+## load ERSST for the N. Pacific
+# https://apdrc.soest.hawaii.edu/erddap/griddap/hawaii_soest_31a3_72d5_401e.nc?sst[(1948-01-15):1:(2024-12-15)][(20):1:(68)][(130):1:(250)]
+
+nc <- nc_open("./data/hawaii_soest_31a3_72d5_401e_d0ad_fd6c_67ce.nc")
+
+# extract dates
+ncvar_get(nc, "time")   # seconds since 1-1-1970
+raw <- ncvar_get(nc, "time")
+h <- raw/(24*60*60)
+d <- dates(h, origin = c(1,1,1970))
+
+# extract study area
+# 20-70 deg. N, 120-250 deg. E
+x <- ncvar_get(nc, "longitude")
+y <- ncvar_get(nc, "latitude")
+
+x; y
+
+
+SST <- ncvar_get(nc, "sst", verbose = F)
+
+# Change data from a 3-D array to a matrix of monthly data by grid point:
+# First, reverse order of dimensions ("transpose" array)
+SST <- aperm(SST, 3:1)  
+
+# Change to matrix with column for each grid point, rows for monthly means
+SST <- matrix(SST, nrow=dim(SST)[1], ncol=prod(dim(SST)[2:3]))  
+
+# Keep track of corresponding latitudes and longitudes of each column:
+lat <- rep(y, length(x))   
+lon <- rep(x, each = length(y))   
+dimnames(SST) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
+
+
+m <- months(d)  # Extracts months from the date vector
+yr <- years(d)
+
+# and plot 
+SST.mean <- colMeans(SST)
+z <- t(matrix(SST.mean,length(y)))  # Re-shape to a matrix with latitudes in columns, longitudes in rows
+image(x,y,z, col=new.col)
+contour(x, y, z, add=T, col="white")  
+map('world2Hires',fill=F,add=T, lwd=2)
+
+# identify columns in SST matrix corresponding to land
+land <- is.na(colMeans(SST)) 
+
+# For analysis, we only use the columns of the matrix with non-missing values:
+X <- SST[,!land]
+
+# remove seasonal means
+f <- function(x) tapply(x, m, mean)  # function to compute monthly means for a single time series
+mu <- apply(X, 2, f)	# compute monthly means for each time series (cell)
+mu <- mu[rep(1:12, length(d)/12),]  # replicate means matrix for each year at each location
+
+mu <- mu[rep(1:12, floor(length(d)/12)),] 
+
+
+anom <- X - mu   # compute matrix of anomalies
+
+
+
+# now detrend
+anom.detr <- anom
+for(i in 1:ncol(anom)) {
+  # i <- 1
+  xx = seq(1,nrow(anom))
+  anom.detr[,i] = anom[,i] - predict(lm(anom[,i]~as.numeric(xx), na.action="na.exclude"), newdata=data.frame(xx=xx))
+}
+
+
+# restrict to NDJFM
+SST.NDJFM <- anom.detr[m %in% c("Jan", "Feb", "Mar", "Nov", "Dec"),]
+
+## get winter means for each cell -------------
+SST.winter <- matrix(NA, ncol = ncol(SST.NDJFM), nrow = length(1948:2025))
+colnames(SST.winter) <- colnames(SST.NDJFM)
+rownames(SST.winter) <- 1948:2025
+
+for(j in 1:ncol(SST.NDJFM)){
   # j <- 1
   
-  SLP.winter[,j] <- tapply(SLP.NDJFM[,j], win.yr, mean) 
+  SST.winter[,j] <- tapply(SST.NDJFM[,j], win.yr, mean) 
   
 }
 
-View(SLP.winter)
+# remove 2025
+SST.winter <- SST.winter[rownames(SST.winter) %in% 1948:2024,]
 
-## winter raw SLP
+# now detrend
+SST.winter.detr <- SST.winter
 
-# SLP.winter.raw <- matrix(NA, ncol = ncol(SLP.raw), nrow = length(1948:2025))
-# colnames(SLP.winter.raw) <- colnames(SLP.raw)
-# rownames(SLP.winter.raw) <- 1948:2025
-# 
-# for(j in 1:ncol(SLP.raw)){
-#   # j <- 1
-#   
-#   SLP.winter.raw[,j] <- tapply(SLP.raw[,j], win.yr, mean) 
-#   
-# }
-# 
-# View(SLP.winter.raw)
-# 
-# SLP.winter.raw <- scale(SLP.winter.raw)
+for(i in 1:ncol(SST.winter)) {
+  # i <- 1
+  xx = seq(1,nrow(SST.winter))
+  SST.winter.detr[,i] = SST.winter[,i] - predict(lm(SST.winter[,i]~as.numeric(xx), na.action="na.exclude"), newdata=data.frame(xx=xx))
+}
 
+
+# regress 
+
+regr.all <- regr.89.04 <- regr.05.24 <- NA
+
+for(j in 1:ncol(SST.winter.detr)){
+  # j <- 1
+  
+  mod <- lm(SST.winter.detr[,j] ~ SLP.box.winter.mean)
+  regr.all[j] <- mod$coefficients[2]
+  
+  mod <- lm(SST.winter.detr[rownames(SST.winter.detr) %in% 1989:2004,j] ~ SLP.box.winter.mean[names(SLP.box.winter.mean) %in% 1989:2004])
+  regr.89.04[j] <- mod$coefficients[2]  
+  
+  mod <- lm(SST.winter.detr[rownames(SST.winter.detr) %in% 2005:2024,j] ~ SLP.box.winter.mean[names(SLP.box.winter.mean) %in% 2005:2024])
+  regr.05.24[j] <- mod$coefficients[2]   
+  
+}
+
+
+
+# plot
+lim <- range(regr.all, regr.89.04, regr.05.24)
+
+png("./Figures/SST_fields_vs_SLP_box.png", width = 6, height = 12, units = 'in', res = 300)
+
+# setup the layout
+mt.cex <- 1.1
+l.mar <- 3
+l.cex <- 0.8
+l.l <- 0.2
+tc.l <- -0.2
+
+par(mar=c(0.5,0.5,1.5,1),  tcl=tc.l, mgp=c(1.5,0.3,0), las=1, mfrow=c(3,1), cex.axis=0.8, cex.lab=0.8, oma=c(0,0,0,0.2))
+
+# regr all
+z <- colMeans(SST)
+z[!land]  <- regr.all
+z <- t(matrix(z, length(y))) 
+image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
+polygon(x = c(186.25, 208.75, 208.75, 186.25), y = c(56.25, 56.25, 46, 46), border = "white", lwd = 2)
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
+map('world2Hires', fill=F, add=T, lwd=1)
+mtext("SST ~ SLP, 1948-2024", cex=0.8)
+
+# regr 89-04
+z <- colMeans(SST)
+z[!land] <- regr.89.04
+z <- t(matrix(z, length(y))) 
+image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
+map('world2Hires', fill=F, add=T, lwd=1)
+mtext("SST ~ SLP, 1989-2004", cex=0.8)
+
+# regr 05-24
+z <- colMeans(SST)
+z[!land] <- regr.05.24
+z <- t(matrix(z, length(y))) 
+image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
+map('world2Hires', fill=F, add=T, lwd=1)
+mtext("SST ~ SLP, 2005-2024", cex=0.8)
+
+dev.off()
+
+## only full time series
+lim <- range(regr.all)
+lim
+png("./Figures/SST_fields_vs_SLP_box_full_time_series.png", width = 7, height = 6, units = 'in', res = 300)
+
+# setup the layout
+mt.cex <- 1.1
+l.mar <- 3
+l.cex <- 0.8
+l.l <- 0.2
+tc.l <- -0.2
+
+par(mar=c(0.5,0.5,1.5,1),  tcl=tc.l, mgp=c(1.5,0.3,0), las=1, cex.axis=0.8, cex.lab=0.8, oma=c(0,0,0,0.2))
+
+# regr all
+z <- colMeans(SST)
+z[!land]  <- regr.all
+z <- t(matrix(z, length(y))) 
+image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
+
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
+map('world2Hires', c('Canada', 'usa', 'USSR', 'Japan', 'Mexico', 'South Korea', 'North Korea', 'China'), 
+    fill=T,add=T, lwd=0.5, col="darkgoldenrod3")
+polygon(x = c(186.25, 208.75, 208.75, 186.25), y = c(56.25, 56.25, 46, 46), border = "white", lwd = 2)
+# mtext("Winter SST regressed on Aleutian Low", cex=0.8)
+
+dev.off()
+
+################################
 # load goa sst
-goa_sst <- read.csv("./data/goa.monthlySSTanomalies.csv", row.names = 1) %>%
+goa_sst <- read.csv(paste0(dir, "Data/goa.monthlySSTanomalies.csv"), row.names = 1) %>%
   filter(Month %in% c(1:3, 11, 12),
          Year %in% 1948:2024) %>%
   mutate(win.yr = if_else(Month %in% 11:12, Year+1, Year))
@@ -379,12 +562,12 @@ for(j in 1:ncol(SLP.winter)){
 
 # plot
 lim <- range(goa.all, goa.89.04, goa.05.24, ebs.all, ebs.89.04, ebs.05.24)
-
+lim <- -1
 # goa all
 z  <- goa.all
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("GOA SST ~ SLP, 1948-2024", cex=0.8)
 
@@ -392,7 +575,7 @@ mtext("GOA SST ~ SLP, 1948-2024", cex=0.8)
 z  <- goa.89.04
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("GOA SST ~ SLP, 1989-2004", cex=0.8)
 
@@ -400,7 +583,7 @@ mtext("GOA SST ~ SLP, 1989-2004", cex=0.8)
 z  <- goa.05.24
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("GOA SST ~ SLP, 2005-2024", cex=0.8)
 
@@ -408,7 +591,7 @@ mtext("GOA SST ~ SLP, 2005-2024", cex=0.8)
 z  <- ebs.all
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("ebs SST ~ SLP, 1948-2024", cex=0.8)
 
@@ -416,7 +599,7 @@ mtext("ebs SST ~ SLP, 1948-2024", cex=0.8)
 z  <- ebs.89.04
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("ebs SST ~ SLP, 1989-2004", cex=0.8)
 
@@ -424,7 +607,7 @@ mtext("ebs SST ~ SLP, 1989-2004", cex=0.8)
 z  <- ebs.05.24
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("ebs SST ~ SLP, 2005-2024", cex=0.8)
 
@@ -470,7 +653,7 @@ lim <- range(goa.all.r, goa.89.04.r, goa.05.24.r, ebs.all.r, ebs.89.04.r, ebs.05
 z  <- goa.all.r
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("SLP ~ GOA SST, 1948-2024", cex=0.8)
 
@@ -478,7 +661,7 @@ mtext("SLP ~ GOA SST, 1948-2024", cex=0.8)
 z  <- goa.89.04.r
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("SLP ~ GOA SST, 1989-2004", cex=0.8)
 
@@ -486,7 +669,7 @@ mtext("SLP ~ GOA SST, 1989-2004", cex=0.8)
 z  <- goa.05.24.r
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("SLP ~ GOA SST, 2005-2024", cex=0.8)
 
@@ -494,7 +677,7 @@ mtext("SLP ~ GOA SST, 2005-2024", cex=0.8)
 z  <- ebs.all.r
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("ebs SST ~ SLP, 1948-2024", cex=0.8)
 
@@ -502,7 +685,7 @@ mtext("ebs SST ~ SLP, 1948-2024", cex=0.8)
 z  <- ebs.89.04.r
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("ebs SST ~ SLP, 1989-2004", cex=0.8)
 
@@ -510,7 +693,7 @@ mtext("ebs SST ~ SLP, 1989-2004", cex=0.8)
 z  <- ebs.05.24.r
 z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
-contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+contour(x, y, z, add=T, drawlabels = T, lwd=0.7, col="grey") 
 map('world2Hires', fill=F, add=T, lwd=1)
 mtext("ebs SST ~ SLP, 2005-2024", cex=0.8)
 
