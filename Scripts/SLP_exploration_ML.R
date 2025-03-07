@@ -73,6 +73,83 @@ map('world2Hires',fill=F,add=T, lwd=2)
 # change to mb
 # SLP <- SLP/100
 
+# Plot annual winter average SLP fields 1948-2024
+  SLP.long <- SLP %>%
+    as.data.frame(.) %>%
+    mutate(date = rownames(.),
+           month = m,
+           year = as.numeric(as.character(yr))) %>%
+    pivot_longer(., cols=(!c("date", "month", "year")), names_to = "crds", values_to = "slp") %>%
+    mutate(lat = str_split(crds, "E", simplify = T)[,1],
+           lat = as.numeric(str_split(lat, "N", simplify = T)[,2]), # pull out lat
+           lon = as.numeric(str_split(crds, "E", simplify = T)[,2])) %>% 
+    filter(month %in% c("Nov", "Dec", "Jan", "Feb", "Mar")) %>%  #filter to winter months
+    mutate(win.year = case_when((month %in% c("Nov", "Dec")) ~ year+1, 
+                                TRUE ~ year)) %>% #specify winter year
+    group_by(crds, lat, lon, win.year) %>%
+    reframe(mean.slp.win = mean(slp)) 
+  
+  # Get map
+  mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
+  
+  
+  # Plot 1989-2024
+  SLP.long %>%
+    filter(win.year %in% c(1989:2024)) -> SLP.long2
+  
+  ggplot() +
+    geom_tile(SLP.long2, mapping = aes(lon, lat, fill = as.numeric(mean.slp.win)))+
+    #scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
+    scale_fill_gradientn(colours = c(scales::muted("blue"),"white",scales::muted("red")), 
+                         values = rescale(c(min(SLP.long$mean.slp.win),median(SLP.long$mean.slp.win),max(SLP.long$mean.slp.win))),
+                         guide = "colorbar",
+                         name = "Mean slp")+
+    facet_wrap(~win.year)+
+    geom_contour(SLP.long2, mapping = aes(lon, lat, z = mean.slp.win), position = "identity", color = "white")+
+    # geomtextpath::geom_textcontour(SLP.long, mapping = aes(lon, lat, z = mean.slp.win), 
+    #                                padding = unit(0.05, "in"),
+    #                                color = "white")+
+    geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = NA, color = "black")+
+    coord_sf(ylim = c(20, 69), xlim = c(130, 250), expand = FALSE)+
+    scale_y_continuous(breaks = seq(min(SLP.long$lat), max(SLP.long$lat), by = 15))+
+    scale_x_continuous(breaks = seq(min(SLP.long$lat), max(SLP.long$lon), by = 40))+
+    theme_bw()+
+    ylab("Latitude") +
+    xlab("Longitude")+
+    theme(legend.position = "bottom",
+          legend.direction = "horizontal",
+          strip.text = element_text(size = 8)) -> mean.slp
+  
+  ggsave(plot = mean.slp, "./Figures/meanwinterSLPfields1989-2024.png", width = 8.5, height = 6, units = "in")
+
+  # Plot 1948-2024
+  SLP.long %>%
+    filter(win.year %in% c(1948:2024)) -> SLP.long2
+  
+  ggplot() +
+    geom_tile(SLP.long2, mapping = aes(lon, lat, fill = as.numeric(mean.slp.win)))+
+    #scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white")+
+    scale_fill_gradientn(colours = c(scales::muted("blue"),"white",scales::muted("red")), 
+                         values = rescale(c(min(SLP.long$mean.slp.win),median(SLP.long$mean.slp.win),max(SLP.long$mean.slp.win))),
+                         guide = "colorbar",
+                         name = "Mean slp")+
+    facet_wrap(~win.year)+
+    geom_contour(SLP.long2, mapping = aes(lon, lat, z = mean.slp.win), position = "identity", color = "white")+
+    # geomtextpath::geom_textcontour(SLP.long, mapping = aes(lon, lat, z = mean.slp.win), 
+    #                                padding = unit(0.05, "in"),
+    #                                color = "white")+
+    geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = NA, color = "black")+
+    coord_sf(ylim = c(20, 69), xlim = c(130, 250), expand = FALSE)+
+    scale_y_continuous(breaks = seq(min(SLP.long$lat), max(SLP.long$lat), by = 15))+
+    scale_x_continuous(breaks = seq(min(SLP.long$lat), max(SLP.long$lon), by = 40))+
+    theme_bw()+
+    ylab("Latitude") +
+    xlab("Longitude")+
+    theme(legend.position = "bottom",
+          legend.direction = "horizontal",
+          strip.text = element_text(size = 8)) -> mean.slp
+  
+  ggsave(plot = mean.slp, "./Figures/meanwinterSLPfields1948-2024.png", width = 8.5, height = 7, units = "in")
 
 # looks good!
 
