@@ -1271,7 +1271,7 @@ AICc(mod.1, mod.2)
 
 plot(mod.2$gam, resid = T, pch = 19)
 
-mod.3 <-  gam(ebs.sst.ar1~s(slp.sd, k = 4), data = model.dat)
+mod.3 <-  gam(ebs.sst.ar1~s(slp.sd, k = 3), data = model.dat)
 
 summary(mod.3)
 
