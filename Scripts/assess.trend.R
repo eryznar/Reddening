@@ -735,6 +735,8 @@ width = 15 # rolling window length
    
    right_join(goa.sst.model.dat, right_join(ebs.sst.model.dat, slp.model.dat)) -> model.dat
    
+   write.csv(model.dat, paste0(dir, "Output/winSSTSLP_regressiondat.csv"))
+   
     # plot SLP SD ts vs. SST AR1 ts
     model.dat %>%
       dplyr::select(year, goa.sst.ar1, ebs.sst.ar1, slp.sd) %>%
