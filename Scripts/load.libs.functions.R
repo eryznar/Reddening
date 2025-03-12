@@ -28,6 +28,8 @@ library(patchwork)
 library(googledrive)
 library(tidync)
 library(data.table)
+library(broom)
+library(effects)
 
 ### DIRECTORIES ------------------------------
 dir <- "Y:/KOD_Research/Ryznar/Reddening/"
