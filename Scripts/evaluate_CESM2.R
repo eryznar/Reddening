@@ -1562,7 +1562,11 @@ lowyrs <- 1916:1935
   right_join(slp2, sst.goa) %>%
     na.omit()-> mod.dat2
   
-  mod.goa <-lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat2, random = ~ 1 | model/member)
+  mod.goa1 <-lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat2, random = ~ 1 | model/member)
+  mod.goa2 <-lme(ar1.winSSTa ~ sd.winSLPa:model, weights = varIdent(), data = mod.dat2, random = ~ 1 | model/member)
+  mod.goa <-lme(ar1.winSSTa ~ sd.winSLPa*model, data = mod.dat2, random = ~ 1 | member)
+  
+  
   
   # Effect plots
   # compute partial residuals
@@ -1572,6 +1576,7 @@ lowyrs <- 1916:1935
     geom_point(alpha = 0.6) + 
     geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red") +  # Fixed-effect slope
     facet_wrap(~ member) +  # Facet by member
+    geom_smooth(method = "loess", se = FALSE) +  # Smoothed residuals
     ggtitle("GOA")+
     labs(x = "sd.winSLPa", y = "Partial Residuals") + #(Fixed Effect + Residuals)
     theme_bw() -> goa.resid
