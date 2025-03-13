@@ -1535,6 +1535,21 @@ lowyrs <- 1916:1935
   mod.ebs <-lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat2, random = ~ 1 | model/member)
   
   # Effect plots
+  # compute partial residuals
+  mod.dat2$partial_resid <- residuals(mod.ebs) + predict(mod.ebs, level = 0)
+  
+  ggplot(mod.dat2, aes(x = sd.winSLPa, y = partial_resid)) +
+    geom_point(alpha = 0.6) + 
+    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red") +  # Fixed-effect slope
+    facet_wrap(~ member) +  # Facet by member
+    ggtitle("EBS")+
+    labs(x = "sd.winSLPa", y = "Partial Residuals") +
+    theme_bw() -> ebs.resid
+  
+  ggsave(plot = ebs.resid, "./Figures/ebsCESM.partialresid.png", width = 8, height = 8, units= 'in')
+  
+  
+  
   rr <- Effect(c("sd.winSLPa", "model"), mod.ebs, partial.residuals = TRUE)
   plot(rr,  main = "EBS partial residuals", show_residuals = TRUE, show_residuals_line = FALSE)
   
@@ -1550,6 +1565,19 @@ lowyrs <- 1916:1935
   mod.goa <-lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat2, random = ~ 1 | model/member)
   
   # Effect plots
+  # compute partial residuals
+  mod.dat2$partial_resid <- residuals(mod.goa) + predict(mod.goa, level = 0)
+  
+  ggplot(mod.dat2, aes(x = sd.winSLPa, y = partial_resid)) +
+    geom_point(alpha = 0.6) + 
+    geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red") +  # Fixed-effect slope
+    facet_wrap(~ member) +  # Facet by member
+    ggtitle("GOA")+
+    labs(x = "sd.winSLPa", y = "Partial Residuals") + #(Fixed Effect + Residuals)
+    theme_bw() -> goa.resid
+  
+  ggsave(plot = goa.resid, "./Figures/goaCESM.partialresid.png", width = 8, height = 8, units= 'in')
+  
   rr <- Effect(c("sd.winSLPa", "model"), mod.goa, partial.residuals = TRUE)
   plot(rr,  main = "GOA partial residuals", show_residuals = TRUE, show_residuals_line = FALSE)
   
@@ -1579,4 +1607,32 @@ lowyrs <- 1916:1935
     dplyr::select(region, param, N, prop_largerT, prop_smallerp) %>%
     filter(param!="intercept") %>%
     rename(term = param)
+  
+  ## Compare different model parameterizations
+  # EBS
+  right_join(slp2, sst.ebs) %>%
+    na.omit()-> mod.dat2
+  
+  mod.ebs1 <-lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat2, random = ~ 1 | model/member, method = "REML") #
+  mod.ebs2 <-lme(ar1.winSSTa ~ sd.winSLPa*model, data = mod.dat2, random = ~ 1 | member, method = "REML") # intercept by model
+  
+  AICc(mod.ebs1, mod.ebs2)
+  
+  
+  right_join(slp2, sst.goa) %>%
+    na.omit()-> mod.dat2
+  
+  mod.goa1 <-lme(ar1.winSSTa ~ sd.winSLPa:model, data = mod.dat2, random = ~ 1 | model/member, method = "REML") #
+  mod.goa2 <-lme(ar1.winSSTa ~ sd.winSLPa*model, data = mod.dat2, random = ~ 1 | member, method = "REML") # intercept by model
+  
+  AICc(mod.goa1, mod.goa2)
+  
+  mod.ebs2 <- lme(
+              ar1.winSSTa ~ sd.winSLPa * model,  # Interaction term (model-specific slopes)
+              random = ~1 | model/member,
+              data = mod.dat2,
+              method = "ML"
+            )
+  
+  summary(mod.ebs2)
   
