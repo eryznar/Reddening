@@ -340,8 +340,7 @@ origin_date <- ymd_hms(unit_parts[2])
   saveRDS(mdm.slp, paste0(dir, "Output/MDM_winterSLPa_ar1sd.rda"))
   
   
-# # 3) CALCULATE/PLOT CELL-WISE SST AR1 SD, SST SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
-#   
+# 3) CALCULATE/PLOT CELL-WISE SST AR1 SD, SST SD, and MEAN AR1 ACROSS ENSEMBLE ------------------------
   # FCM SST ----
   fcm.sst <- readRDS(paste0(dir, "Output/FCM_SSTa_ar1sd.rda"))
 
@@ -1667,55 +1666,12 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   files <- list.files(fcm.sst.dir, full.names = TRUE)
 
   files <- files[c(1:48, 50)]
+  fcm.sst.EOF <- data.table()
+  
+  #files <- files[1]
   
   for(ii in 1:length(files)){
-    
-    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
-    
-    # load and process file
-    tidync(files[1]) %>%
-      hyper_filter(lon = lon >= 125 & lon <= 255,
-                   lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
-      #time = time > 711475) %>% # greater than 1947
-      activate("SST") %>%
-      hyper_tibble() %>%
-      mutate(time = origin_date + lubridate::days(time),
-             year = lubridate::year(time),
-             month = lubridate::month(time),
-             member = substr(files[1], 81, 88)) %>% # extracting ensemble member #
-      group_by(lat, lon, month, member) %>%
-      mutate(mean.month.SST = mean(SST),
-             sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
-      ungroup() %>%
-      mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
-             time.index = row_number()) -> out # compute anomalies/z-scores
-    
-    
-    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
-    setDT(out) # convert to data.table
-    
-    out[, detrended.SSTa.z := { # output data table column
-      fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
-      residuals(fit)           # Extract residuals as detrended values
-    }, by = .(lat, lon, member)]
-    
-    
-    # stack processed files
-    fcm.sst <- bind_rows(fcm.sst, out)
-    
-  }
-  
-  setDT(fcm.sst)
-  
-  # Save file
-  saveRDS(fcm.sst, paste0(dir, "Output/FCM_SSTa.z.rda"))
-  
-  # MDM SST ----
-  files <- list.files(mdm.sst.dir, full.names = TRUE)
-  mdm.sst <- tibble()
-  
-  for(ii in 1:length(files)){
-    
+    gc()
     print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
     
     # load and process file
@@ -1745,22 +1701,131 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon, member)]
     
+   # Format data for EOFs
+    out %>%
+      dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+      distinct(.) %>%
+      as.data.frame(.) %>%
+      unite("crds", lat, lon, sep = "-") %>%
+      pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
     
-    # stack processed files
-    mdm.sst <- bind_rows(mdm.sst, out)
+  # Calculate EOF weights
+    lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
     
+    length(lat)
+    ncol(EOF.dat[,-c(1:2)])
+    
+    weights <- sqrt(cos(lat*pi/180))
+  
+  # Run EOF
+    print("Running EOF")
+    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    
+    length(pca$U[,1])
+  
+  # Transform to length of EOF dat, scale, bind to years
+    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    
+    pc1_scale <- as.vector(scale(pc1))
+    
+    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    
+    pc2_scale <- as.vector(scale(pc2))
+  
+  # output dataframe
+    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    setDT(eof.out)
+    fcm.sst.EOF <- bind_rows(fcm.sst.EOF, eof.out)
   }
   
-  setDT(mdm.sst)
+  setDT(fcm.sst.EOF)
   
   # Save file
-  saveRDS(mdm.sst, paste0(dir, "Output/mdm_SSTa.z.rda"))
+  saveRDS(fcm.sst.EOF, paste0(dir, "Output/FCM_SSTa_EOF.rda"))
+  
+  # MDM SST ----
+  files <- list.files(mdm.sst.dir, full.names = TRUE)
+  mdm.sst.EOF <- tibble()
+  
+  for(ii in 1:length(files)){
+    
+    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+    
+    # load and process file
+    tidync(files[ii]) %>%
+      hyper_filter(lon = lon >= 125 & lon <= 255,
+                   lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+      #time = time > 711475) %>% # greater than 1947
+      activate("SST") %>%
+      hyper_tibble() %>%
+      mutate(time = origin_date + lubridate::days(time),
+             year = lubridate::year(time),
+             month = lubridate::month(time),
+             member = substr(files[ii], 68, 78),
+             member= gsub(".postP.", ".", member)) %>% # extracting ensemble member #
+      group_by(lat, lon, month, member) %>%
+      mutate(mean.month.SST = mean(SST),
+             sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
+      ungroup() %>%
+      mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
+             time.index = row_number()) -> out # compute anomalies/z-scores
+    
+    
+    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+    setDT(out) # convert to data.table
+    
+    out[, detrended.SSTa.z := { # output data table column
+      fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+      residuals(fit)           # Extract residuals as detrended values
+    }, by = .(lat, lon, member)]
+    
+    # Format data for EOFs
+    out %>%
+      dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+      distinct(.) %>%
+      as.data.frame(.) %>%
+      unite("crds", lat, lon, sep = "-") %>%
+      pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
+    
+    # Calculate EOF weights
+    lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+    
+    length(lat)
+    ncol(EOF.dat[,-c(1:2)])
+    
+    weights <- sqrt(cos(lat*pi/180))
+    
+    # Run EOF
+    print("Running EOF")
+    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    
+    length(pca$U[,1])
+    
+    # Transform to length of EOF dat, scale, bind to years
+    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    
+    pc1_scale <- as.vector(scale(pc1))
+    
+    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    
+    pc2_scale <- as.vector(scale(pc2))
+    
+    # output dataframe
+    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    setDT(eof.out)
+    mdm.sst.EOF <- bind_rows(mdm.sst.EOF, eof.out)
+  }
+  
+  setDT(mdm.sst.EOF)
+  
+  # Save file
+  saveRDS(mdm.sst.EOF, paste0(dir, "Output/MDM_SSTa_EOF.rda"))
   
   # FCM SLP ----
   files <- list.files(fcm.slp.dir, full.names = TRUE)
-  fcm.slp <- tibble()
+  fcm.slp.EOF <- tibble()
   files <- files[c(1:48, 50)]
-  
+
   for(ii in 1:length(files)){
     
     print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
@@ -1772,9 +1837,9 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       #time = time > 711475) %>% # greater than 1947
       activate("PSL") %>%
       hyper_tibble() %>%
-      mutate(time = origin_date + lubridate::days(time),
-             year = lubridate::year(time),
+      mutate(year = lubridate::year(time), # already in correct format
              month = lubridate::month(time),
+             day = lubridate::day(time),
              member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
       group_by(lat, lon, month, member) %>%
       mutate(mean.month.SLP = mean(PSL),
@@ -1792,20 +1857,52 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon, member)]
     
+    # Format data for EOFs
+    out %>%
+      dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+      distinct(.) %>%
+      as.data.frame(.) %>%
+      unite("crds", lat, lon, sep = "-") %>%
+      pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
     
-    # stack processed files
-    fcm.SLP <- bind_rows(fcm.slp, out)
+    # Calculate EOF weights
+    lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+    
+    length(lat)
+    ncol(EOF.dat[,-c(1:2)])
+    
+    weights <- sqrt(cos(lat*pi/180))
+    
+    # Run EOF
+    print("Running EOF")
+    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    
+    length(pca$U[,1])
+    
+    # Transform to length of EOF dat, scale, bind to years
+    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    
+    pc1_scale <- as.vector(scale(pc1))
+    
+    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    
+    pc2_scale <- as.vector(scale(pc2))
+    
+    # output dataframe
+    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    setDT(eof.out)
+    fcm.slp.EOF <- bind_rows(fcm.slp.EOF, eof.out)
     
   }
   
-  setDT(fcm.slp)
+  setDT(fcm.slp.EOF)
   
   # Save file
-  saveRDS(fcm.slp, paste0(dir, "Output/FCM_SLPa.z.rda"))
+  saveRDS(fcm.slp.EOF, paste0(dir, "Output/FCM_SLPa_EOF.rda"))
   
   # MDM SLP ----
   files <- list.files(mdm.slp.dir, full.names = TRUE)
-  mdm.slp <- tibble()
+  mdm.slp.EOF <- tibble()
   
   for(ii in 1:length(files)){
     
@@ -1818,10 +1915,10 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       #time = time > 711475) %>% # greater than 1947
       activate("PSL") %>%
       hyper_tibble() %>%
-      mutate(time = origin_date + lubridate::days(time),
-             year = lubridate::year(time),
+      mutate(year = lubridate::year(time), # already in correct format
              month = lubridate::month(time),
-             member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
+             day = lubridate::day(time),
+             member = substr(files[ii], 68, 72)) %>% # extracting ensemble member #
       group_by(lat, lon, month, member) %>%
       mutate(mean.month.SLP = mean(PSL),
              sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
@@ -1838,36 +1935,153 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon, member)]
     
+    # Format data for EOFs
+    out %>%
+      dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+      distinct(.) %>%
+      as.data.frame(.) %>%
+      unite("crds", lat, lon, sep = "-") %>%
+      pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
     
-    # stack processed files
-    mdm.SLP <- bind_rows(mdm.slp, out)
+    # Calculate EOF weights
+    lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+    
+    length(lat)
+    ncol(EOF.dat[,-c(1:2)])
+    
+    weights <- sqrt(cos(lat*pi/180))
+    
+    # Run EOF
+    print("Running EOF")
+    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    
+    length(pca$U[,1])
+    
+    # Transform to length of EOF dat, scale, bind to years
+    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    
+    pc1_scale <- as.vector(scale(pc1))
+    
+    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    
+    pc2_scale <- as.vector(scale(pc2))
+    
+    # output dataframe
+    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    setDT(eof.out)
+    mdm.slp.EOF <- bind_rows(mdm.slp.EOF, eof.out)
+    
     
   }
   
-  setDT(mdm.slp)
+  setDT(mdm.slp.EOF)
   
   # Save file
-  saveRDS(mdm.slp, paste0(dir, "Output/mdm_SLPa.z.rda"))
+  saveRDS(mdm.slp.EOF, paste0(dir, "Output/MDM_SLPa_EOF.rda"))
   
   
-  # Fit EOFs ----
+ 
+  
+  # PLOT EOFs
+  # fcm sst
+  fcm.sst <- readRDS(paste0(dir, "Output/FCM_SSTa_EOF.rda"))
+  
   fcm.sst %>%
-    dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
-    filter(member == "1011.001") %>%
-    distinct(.) -> wt.dat
+    mutate(time = ymd(time),
+           year = year(time))  %>%
+    group_by(year, member) %>%
+    reframe(m = mean(pc1)) -> plot.dat
   
-  weights <- sqrt(cos(lat*pi/180))
+  ggplot(plot.dat, aes(year, m, color = member))+
+    geom_line(linewidth = 0.75, alpha = 0.25)+
+    theme_bw()
   
-  wt.dat %>%
-    as.data.frame(.) %>%
-    unite("crds", lat, lon, sep = "-") %>%
-    pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
-
+  ggplot(plot.dat, aes(year, m))+
+    facet_wrap(~member)+
+    geom_line()+
+    theme_bw()
   
-  pca <- FactoMineR::svd.triplet(cov(EOF.dat), col.w=na.omit(weights)) #weighting the columns
+  fcm.sst %>%
+    mutate(time = ymd(time),
+           year = year(time)) -> plot.dat2
   
-  pc1_slp <- as.matrix(slp.anom) %*% pca$U[,1]
+  ggplot(plot.dat2, aes(time, pc1))+
+    facet_wrap(~member)+
+    geom_line()+
+    ggtitle("FCM sst")+
+    theme_bw()
   
-  # and scale!
-  pc1_slp <- as.vector(scale(pc1_slp))
+  ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
+    facet_wrap(~member)+
+    geom_line()+
+    ggtitle("FCM sst")+
+    theme_bw()
+  
+  # mdm sst
+  mdm.sst <- readRDS(paste0(dir, "Output/MDM_SSTa_EOF.rda"))
+  
+  mdm.sst %>%
+    mutate(time = ymd(time),
+           year = year(time)) %>%
+    group_by(year, member) %>%
+    reframe(m = mean(pc1)) -> plot.dat
+  
+  ggplot(plot.dat, aes(year, m, color = member))+
+    geom_line(linewidth = 0.75, alpha = 0.25)+
+    theme_bw()
+  
+  ggplot(plot.dat, aes(year, m))+
+    facet_wrap(~member)+
+    geom_line()+
+    theme_bw()
+  
+  mdm.sst %>%
+    mutate(time = ymd(time),
+           year = year(time)) -> plot.dat2
+  
+  ggplot(plot.dat2, aes(time, pc1))+
+    facet_wrap(~member)+
+    geom_line()+
+    ggtitle("MDM sst")+
+    theme_bw()
+  
+  ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
+    facet_wrap(~member)+
+    geom_line()+
+    ggtitle("MDM sst")+
+    theme_bw()
+  
+  # fcm slp
+  fcm.slp <- readRDS(paste0(dir, "Output/FCM_SLPa_EOF.rda"))
+  
+  fcm.slp %>%
+    mutate(time = ymd(time),
+           year = year(time)) %>%
+    group_by(year, member) %>%
+    reframe(m = mean(pc1)) -> plot.dat
+  
+  ggplot(plot.dat, aes(year, m, color = member))+
+    geom_line(linewidth = 0.75, alpha = 0.25)+
+    theme_bw()
+  
+  ggplot(plot.dat, aes(year, m))+
+    facet_wrap(~member)+
+    geom_line()+
+    theme_bw()
+  
+  fcm.slp %>%
+    mutate(time = ymd(time),
+           year = year(time)) -> plot.dat2
+  
+  ggplot(plot.dat2, aes(time, pc1))+
+    facet_wrap(~member)+
+    geom_line()+
+    ggtitle("FCM slp")+
+    theme_bw()
+  
+  ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
+    facet_wrap(~member)+
+    geom_line()+
+    ggtitle("FCM slp")+
+    theme_bw()
   
