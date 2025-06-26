@@ -1664,97 +1664,178 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   
   # FCM SST ----  
   files <- list.files(fcm.sst.dir, full.names = TRUE)
-
-  files <- files[c(1:49)]
-  fcm.sst.EOF <- data.table()
   
-  #files <- files[1]
-  
-  for(ii in 1:length(files)){
-    gc()
-    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+    # FIRST CHUNK
+    files <- files[c(1:25)]
     
-    # load and process file
-    tidync(files[ii]) %>%
-      hyper_filter(lon = lon >= 125 & lon <= 255,
-                   lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
-      #time = time > 711475) %>% # greater than 1947
-      activate("SST") %>%
-      hyper_tibble() %>%
-      mutate(time = origin_date + lubridate::days(time),
-             year = lubridate::year(time),
-             month = lubridate::month(time),
-             member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
-      group_by(lat, lon, month, member) %>%
-      mutate(mean.month.SST = mean(SST),
-             sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
-      ungroup() %>%
-      mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
-             time.index = row_number()) -> out # compute anomalies/z-scores
+    fcm.sst.EOF1 <- data.table()
     
+    #files <- files[1]
     
-    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
-    setDT(out) # convert to data.table
-    
-    out[, detrended.SSTa.z := { # output data table column
-      fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
-      residuals(fit)           # Extract residuals as detrended values
-    }, by = .(lat, lon, member)]
-    
-   # Format data for EOFs
-    out %>%
-      dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
-      distinct(.) %>%
-      as.data.frame(.) %>%
-      unite("crds", lat, lon, sep = "-") %>%
-      pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
-    
-  # Calculate EOF weights
-    lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
-    
-    length(lat)
-    ncol(EOF.dat[,-c(1:2)])
-    
-    weights <- sqrt(cos(lat*pi/180))
-    
-    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
-  
-  # Run EOF
-    print("Running EOF")
-    eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
-    
-    length(eof$U[,1])
-  
-  # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
-    # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
-    U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
-    
-    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
-    
-    V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
-    
-    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
-    
-    # output dataframe
-    eof.out <- expand.grid(
-      time = EOF.dat$time,
-      location = colnames(EOF.dat[, -c(1,2)]),
-      stringsAsFactors = FALSE) %>%
-      mutate(member= unique(EOF.dat$member),
-             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
-             PC1 = U.1[match(.$time, EOF.dat$time)],
-             PC2 = U.2[match(.$time, EOF.dat$time)])
+    for(ii in 1:length(files)){
+      gc()
+      print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
       
-    setDT(eof.out)
-    fcm.sst.EOF <- bind_rows(fcm.sst.EOF, eof.out)
-  }
+      # load and process file
+      tidync(files[ii]) %>%
+        hyper_filter(lon = lon >= 125 & lon <= 255,
+                     lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+        #time = time > 711475) %>% # greater than 1947
+        activate("SST") %>%
+        hyper_tibble() %>%
+        mutate(time = origin_date + lubridate::days(time),
+               year = lubridate::year(time),
+               month = lubridate::month(time),
+               member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+        group_by(lat, lon, month, member) %>%
+        mutate(mean.month.SST = mean(SST),
+               sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
+        ungroup() %>%
+        mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
+               time.index = row_number()) -> out # compute anomalies/z-scores
+      
+      
+      # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+      setDT(out) # convert to data.table
+      
+      out[, detrended.SSTa.z := { # output data table column
+        fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+        residuals(fit)           # Extract residuals as detrended values
+      }, by = .(lat, lon, member)]
+      
+     # Format data for EOFs
+      out %>%
+        dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+        distinct(.) %>%
+        as.data.frame(.) %>%
+        unite("crds", lat, lon, sep = "-") %>%
+        pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
+      
+    # Calculate EOF weights
+      lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+      
+      length(lat)
+      ncol(EOF.dat[,-c(1:2)])
+      
+      weights <- sqrt(cos(lat*pi/180))
+      
+    # Run EOF
+      print("Running EOF")
+      eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+      
   
-  setDT(fcm.sst.EOF)
-  
-  # Save file
-  saveRDS(fcm.sst.EOF, paste0(dir, "Output/FCM_SSTa_EOF.rda"))
-  
+    # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+      # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+      U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+      
+      #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
+      
+      V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
+      
+      #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+      
+      # output dataframe
+      eof.out <- expand.grid(
+        time = EOF.dat$time,
+        location = colnames(EOF.dat[, -c(1,2)]),
+        stringsAsFactors = FALSE) %>%
+        mutate(member= unique(EOF.dat$member),
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+               PC1 = U.1[match(.$time, EOF.dat$time)])
+        
+      setDT(eof.out)
+      fcm.sst.EOF1 <- bind_rows(fcm.sst.EOF1, eof.out)
+    }
+    
+    # SECOND CHUNK
+    files <- list.files(fcm.sst.dir, full.names = TRUE)
+    files <- files[c(26:49)]
+    
+    fcm.sst.EOF2 <- data.table()
+    
+    for(ii in 1:length(files)){
+      gc()
+      print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+      
+      # load and process file
+      tidync(files[ii]) %>%
+        hyper_filter(lon = lon >= 125 & lon <= 255,
+                     lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+        #time = time > 711475) %>% # greater than 1947
+        activate("SST") %>%
+        hyper_tibble() %>%
+        mutate(time = origin_date + lubridate::days(time),
+               year = lubridate::year(time),
+               month = lubridate::month(time),
+               member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+        group_by(lat, lon, month, member) %>%
+        mutate(mean.month.SST = mean(SST),
+               sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
+        ungroup() %>%
+        mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
+               time.index = row_number()) -> out # compute anomalies/z-scores
+      
+      
+      # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+      setDT(out) # convert to data.table
+      
+      out[, detrended.SSTa.z := { # output data table column
+        fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+        residuals(fit)           # Extract residuals as detrended values
+      }, by = .(lat, lon, member)]
+      
+      # Format data for EOFs
+      out %>%
+        dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+        distinct(.) %>%
+        as.data.frame(.) %>%
+        unite("crds", lat, lon, sep = "-") %>%
+        pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
+      
+      # Calculate EOF weights
+      lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+      
+      length(lat)
+      ncol(EOF.dat[,-c(1:2)])
+      
+      weights <- sqrt(cos(lat*pi/180))
+      
+      # Run EOF
+      print("Running EOF")
+      eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+      
+      
+      # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+      # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+      U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+      
+      #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
+      
+      V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
+      
+      #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+      
+      # output dataframe
+      eof.out <- expand.grid(
+        time = EOF.dat$time,
+        location = colnames(EOF.dat[, -c(1,2)]),
+        stringsAsFactors = FALSE) %>%
+        mutate(member= unique(EOF.dat$member),
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+               PC1 = U.1[match(.$time, EOF.dat$time)])
+      
+      setDT(eof.out)
+      fcm.sst.EOF2 <- bind_rows(fcm.sst.EOF2, eof.out)
+    }
+    
+    # BIND CHUNKS
+    rbind(fcm.sst.EOF1, fcm.sst.EOF2) -> fcm.sst.EOF
+    
+    setDT(fcm.sst.EOF)
+    
+    # Save file
+    saveRDS(fcm.sst.EOF, paste0(dir, "Output/FCM_SSTa_EOF.rda"))
+    
   # MDM SST ----
   files <- list.files(mdm.sst.dir, full.names = TRUE)
   mdm.sst.EOF <- tibble()
@@ -1819,11 +1900,11 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
     U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
     
-    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
+    #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
     V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
     
-    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+    #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
     eof.out <- expand.grid(
@@ -1832,9 +1913,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       stringsAsFactors = FALSE) %>%
       mutate(member= unique(EOF.dat$member),
              EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
-             PC1 = U.1[match(.$time, EOF.dat$time)],
-             PC2 = U.2[match(.$time, EOF.dat$time)])
+             PC1 = U.1[match(.$time, EOF.dat$time)])
     
     setDT(eof.out)
     mdm.sst.EOF <- bind_rows(mdm.sst.EOF, eof.out)
@@ -1846,95 +1925,183 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   saveRDS(mdm.sst.EOF, paste0(dir, "Output/MDM_SSTa_EOF.rda"))
   
   # FCM SLP ----
-  files <- list.files(fcm.slp.dir, full.names = TRUE)
-  fcm.slp.EOF <- tibble()
-  files <- files[c(1:48, 50)]
-
-  for(ii in 1:length(files)){
-    
-    print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
-    
-    # load and process file
-    tidync(files[ii]) %>%
-      hyper_filter(lon = lon >= 125 & lon <= 255,
-                   lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
-      #time = time > 711475) %>% # greater than 1947
-      activate("PSL") %>%
-      hyper_tibble() %>%
-      mutate(year = lubridate::year(time), # already in correct format
-             month = lubridate::month(time),
-             day = lubridate::day(time),
-             member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
-      group_by(lat, lon, month, member) %>%
-      mutate(mean.month.SLP = mean(PSL),
-             sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
-      ungroup() %>%
-      mutate(SLPa.z = (PSL - mean.month.SLP)/sd.month.SLP,
-             time.index = row_number()) -> out # compute anomalies/z-scores
-    
-    
-    # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
-    setDT(out) # convert to data.table
-    
-    out[, detrended.SLPa.z := { # output data table column
-      fit <- lm(SLPa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
-      residuals(fit)           # Extract residuals as detrended values
-    }, by = .(lat, lon, member)]
-    
-    # Format data for EOFs
-    out %>%
-      dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
-      distinct(.) %>%
-      as.data.frame(.) %>%
-      unite("crds", lat, lon, sep = "-") %>%
-      pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
-    
-    # Calculate EOF weights
-    lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
-    
-    length(lat)
-    ncol(EOF.dat[,-c(1:2)])
-    
-    weights <- sqrt(cos(lat*pi/180))
-    
-    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
-    
-    # Run EOF
-    print("Running EOF")
-    eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
-    
-    length(eof$U[,1])
-    
-    # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
-    # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
-    U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
-    
-    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
-    
-    V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
-    
-    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
-    
-    # output dataframe
-    eof.out <- expand.grid(
-      time = EOF.dat$time,
-      location = colnames(EOF.dat[, -c(1,2)]),
-      stringsAsFactors = FALSE) %>%
-      mutate(member= unique(EOF.dat$member),
-             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
-             PC1 = U.1[match(.$time, EOF.dat$time)],
-             PC2 = U.2[match(.$time, EOF.dat$time)])
-    
-    setDT(eof.out)
-    fcm.slp.EOF <- bind_rows(fcm.slp.EOF, eof.out)
-    
-  }
+    # FIRST CHUNK
+    files <- list.files(fcm.slp.dir, full.names = TRUE)
+   
+    files <- files[c(1:25)]
   
-  setDT(fcm.slp.EOF)
+    fcm.slp.EOF1 <- tibble()
+    
+    for(ii in 1:length(files)){
+      
+      print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+      
+      # load and process file
+      tidync(files[ii]) %>%
+        hyper_filter(lon = lon >= 125 & lon <= 255,
+                     lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+        #time = time > 711475) %>% # greater than 1947
+        activate("PSL") %>%
+        hyper_tibble() %>%
+        mutate(year = lubridate::year(time), # already in correct format
+               month = lubridate::month(time),
+               day = lubridate::day(time),
+               member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
+        group_by(lat, lon, month, member) %>%
+        mutate(mean.month.SLP = mean(PSL),
+               sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
+        ungroup() %>%
+        mutate(SLPa.z = (PSL - mean.month.SLP)/sd.month.SLP,
+               time.index = row_number()) -> out # compute anomalies/z-scores
+      
+      
+      # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+      setDT(out) # convert to data.table
+      
+      out[, detrended.SLPa.z := { # output data table column
+        fit <- lm(SLPa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+        residuals(fit)           # Extract residuals as detrended values
+      }, by = .(lat, lon, member)]
+      
+      # Format data for EOFs
+      out %>%
+        dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+        distinct(.) %>%
+        as.data.frame(.) %>%
+        unite("crds", lat, lon, sep = "-") %>%
+        pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
+      
+      # Calculate EOF weights
+      lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+      
+      length(lat)
   
-  # Save file
-  saveRDS(fcm.slp.EOF, paste0(dir, "Output/FCM_SLPa_EOF.rda"))
+      weights <- sqrt(cos(lat*pi/180))
+      
+      lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
+      
+      # Run EOF
+      print("Running EOF")
+      eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+      
+      length(eof$U[,1])
+      
+      # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+      # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+      U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+      
+      #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
+      
+      V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
+      
+      #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+      
+      # output dataframe
+      eof.out <- expand.grid(
+        time = EOF.dat$time,
+        location = colnames(EOF.dat[, -c(1,2)]),
+        stringsAsFactors = FALSE) %>%
+        mutate(member= unique(EOF.dat$member),
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+               PC1 = U.1[match(.$time, EOF.dat$time)])
+      
+      setDT(eof.out)
+      fcm.slp.EOF1 <- bind_rows(fcm.slp.EOF1, eof.out)
+      
+    }
+    
+    # SECOND CHUNK
+    files <- list.files(fcm.slp.dir, full.names = TRUE)
+    
+    files <- files[c(26:49)]
+    
+    fcm.slp.EOF2 <- tibble()
+    
+    for(ii in 1:length(files)){
+      
+      print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
+      
+      # load and process file
+      tidync(files[ii]) %>%
+        hyper_filter(lon = lon >= 125 & lon <= 255,
+                     lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
+        #time = time > 711475) %>% # greater than 1947
+        activate("PSL") %>%
+        hyper_tibble() %>%
+        mutate(year = lubridate::year(time), # already in correct format
+               month = lubridate::month(time),
+               day = lubridate::day(time),
+               member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
+        group_by(lat, lon, month, member) %>%
+        mutate(mean.month.SLP = mean(PSL),
+               sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
+        ungroup() %>%
+        mutate(SLPa.z = (PSL - mean.month.SLP)/sd.month.SLP,
+               time.index = row_number()) -> out # compute anomalies/z-scores
+      
+      
+      # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
+      setDT(out) # convert to data.table
+      
+      out[, detrended.SLPa.z := { # output data table column
+        fit <- lm(SLPa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+        residuals(fit)           # Extract residuals as detrended values
+      }, by = .(lat, lon, member)]
+      
+      # Format data for EOFs
+      out %>%
+        dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+        distinct(.) %>%
+        as.data.frame(.) %>%
+        unite("crds", lat, lon, sep = "-") %>%
+        pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
+      
+      # Calculate EOF weights
+      lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
+      
+      length(lat)
+      
+      weights <- sqrt(cos(lat*pi/180))
+      
+      lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
+      
+      # Run EOF
+      print("Running EOF")
+      eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+      
+      length(eof$U[,1])
+      
+      # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+      # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+      U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+      
+      #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
+      
+      V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
+      
+      #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+      
+      # output dataframe
+      eof.out <- expand.grid(
+        time = EOF.dat$time,
+        location = colnames(EOF.dat[, -c(1,2)]),
+        stringsAsFactors = FALSE) %>%
+        mutate(member= unique(EOF.dat$member),
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+               PC1 = U.1[match(.$time, EOF.dat$time)])
+      
+      setDT(eof.out)
+      fcm.slp.EOF2 <- bind_rows(fcm.slp.EOF2, eof.out)
+      
+    }
+    
+    # BIND CHUNKS
+    rbind(fcm.slp.EOF1, fcm.slp.EOF2) -> fcm.slp.EOF
+    
+    setDT(fcm.slp.EOF)
+    
+    # Save file
+    saveRDS(fcm.slp.EOF, paste0(dir, "Output/FCM_SLPa_EOF.rda"))
   
   # MDM SLP ----
   files <- list.files(mdm.slp.dir, full.names = TRUE)
@@ -1999,11 +2166,11 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
     U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
     
-    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
+    #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
     V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
     
-    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+    #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
     eof.out <- expand.grid(
@@ -2012,9 +2179,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       stringsAsFactors = FALSE) %>%
       mutate(member= unique(EOF.dat$member),
              EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
-             PC1 = U.1[match(.$time, EOF.dat$time)],
-             PC2 = U.2[match(.$time, EOF.dat$time)])
+             PC1 = U.1[match(.$time, EOF.dat$time)])
     
     setDT(eof.out)
     mdm.slp.EOF <- bind_rows(mdm.slp.EOF, eof.out)
