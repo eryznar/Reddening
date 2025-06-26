@@ -1665,7 +1665,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   # FCM SST ----  
   files <- list.files(fcm.sst.dir, full.names = TRUE)
 
-  files <- files[c(1:48, 50)]
+  files <- files[c(1:49)]
   fcm.sst.EOF <- data.table()
   
   #files <- files[1]
@@ -1716,24 +1716,36 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     ncol(EOF.dat[,-c(1:2)])
     
     weights <- sqrt(cos(lat*pi/180))
+    
+    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
   
   # Run EOF
     print("Running EOF")
-    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
     
-    length(pca$U[,1])
+    length(eof$U[,1])
   
-  # Transform to length of EOF dat, scale, bind to years
-    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+  # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+    # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+    U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
     
-    pc1_scale <- as.vector(scale(pc1))
+    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
-    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
     
-    pc2_scale <- as.vector(scale(pc2))
-  
-  # output dataframe
-    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
+    
+    # output dataframe
+    eof.out <- expand.grid(
+      time = EOF.dat$time,
+      location = colnames(EOF.dat[, -c(1,2)]),
+      stringsAsFactors = FALSE) %>%
+      mutate(member= unique(EOF.dat$member),
+             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
+             PC1 = U.1[match(.$time, EOF.dat$time)],
+             PC2 = U.2[match(.$time, EOF.dat$time)])
+      
     setDT(eof.out)
     fcm.sst.EOF <- bind_rows(fcm.sst.EOF, eof.out)
   }
@@ -1795,23 +1807,35 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     
     weights <- sqrt(cos(lat*pi/180))
     
+    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
+    
     # Run EOF
     print("Running EOF")
-    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
     
-    length(pca$U[,1])
+    length(eof$U[,1])
     
-    # Transform to length of EOF dat, scale, bind to years
-    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+    # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+    U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
     
-    pc1_scale <- as.vector(scale(pc1))
+    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
-    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
     
-    pc2_scale <- as.vector(scale(pc2))
+    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
-    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    eof.out <- expand.grid(
+      time = EOF.dat$time,
+      location = colnames(EOF.dat[, -c(1,2)]),
+      stringsAsFactors = FALSE) %>%
+      mutate(member= unique(EOF.dat$member),
+             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
+             PC1 = U.1[match(.$time, EOF.dat$time)],
+             PC2 = U.2[match(.$time, EOF.dat$time)])
+    
     setDT(eof.out)
     mdm.sst.EOF <- bind_rows(mdm.sst.EOF, eof.out)
   }
@@ -1873,23 +1897,35 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     
     weights <- sqrt(cos(lat*pi/180))
     
+    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
+    
     # Run EOF
     print("Running EOF")
-    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
     
-    length(pca$U[,1])
+    length(eof$U[,1])
     
-    # Transform to length of EOF dat, scale, bind to years
-    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+    # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+    U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
     
-    pc1_scale <- as.vector(scale(pc1))
+    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
-    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
     
-    pc2_scale <- as.vector(scale(pc2))
+    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
-    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    eof.out <- expand.grid(
+      time = EOF.dat$time,
+      location = colnames(EOF.dat[, -c(1,2)]),
+      stringsAsFactors = FALSE) %>%
+      mutate(member= unique(EOF.dat$member),
+             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
+             PC1 = U.1[match(.$time, EOF.dat$time)],
+             PC2 = U.2[match(.$time, EOF.dat$time)])
+    
     setDT(eof.out)
     fcm.slp.EOF <- bind_rows(fcm.slp.EOF, eof.out)
     
@@ -1951,23 +1987,35 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     
     weights <- sqrt(cos(lat*pi/180))
     
+    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
+    
     # Run EOF
     print("Running EOF")
-    pca <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
+    eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
     
-    length(pca$U[,1])
+    length(eof$U[,1])
     
-    # Transform to length of EOF dat, scale, bind to years
-    pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
+    # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
+    # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
+    U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
     
-    pc1_scale <- as.vector(scale(pc1))
+    U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
-    pc2 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,2]
+    V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
     
-    pc2_scale <- as.vector(scale(pc2))
+    V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
-    eof.out <- data.frame(time = EOF.dat$time, member = unique(EOF.dat$member), pc1 = pc1_scale, pc2 = pc2_scale)
+    eof.out <- expand.grid(
+      time = EOF.dat$time,
+      location = colnames(EOF.dat[, -c(1,2)]),
+      stringsAsFactors = FALSE) %>%
+      mutate(member= unique(EOF.dat$member),
+             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
+             EOF2 = V.2[match(.$location, colnames(EOF.dat))],
+             PC1 = U.1[match(.$time, EOF.dat$time)],
+             PC2 = U.2[match(.$time, EOF.dat$time)])
+    
     setDT(eof.out)
     mdm.slp.EOF <- bind_rows(mdm.slp.EOF, eof.out)
     
@@ -1980,44 +2028,29 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   saveRDS(mdm.slp.EOF, paste0(dir, "Output/MDM_SLPa_EOF.rda"))
   
   
- 
-  
-  # PLOT EOFs
+  # PLOT EOF loadings ----
   # fcm sst
   fcm.sst <- readRDS(paste0(dir, "Output/FCM_SSTa_EOF.rda"))
   
-  fcm.sst %>%
-    mutate(time = ymd(time),
-           year = year(time))  %>%
-    group_by(year, member) %>%
-    reframe(m = mean(pc1)) -> plot.dat
+  pp <- fcm.sst %>% filter(member == "1011.001")
   
-  ggplot(plot.dat, aes(year, m, color = member))+
-    geom_line(linewidth = 0.75, alpha = 0.25)+
-    theme_bw()
+  pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
   
-  ggplot(plot.dat, aes(year, m))+
-    facet_wrap(~member)+
-    geom_line()+
-    theme_bw()
-  
-  fcm.sst %>%
-    mutate(time = ymd(time),
-           year = year(time)) -> plot.dat2
-  
-  ggplot(plot.dat2, aes(time, pc1))+
-    facet_wrap(~member)+
-    geom_line()+
-    ggtitle("FCM sst")+
-    theme_bw()
-  
-  ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
-    facet_wrap(~member)+
-    geom_line()+
-    ggtitle("FCM sst")+
-    theme_bw()
-  
-  # mdm sst
+ ggplot(fcm.sst, aes(lon, lat, fill = eig.1))+
+   geom_tile()
+ 
+ ggplot()+
+   geom_tile(fcm.sst, mapping= aes(lon, lat, fill = pca.1))+
+   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+   coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+   xlab("Latitude")+
+   facet_wrap(~member)+
+   ylab("Longitude")+
+   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                        midpoint=  median(fcm.sst$pca.1),
+                        name = "EOF 1")
+
+ # mdm sst
   mdm.sst <- readRDS(paste0(dir, "Output/MDM_SSTa_EOF.rda"))
   
   mdm.sst %>%
@@ -2048,6 +2081,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
     facet_wrap(~member)+
     geom_line()+
+    ylab("Loading 1")+
     ggtitle("MDM sst")+
     theme_bw()
   
@@ -2082,6 +2116,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
     facet_wrap(~member)+
     geom_line()+
+    ylab("Loading 1")+
     ggtitle("FCM slp")+
     theme_bw()
   
