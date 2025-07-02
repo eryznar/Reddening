@@ -2197,26 +2197,71 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   # fcm sst
   fcm.sst <- readRDS(paste0(dir, "Output/FCM_SSTa_EOF.rda"))
   
-  pp <- fcm.sst %>% filter(member == "1011.001")
+ fcm.sst %>%
+   group_by(location, member) %>%
+   distinct(EOF1) %>%
+   mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
+          lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2))) %>%
+   rename(value = EOF1) %>%
+   filter(is.na(value) == FALSE) %>%
+   setDT(.) -> EOF1
+ 
+ fcm.sst %>%
+   group_by(time, member) %>%
+   distinct(PC1) %>%
+   rename(value = PC1) %>%
+   filter(is.na(value) == FALSE) %>%
+   setDT(.) -> PC1
   
-  pc1 <- as.matrix(EOF.dat[, -c(1:2)]) %*% pca$U[,1]
-  
- ggplot(fcm.sst, aes(lon, lat, fill = eig.1))+
-   geom_tile()
+ggplot(PC1, aes(time, value))+
+  geom_line(linewidth = 1)+
+  facet_wrap(~member)
  
  ggplot()+
-   geom_tile(fcm.sst, mapping= aes(lon, lat, fill = pca.1))+
+   geom_tile(EOF1, mapping= aes(lon, lat, fill = value))+
    geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
    coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
    xlab("Latitude")+
    facet_wrap(~member)+
    ylab("Longitude")+
    scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                        midpoint=  median(fcm.sst$pca.1),
-                        name = "EOF 1")
+                        midpoint=  median(EOF1$value),
+                        name = "EOF 1",
+                        limits = c(-max(EOF1$value), max(EOF1$value)))
+ 
+ ggsave("./Figures/MDM.SSTa.EOF1.png", width = 8, height=  6, units = "in")
+ 
 
  # mdm sst
   mdm.sst <- readRDS(paste0(dir, "Output/MDM_SSTa_EOF.rda"))
+  
+  mdm.sst %>%
+    group_by(location, member) %>%
+    distinct(EOF1) %>%
+    mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
+           lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2))) %>%
+    rename(value = EOF1) %>%
+    filter(is.na(value) == FALSE) %>%
+    setDT(.) -> EOF1
+  
+  
+  ggplot()+
+    geom_tile(EOF1, mapping= aes(lon, lat, fill = value))+
+    geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+    coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+    xlab("Latitude")+
+    facet_wrap(~member)+
+    ylab("Longitude")+
+    scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                         midpoint=  median(EOF1$value),
+                         name = "EOF 1",
+                         limits = c(-max(EOF1$value), max(EOF1$value)))
+  
+  
+  ggsave("./Figures/MDM.SSTa.EOF1.png", width = 8, height=  6, units = "in")
+  
+  
+  
   
   mdm.sst %>%
     mutate(time = ymd(time),
