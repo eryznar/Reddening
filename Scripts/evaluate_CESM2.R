@@ -1668,9 +1668,10 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     # FIRST CHUNK
     files <- files[c(1:25)]
     
-    fcm.sst.EOF1 <- data.table()
+    fcm.sst.EOF1.1 <- data.table()
+    fcm.sst.PC1.1 <- data.frame()
     
-    #files <- files[1]
+    #files <- files[1:2]
     
     for(ii in 1:length(files)){
       gc()
@@ -1691,25 +1692,32 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
         mutate(mean.month.SST = mean(SST),
                sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
         ungroup() %>%
-        mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
+        mutate(SSTa.deseasoned = SST-mean.month.SST, # remove monthly climatology
                time.index = row_number()) -> out # compute anomalies/z-scores
       
       
       # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
       setDT(out) # convert to data.table
       
-      out[, detrended.SSTa.z := { # output data table column
-        fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+      out[, detrended.SSTa := { # output data table column
+        fit <- lm(SSTa.deseasoned ~ time.index)  # Fit linear model for each lat/lon group across months/years
         residuals(fit)           # Extract residuals as detrended values
       }, by = .(lat, lon, member)]
       
+      
+      # Scale each grid point by its SD
+      out[, detrended.SSTa.scaled := { # output data table column
+        scale(detrended.SSTa, center = FALSE, scale = TRUE) # center = FALSE bc data is deseasonlized and detrended (mean close to zero); scale = TRUE divides by standard deviation
+      }, by = .(lat, lon, member)]
+      
+      
      # Format data for EOFs
       out %>%
-        dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+        dplyr::select(time, lon, lat, member, detrended.SSTa.scaled) %>%
         distinct(.) %>%
         as.data.frame(.) %>%
         unite("crds", lat, lon, sep = "-") %>%
-        pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
+        pivot_wider(., names_from= crds, values_from = detrended.SSTa.scaled) -> EOF.dat
       
     # Calculate EOF weights
       lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
@@ -1728,6 +1736,14 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
       U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
       
+      PC1.dat <- as.matrix(EOF.dat[, -c(1:2)]) %*% U.1 %>%
+             as.data.frame() %>%
+             mutate(time = EOF.dat$time,
+                    V1 = scale(as.numeric(V1)),
+                    member = unique(EOF.dat$member)) %>%
+        rename(PC1 = V1) %>%
+        mutate(PC1= as.numeric(PC1))
+      
       #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
       
       V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
@@ -1735,23 +1751,25 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
       
       # output dataframe
-      eof.out <- expand.grid(
-        time = EOF.dat$time,
+      EOF1.dat <- expand.grid(
         location = colnames(EOF.dat[, -c(1,2)]),
         stringsAsFactors = FALSE) %>%
         mutate(member= unique(EOF.dat$member),
-               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-               PC1 = U.1[match(.$time, EOF.dat$time)])
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))])
         
-      setDT(eof.out)
-      fcm.sst.EOF1 <- bind_rows(fcm.sst.EOF1, eof.out)
+      setDT(EOF1.dat)
+
+      fcm.sst.EOF1.1 <- bind_rows(fcm.sst.EOF1.1, EOF1.dat)
+      fcm.sst.PC1.1 <- bind_rows(fcm.sst.PC1.1, PC1.dat)
+      
     }
     
     # SECOND CHUNK
     files <- list.files(fcm.sst.dir, full.names = TRUE)
-    files <- files[c(26:49)]
+    files <- files[c(26:48)] # last two files result in empty slice
     
-    fcm.sst.EOF2 <- data.table()
+    fcm.sst.EOF1.2 <- data.table()
+    fcm.sst.PC1.2 <- data.table()
     
     for(ii in 1:length(files)){
       gc()
@@ -1772,25 +1790,32 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
         mutate(mean.month.SST = mean(SST),
                sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
         ungroup() %>%
-        mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
+        mutate(SSTa.deseasoned = SST-mean.month.SST, # remove monthly climatology
                time.index = row_number()) -> out # compute anomalies/z-scores
       
       
       # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
       setDT(out) # convert to data.table
       
-      out[, detrended.SSTa.z := { # output data table column
-        fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+      out[, detrended.SSTa := { # output data table column
+        fit <- lm(SSTa.deseasoned ~ time.index)  # Fit linear model for each lat/lon group across months/years
         residuals(fit)           # Extract residuals as detrended values
       }, by = .(lat, lon, member)]
       
+      
+      # Scale each grid point by its SD
+      out[, detrended.SSTa.scaled := { # output data table column
+        scale(detrended.SSTa, center = FALSE, scale = TRUE) # center = FALSE bc data is deseasonlized and detrended (mean close to zero); scale = TRUE divides by standard deviation
+      }, by = .(lat, lon, member)]
+      
+      
       # Format data for EOFs
       out %>%
-        dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+        dplyr::select(time, lon, lat, member, detrended.SSTa.scaled) %>%
         distinct(.) %>%
         as.data.frame(.) %>%
         unite("crds", lat, lon, sep = "-") %>%
-        pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
+        pivot_wider(., names_from= crds, values_from = detrended.SSTa.scaled) -> EOF.dat
       
       # Calculate EOF weights
       lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
@@ -1809,6 +1834,14 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
       U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
       
+      PC1.dat <- as.matrix(EOF.dat[, -c(1:2)]) %*% U.1 %>%
+        as.data.frame() %>%
+        mutate(time = EOF.dat$time,
+               V1 = scale(as.numeric(V1)),
+               member = unique(EOF.dat$member)) %>%
+        rename(PC1 = V1) %>%
+        mutate(PC1= as.numeric(PC1))
+      
       #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
       
       V.1 <- scale(eof$V[,1]) # spatial pattern (EOF1 loading)
@@ -1816,29 +1849,36 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
       
       # output dataframe
-      eof.out <- expand.grid(
-        time = EOF.dat$time,
+      EOF1.dat <- expand.grid(
         location = colnames(EOF.dat[, -c(1,2)]),
         stringsAsFactors = FALSE) %>%
         mutate(member= unique(EOF.dat$member),
-               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-               PC1 = U.1[match(.$time, EOF.dat$time)])
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))])
       
-      setDT(eof.out)
-      fcm.sst.EOF2 <- bind_rows(fcm.sst.EOF2, eof.out)
+      setDT(EOF1.dat)
+      
+      fcm.sst.EOF1.2 <- bind_rows(fcm.sst.EOF1.2, EOF1.dat)
+      fcm.sst.PC1.2<- bind_rows(fcm.sst.PC1.2, PC1.dat)
+      
     }
     
     # BIND CHUNKS
-    rbind(fcm.sst.EOF1, fcm.sst.EOF2) -> fcm.sst.EOF
+    rbind(fcm.sst.EOF1.1, fcm.sst.EOF1.2) -> fcm.sst.EOF1
+    rbind(fcm.sst.PC1.1, fcm.sst.PC1.2) -> fcm.sst.PC1
     
-    setDT(fcm.sst.EOF)
+    setDT(fcm.sst.EOF1)
+    setDT(fcm.sst.PC1)
     
     # Save file
-    saveRDS(fcm.sst.EOF, paste0(dir, "Output/FCM_SSTa_EOF.rda"))
+    saveRDS(fcm.sst.EOF1, paste0(dir, "Output/FCM_SSTa_EOF1.rda"))
+    saveRDS(fcm.sst.PC1, paste0(dir, "Output/FCM_SSTa_PC1.rda"))
+    
     
   # MDM SST ----
   files <- list.files(mdm.sst.dir, full.names = TRUE)
-  mdm.sst.EOF <- tibble()
+  mdm.sst.EOF1 <- tibble()
+  mdm.sst.PC1 <- tibble()
+  
   
   for(ii in 1:length(files)){
     
@@ -1856,29 +1896,35 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
              month = lubridate::month(time),
              member = substr(files[ii], 68, 78),
              member= gsub(".postP.", ".", member)) %>% # extracting ensemble member #
-      group_by(lat, lon, month, member) %>%
       mutate(mean.month.SST = mean(SST),
              sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
       ungroup() %>%
-      mutate(SSTa.z = (SST - mean.month.SST)/sd.month.SST,
+      mutate(SSTa.deseasoned = SST-mean.month.SST, # remove monthly climatology
              time.index = row_number()) -> out # compute anomalies/z-scores
     
     
     # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
     setDT(out) # convert to data.table
     
-    out[, detrended.SSTa.z := { # output data table column
-      fit <- lm(SSTa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+    out[, detrended.SSTa := { # output data table column
+      fit <- lm(SSTa.deseasoned ~ time.index)  # Fit linear model for each lat/lon group across months/years
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon, member)]
     
+    
+    # Scale each grid point by its SD
+    out[, detrended.SSTa.scaled := { # output data table column
+      scale(detrended.SSTa, center = FALSE, scale = TRUE) # center = FALSE bc data is deseasonlized and detrended (mean close to zero); scale = TRUE divides by standard deviation
+    }, by = .(lat, lon, member)]
+    
+    
     # Format data for EOFs
     out %>%
-      dplyr::select(time, lon, lat, member, detrended.SSTa.z) %>%
+      dplyr::select(time, lon, lat, member, detrended.SSTa.scaled) %>%
       distinct(.) %>%
       as.data.frame(.) %>%
       unite("crds", lat, lon, sep = "-") %>%
-      pivot_wider(., names_from= crds, values_from = detrended.SSTa.z) -> EOF.dat
+      pivot_wider(., names_from= crds, values_from = detrended.SSTa.scaled) -> EOF.dat
     
     # Calculate EOF weights
     lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
@@ -1888,17 +1934,22 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     
     weights <- sqrt(cos(lat*pi/180))
     
-    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
-    
     # Run EOF
     print("Running EOF")
     eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
     
-    length(eof$U[,1])
     
     # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
     # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
     U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+    
+    PC1.dat <- as.matrix(EOF.dat[, -c(1:2)]) %*% U.1 %>%
+      as.data.frame() %>%
+      mutate(time = EOF.dat$time,
+             V1 = scale(as.numeric(V1)),
+             member = unique(EOF.dat$member)) %>%
+      rename(PC1 = V1) %>%
+      mutate(PC1= as.numeric(PC1))
     
     #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
@@ -1907,22 +1958,26 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
-    eof.out <- expand.grid(
-      time = EOF.dat$time,
+    EOF1.dat <- expand.grid(
       location = colnames(EOF.dat[, -c(1,2)]),
       stringsAsFactors = FALSE) %>%
       mutate(member= unique(EOF.dat$member),
-             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-             PC1 = U.1[match(.$time, EOF.dat$time)])
+             EOF1 = V.1[match(.$location, colnames(EOF.dat))])
     
-    setDT(eof.out)
-    mdm.sst.EOF <- bind_rows(mdm.sst.EOF, eof.out)
+    setDT(EOF1.dat)
+    
+    mdm.sst.EOF1 <- bind_rows(mdm.sst.EOF1, EOF1.dat)
+    mdm.sst.PC1 <- bind_rows(mdm.sst.PC1, PC1.dat)
   }
   
-  setDT(mdm.sst.EOF)
+  setDT(mdm.sst.EOF1)
+  setDT(mdm.sst.PC1)
+  
   
   # Save file
-  saveRDS(mdm.sst.EOF, paste0(dir, "Output/MDM_SSTa_EOF.rda"))
+  saveRDS(mdm.sst.EOF1, paste0(dir, "Output/MDM_SSTa_EOF1.rda"))
+  saveRDS(mdm.sst.PC1, paste0(dir, "Output/MDM_SSTa_PC1.rda"))
+  
   
   # FCM SLP ----
     # FIRST CHUNK
@@ -1930,7 +1985,9 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    
     files <- files[c(1:25)]
   
-    fcm.slp.EOF1 <- tibble()
+    fcm.slp.EOF1.1 <- tibble()
+    fcm.slp.PC1.1 <- tibble()
+    
     
     for(ii in 1:length(files)){
       
@@ -1947,48 +2004,60 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
                month = lubridate::month(time),
                day = lubridate::day(time),
                member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
-        group_by(lat, lon, month, member) %>%
         mutate(mean.month.SLP = mean(PSL),
                sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
         ungroup() %>%
-        mutate(SLPa.z = (PSL - mean.month.SLP)/sd.month.SLP,
+        mutate(SLPa.deseasoned = PSL-mean.month.SLP, # remove monthly climatology
                time.index = row_number()) -> out # compute anomalies/z-scores
       
       
       # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
       setDT(out) # convert to data.table
       
-      out[, detrended.SLPa.z := { # output data table column
-        fit <- lm(SLPa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+      out[, detrended.SLPa := { # output data table column
+        fit <- lm(SLPa.deseasoned ~ time.index)  # Fit linear model for each lat/lon group across months/years
         residuals(fit)           # Extract residuals as detrended values
       }, by = .(lat, lon, member)]
       
+      
+      # Scale each grid point by its SD
+      out[, detrended.SLPa.scaled := { # output data table column
+        scale(detrended.SLPa, center = FALSE, scale = TRUE) # center = FALSE bc data is deseasonlized and detrended (mean close to zero); scale = TRUE divides by standard deviation
+      }, by = .(lat, lon, member)]
+      
+      
       # Format data for EOFs
       out %>%
-        dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+        dplyr::select(time, lon, lat, member, detrended.SLPa.scaled) %>%
         distinct(.) %>%
         as.data.frame(.) %>%
         unite("crds", lat, lon, sep = "-") %>%
-        pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
+        pivot_wider(., names_from= crds, values_from = detrended.SLPa.scaled) -> EOF.dat
       
       # Calculate EOF weights
       lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
       
       length(lat)
-  
-      weights <- sqrt(cos(lat*pi/180))
+      ncol(EOF.dat[,-c(1:2)])
       
-      lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
+      weights <- sqrt(cos(lat*pi/180))
       
       # Run EOF
       print("Running EOF")
       eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
       
-      length(eof$U[,1])
       
       # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
       # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
       U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+      
+      PC1.dat <- as.matrix(EOF.dat[, -c(1:2)]) %*% U.1 %>%
+        as.data.frame() %>%
+        mutate(time = EOF.dat$time,
+               V1 = scale(as.numeric(V1)),
+               member = unique(EOF.dat$member)) %>%
+        rename(PC1 = V1) %>%
+        mutate(PC1= as.numeric(PC1))
       
       #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
       
@@ -1997,25 +2066,27 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
       
       # output dataframe
-      eof.out <- expand.grid(
-        time = EOF.dat$time,
+      EOF1.dat <- expand.grid(
         location = colnames(EOF.dat[, -c(1,2)]),
         stringsAsFactors = FALSE) %>%
         mutate(member= unique(EOF.dat$member),
-               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-               PC1 = U.1[match(.$time, EOF.dat$time)])
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))])
       
-      setDT(eof.out)
-      fcm.slp.EOF1 <- bind_rows(fcm.slp.EOF1, eof.out)
+      setDT(EOF1.dat)
+      
+      fcm.slp.EOF1.1 <- bind_rows(fcm.slp.EOF1.1, EOF1.dat)
+      fcm.slp.PC1.1<- bind_rows(fcm.slp.PC1.1, PC1.dat)
       
     }
     
     # SECOND CHUNK
     files <- list.files(fcm.slp.dir, full.names = TRUE)
     
-    files <- files[c(26:49)]
+    files <- files[c(26:48)] # last two files result in empty slice
     
-    fcm.slp.EOF2 <- tibble()
+    fcm.slp.EOF1.2 <- tibble()
+    fcm.slp.PC1.2 <- tibble()
+    
     
     for(ii in 1:length(files)){
       
@@ -2032,48 +2103,60 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
                month = lubridate::month(time),
                day = lubridate::day(time),
                member = substr(files[ii], 78, 85)) %>% # extracting ensemble member #
-        group_by(lat, lon, month, member) %>%
         mutate(mean.month.SLP = mean(PSL),
                sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
         ungroup() %>%
-        mutate(SLPa.z = (PSL - mean.month.SLP)/sd.month.SLP,
+        mutate(SLPa.deseasoned = PSL-mean.month.SLP, # remove monthly climatology
                time.index = row_number()) -> out # compute anomalies/z-scores
       
       
       # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
       setDT(out) # convert to data.table
       
-      out[, detrended.SLPa.z := { # output data table column
-        fit <- lm(SLPa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+      out[, detrended.SLPa := { # output data table column
+        fit <- lm(SLPa.deseasoned ~ time.index)  # Fit linear model for each lat/lon group across months/years
         residuals(fit)           # Extract residuals as detrended values
       }, by = .(lat, lon, member)]
       
+      
+      # Scale each grid point by its SD
+      out[, detrended.SLPa.scaled := { # output data table column
+        scale(detrended.SLPa, center = FALSE, scale = TRUE) # center = FALSE bc data is deseasonlized and detrended (mean close to zero); scale = TRUE divides by standard deviation
+      }, by = .(lat, lon, member)]
+      
+      
       # Format data for EOFs
       out %>%
-        dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+        dplyr::select(time, lon, lat, member, detrended.SLPa.scaled) %>%
         distinct(.) %>%
         as.data.frame(.) %>%
         unite("crds", lat, lon, sep = "-") %>%
-        pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
+        pivot_wider(., names_from= crds, values_from = detrended.SLPa.scaled) -> EOF.dat
       
       # Calculate EOF weights
       lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
       
       length(lat)
+      ncol(EOF.dat[,-c(1:2)])
       
       weights <- sqrt(cos(lat*pi/180))
-      
-      lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
       
       # Run EOF
       print("Running EOF")
       eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
       
-      length(eof$U[,1])
       
       # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
       # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
       U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+      
+      PC1.dat <- as.matrix(EOF.dat[, -c(1:2)]) %*% U.1 %>%
+        as.data.frame() %>%
+        mutate(time = EOF.dat$time,
+               V1 = scale(as.numeric(V1)),
+               member = unique(EOF.dat$member)) %>%
+        rename(PC1 = V1) %>%
+        mutate(PC1= as.numeric(PC1))
       
       #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
       
@@ -2082,26 +2165,30 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
       
       # output dataframe
-      eof.out <- expand.grid(
-        time = EOF.dat$time,
+      EOF1.dat <- expand.grid(
         location = colnames(EOF.dat[, -c(1,2)]),
         stringsAsFactors = FALSE) %>%
         mutate(member= unique(EOF.dat$member),
-               EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-               PC1 = U.1[match(.$time, EOF.dat$time)])
+               EOF1 = V.1[match(.$location, colnames(EOF.dat))])
       
-      setDT(eof.out)
-      fcm.slp.EOF2 <- bind_rows(fcm.slp.EOF2, eof.out)
+      setDT(EOF1.dat)
+      
+      fcm.slp.EOF1.2 <- bind_rows(fcm.slp.EOF1.2, EOF1.dat)
+      fcm.slp.PC1.2<- bind_rows(fcm.slp.PC1.2, PC1.dat)
       
     }
     
     # BIND CHUNKS
-    rbind(fcm.slp.EOF1, fcm.slp.EOF2) -> fcm.slp.EOF
+    rbind(fcm.slp.EOF1.1, fcm.slp.EOF1.2) -> fcm.slp.EOF1
+    rbind(fcm.slp.PC1.1, fcm.slp.PC1.2) -> fcm.slp.PC1
     
-    setDT(fcm.slp.EOF)
+    setDT(fcm.slp.EOF1)
+    setDT(fcm.slp.PC1)
     
     # Save file
-    saveRDS(fcm.slp.EOF, paste0(dir, "Output/FCM_SLPa_EOF.rda"))
+    saveRDS(fcm.slp.EOF1, paste0(dir, "Output/FCM_slpa_EOF1.rda"))
+    saveRDS(fcm.slp.PC1, paste0(dir, "Output/FCM_slpa_PC1.rda"))
+    
   
   # MDM SLP ----
   files <- list.files(mdm.slp.dir, full.names = TRUE)
@@ -2122,29 +2209,35 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
              month = lubridate::month(time),
              day = lubridate::day(time),
              member = substr(files[ii], 68, 72)) %>% # extracting ensemble member #
-      group_by(lat, lon, month, member) %>%
       mutate(mean.month.SLP = mean(PSL),
              sd.month.SLP = sd(PSL)) %>% # compute monthly mean by grid cell and member
       ungroup() %>%
-      mutate(SLPa.z = (PSL - mean.month.SLP)/sd.month.SLP,
+      mutate(SLPa.deseasoned = PSL-mean.month.SLP, # remove monthly climatology
              time.index = row_number()) -> out # compute anomalies/z-scores
     
     
     # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
     setDT(out) # convert to data.table
     
-    out[, detrended.SLPa.z := { # output data table column
-      fit <- lm(SLPa.z ~ time.index)  # Fit linear model for each lat/lon group across months/years
+    out[, detrended.SLPa := { # output data table column
+      fit <- lm(SLPa.deseasoned ~ time.index)  # Fit linear model for each lat/lon group across months/years
       residuals(fit)           # Extract residuals as detrended values
     }, by = .(lat, lon, member)]
     
+    
+    # Scale each grid point by its SD
+    out[, detrended.SLPa.scaled := { # output data table column
+      scale(detrended.SLPa, center = FALSE, scale = TRUE) # center = FALSE bc data is deseasonlized and detrended (mean close to zero); scale = TRUE divides by standard deviation
+    }, by = .(lat, lon, member)]
+    
+    
     # Format data for EOFs
     out %>%
-      dplyr::select(time, lon, lat, member, detrended.SLPa.z) %>%
+      dplyr::select(time, lon, lat, member, detrended.SLPa.scaled) %>%
       distinct(.) %>%
       as.data.frame(.) %>%
       unite("crds", lat, lon, sep = "-") %>%
-      pivot_wider(., names_from= crds, values_from = detrended.SLPa.z) -> EOF.dat
+      pivot_wider(., names_from= crds, values_from = detrended.SLPa.scaled) -> EOF.dat
     
     # Calculate EOF weights
     lat <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 1))
@@ -2154,17 +2247,22 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     
     weights <- sqrt(cos(lat*pi/180))
     
-    lon <- as.numeric(sapply(strsplit(colnames(EOF.dat[,-c(1:2)]), "-"), `[`, 2))
-    
     # Run EOF
     print("Running EOF")
     eof <- FactoMineR::svd.triplet(cov(EOF.dat[,-c(1:2)]), col.w=na.omit(weights)) #weighting the columns
     
-    length(eof$U[,1])
     
     # Pull out loadings and pc scores, scale, bind to lat/lon. Because our rows represent time and columns represent location in 
     # EOF.dat, U represents temporal patterns (PC scores) and V represents spatial patterns (loadings)
     U.1 <- scale(eof$U[,1] * eof$vs[1]) # temporal pattern (PC1 score) 
+    
+    PC1.dat <- as.matrix(EOF.dat[, -c(1:2)]) %*% U.1 %>%
+      as.data.frame() %>%
+      mutate(time = EOF.dat$time,
+             V1 = scale(as.numeric(V1)),
+             member = unique(EOF.dat$member)) %>%
+      rename(PC1 = V1) %>%
+      mutate(PC1= as.numeric(PC1))
     
     #U.2 <- scale(eof$U[,2] * eof$vs[2]) # temporal pattern (PC2 score)
     
@@ -2173,127 +2271,101 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     #V.2 <- scale(eof$V[,2]) # spatial pattern (EOF2 loading)
     
     # output dataframe
-    eof.out <- expand.grid(
-      time = EOF.dat$time,
+    EOF1.dat <- expand.grid(
       location = colnames(EOF.dat[, -c(1,2)]),
       stringsAsFactors = FALSE) %>%
       mutate(member= unique(EOF.dat$member),
-             EOF1 = V.1[match(.$location, colnames(EOF.dat))],
-             PC1 = U.1[match(.$time, EOF.dat$time)])
+             EOF1 = V.1[match(.$location, colnames(EOF.dat))])
     
-    setDT(eof.out)
-    mdm.slp.EOF <- bind_rows(mdm.slp.EOF, eof.out)
+    setDT(EOF1.dat)
     
+    mdm.slp.EOF1 <- bind_rows(mdm.slp.EOF1, EOF1.dat)
+    mdm.slp.PC1<- bind_rows(mdm.slp.PC1, PC1.dat)
     
   }
   
-  setDT(mdm.slp.EOF)
+  setDT(mdm.slp.EOF1)
+  setDT(mdm.slp.PC1)
+  
   
   # Save file
-  saveRDS(mdm.slp.EOF, paste0(dir, "Output/MDM_SLPa_EOF.rda"))
+  saveRDS(mdm.slp.EOF1, paste0(dir, "Output/MDM_SLPa_EOF1.rda"))
+  saveRDS(mdm.slp.PC1, paste0(dir, "Output/MDM_SLPa_PC1.rda"))
   
   
-  # PLOT EOF loadings ----
+  
+  # PLOT EOF1 loadings and PC1 scores----
   # fcm sst
-  fcm.sst <- readRDS(paste0(dir, "Output/FCM_SSTa_EOF.rda"))
-  
- fcm.sst %>%
-   group_by(location, member) %>%
-   distinct(EOF1) %>%
-   mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
-          lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2))) %>%
-   rename(value = EOF1) %>%
-   filter(is.na(value) == FALSE) %>%
-   setDT(.) -> EOF1
- 
- fcm.sst %>%
-   group_by(time, member) %>%
-   distinct(PC1) %>%
-   rename(value = PC1) %>%
-   filter(is.na(value) == FALSE) %>%
-   setDT(.) -> PC1
-  
-ggplot(PC1, aes(time, value))+
-  geom_line(linewidth = 1)+
-  facet_wrap(~member)
- 
- ggplot()+
-   geom_tile(EOF1, mapping= aes(lon, lat, fill = value))+
-   geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
-   coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
-   xlab("Latitude")+
-   facet_wrap(~member)+
-   ylab("Longitude")+
-   scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                        midpoint=  median(EOF1$value),
-                        name = "EOF 1",
-                        limits = c(-max(EOF1$value), max(EOF1$value)))
- 
- ggsave("./Figures/MDM.SSTa.EOF1.png", width = 8, height=  6, units = "in")
- 
+    fcm.sst.eof <- readRDS(paste0(dir, "Output/FCM_SSTa_EOF1.rda")) %>%
+                    mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
+                           lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
+    fcm.sst.pc <- readRDS(paste0(dir, "Output/FCM_SSTa_PC1.rda"))
+    
+    # EOF1
+    ggplot()+
+     geom_tile(fcm.sst.eof, mapping= aes(lon, lat, fill = EOF1))+
+     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+     coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+     xlab("Latitude")+
+     facet_wrap(~member)+
+     ggtitle("FCM SSTa EOF1")+
+     ylab("Longitude")+
+     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                          midpoint=  median(na.omit(fcm.sst.eof$EOF1)),
+                          name = "EOF 1",
+                          limits = c(-(max(na.omit(abs(fcm.sst.eof$EOF1)))), max(na.omit(abs(fcm.sst.eof$EOF1)))))
+   
+   ggsave("./Figures/FCM.SSTa.EOF1.png", width = 11, height=  8.5, units = "in")
+   
+   # PC1
+   ggplot()+
+     geom_line(fcm.sst.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     xlab("Time")+
+     facet_wrap(~member)+
+     ylab("PC1")+
+     theme_bw()+
+     ggtitle("FCM SSTa PC1")+
+     theme(axis.text  = element_text(size = 10),
+           axis.title = element_text(size = 12))
+   
+   ggsave("./Figures/FCM.SSTa.PC1.png", width = 11, height=  8.5, units = "in")
+   
 
  # mdm sst
-  mdm.sst <- readRDS(paste0(dir, "Output/MDM_SSTa_EOF.rda"))
-  
-  mdm.sst %>%
-    group_by(location, member) %>%
-    distinct(EOF1) %>%
-    mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
-           lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2))) %>%
-    rename(value = EOF1) %>%
-    filter(is.na(value) == FALSE) %>%
-    setDT(.) -> EOF1
-  
-  
-  ggplot()+
-    geom_tile(EOF1, mapping= aes(lon, lat, fill = value))+
-    geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
-    coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
-    xlab("Latitude")+
-    facet_wrap(~member)+
-    ylab("Longitude")+
-    scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                         midpoint=  median(EOF1$value),
-                         name = "EOF 1",
-                         limits = c(-max(EOF1$value), max(EOF1$value)))
-  
-  
-  ggsave("./Figures/MDM.SSTa.EOF1.png", width = 8, height=  6, units = "in")
-  
-  
-  
-  
-  mdm.sst %>%
-    mutate(time = ymd(time),
-           year = year(time)) %>%
-    group_by(year, member) %>%
-    reframe(m = mean(pc1)) -> plot.dat
-  
-  ggplot(plot.dat, aes(year, m, color = member))+
-    geom_line(linewidth = 0.75, alpha = 0.25)+
-    theme_bw()
-  
-  ggplot(plot.dat, aes(year, m))+
-    facet_wrap(~member)+
-    geom_line()+
-    theme_bw()
-  
-  mdm.sst %>%
-    mutate(time = ymd(time),
-           year = year(time)) -> plot.dat2
-  
-  ggplot(plot.dat2, aes(time, pc1))+
-    facet_wrap(~member)+
-    geom_line()+
-    ggtitle("MDM sst")+
-    theme_bw()
-  
-  ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
-    facet_wrap(~member)+
-    geom_line()+
-    ylab("Loading 1")+
-    ggtitle("MDM sst")+
-    theme_bw()
+   mdm.sst.eof <- readRDS(paste0(dir, "Output/MDM_SSTa_EOF1.rda")) %>%
+     mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
+            lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
+   mdm.sst.pc <- readRDS(paste0(dir, "Output/MDM_SSTa_PC1.rda"))
+   
+   # EOF1
+   ggplot()+
+     geom_tile(mdm.sst.eof, mapping= aes(lon, lat, fill = EOF1))+
+     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+     coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+     xlab("Latitude")+
+     facet_wrap(~member)+
+     ggtitle("MDM SSTa EOF1")+
+     ylab("Longitude")+
+     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                          midpoint=  median(na.omit(mdm.sst.eof$EOF1)),
+                          name = "EOF 1",
+                          limits = c(-(max(na.omit(abs(mdm.sst.eof$EOF1)))), max(na.omit(abs(mdm.sst.eof$EOF1)))))
+   
+   ggsave("./Figures/MDM.SSTa.EOF1.png", width = 11, height=  8.5, units = "in")
+   
+   # PC1
+   ggplot()+
+     geom_line(mdm.sst.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     xlab("Time")+
+     facet_wrap(~member)+
+     ylab("PC1")+
+     theme_bw()+
+     ggtitle("MDM SSTa PC1")+
+     theme(axis.text  = element_text(size = 10),
+           axis.title = element_text(size = 12))
+   
+   ggsave("./Figures/MDM.SSTa.PC1.png", width = 11, height=  8.5, units = "in")
+   
   
   # fcm slp
   fcm.slp <- readRDS(paste0(dir, "Output/FCM_SLPa_EOF.rda"))
