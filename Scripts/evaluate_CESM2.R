@@ -2301,6 +2301,9 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
                            lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
     fcm.sst.pc <- readRDS(paste0(dir, "Output/FCM_SSTa_PC1.rda"))
     
+    fcm.sst.pc %>%
+      mutate(year = year(time)) -> pp
+    
     # EOF1
     ggplot()+
      geom_tile(fcm.sst.eof, mapping= aes(lon, lat, fill = EOF1))+
@@ -2326,7 +2329,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      theme_bw()+
      ggtitle("FCM SSTa PC1")+
      theme(axis.text  = element_text(size = 10),
-           axis.title = element_text(size = 12))
+           axis.title = element_text(size = 11))
    
    ggsave("./Figures/FCM.SSTa.PC1.png", width = 11, height=  8.5, units = "in")
    
@@ -2362,43 +2365,85 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      theme_bw()+
      ggtitle("MDM SSTa PC1")+
      theme(axis.text  = element_text(size = 10),
-           axis.title = element_text(size = 12))
+           axis.title = element_text(size = 11))
    
    ggsave("./Figures/MDM.SSTa.PC1.png", width = 11, height=  8.5, units = "in")
    
   
   # fcm slp
-  fcm.slp <- readRDS(paste0(dir, "Output/FCM_SLPa_EOF.rda"))
-  
-  fcm.slp %>%
-    mutate(time = ymd(time),
-           year = year(time)) %>%
-    group_by(year, member) %>%
-    reframe(m = mean(pc1)) -> plot.dat
-  
-  ggplot(plot.dat, aes(year, m, color = member))+
-    geom_line(linewidth = 0.75, alpha = 0.25)+
-    theme_bw()
-  
-  ggplot(plot.dat, aes(year, m))+
-    facet_wrap(~member)+
-    geom_line()+
-    theme_bw()
-  
-  fcm.slp %>%
-    mutate(time = ymd(time),
-           year = year(time)) -> plot.dat2
-  
-  ggplot(plot.dat2, aes(time, pc1))+
-    facet_wrap(~member)+
-    geom_line()+
-    ggtitle("FCM slp")+
-    theme_bw()
-  
-  ggplot(plot.dat2 %>% filter(year > 1900 & year < 2000), aes(time, pc1))+
-    facet_wrap(~member)+
-    geom_line()+
-    ylab("Loading 1")+
-    ggtitle("FCM slp")+
-    theme_bw()
-  
+   fcm.slp.eof <- readRDS(paste0(dir, "Output/FCM_SLPa_EOF1.rda")) %>%
+     mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
+            lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
+   fcm.slp.pc <- readRDS(paste0(dir, "Output/FCM_SLPa_PC1.rda"))
+   
+   fcm.slp.pc %>%
+     mutate(year = year(time)) -> pp
+   
+   # EOF1
+   ggplot()+
+     geom_tile(fcm.slp.eof, mapping= aes(lon, lat, fill = EOF1))+
+     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+     coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+     xlab("Latitude")+
+     facet_wrap(~member)+
+     ggtitle("FCM SLPa EOF1")+
+     ylab("Longitude")+
+     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                          midpoint=  median(na.omit(fcm.slp.eof$EOF1)),
+                          name = "EOF 1",
+                          limits = c(-(max(na.omit(abs(fcm.slp.eof$EOF1)))), max(na.omit(abs(fcm.slp.eof$EOF1)))))
+   
+   ggsave("./Figures/FCM.SLPa.EOF1.png", width = 11, height=  8.5, units = "in")
+   
+   # PC1
+   ggplot()+
+     geom_line(fcm.slp.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     xlab("Time")+
+     facet_wrap(~member)+
+     ylab("PC1")+
+     theme_bw()+
+     ggtitle("FCM SLPa PC1")+
+     theme(axis.text  = element_text(size = 10),
+           axis.title = element_text(size = 11))
+   
+   ggsave("./Figures/FCM.SLPa.PC1.png", width = 11, height=  8.5, units = "in")
+   
+   # mdm slp
+   mdm.slp.eof <- readRDS(paste0(dir, "Output/MDM_SLPa_EOF1.rda")) %>%
+     mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
+            lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
+   mdm.slp.pc <- readRDS(paste0(dir, "Output/MDM_SLPa_PC1.rda"))
+   
+   mdm.slp.pc %>%
+     mutate(year = year(time)) -> pp
+   
+   # EOF1
+   ggplot()+
+     geom_tile(mdm.slp.eof, mapping= aes(lon, lat, fill = EOF1))+
+     geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+     coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+     xlab("Latitude")+
+     facet_wrap(~member)+
+     ggtitle("MDM SLPa EOF1")+
+     ylab("Longitude")+
+     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                          midpoint=  median(na.omit(mdm.slp.eof$EOF1)),
+                          name = "EOF 1",
+                          limits = c(-(max(na.omit(abs(mdm.slp.eof$EOF1)))), max(na.omit(abs(mdm.slp.eof$EOF1)))))
+   
+   ggsave("./Figures/MDM.SLPa.EOF1.png", width = 11, height=  8.5, units = "in")
+   
+   # PC1
+   ggplot()+
+     geom_line(mdm.slp.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     xlab("Time")+
+     facet_wrap(~member)+
+     ylab("PC1")+
+     theme_bw()+
+     ggtitle("MDM SLPa PC1")+
+     theme(axis.text  = element_text(size = 10),
+           axis.title = element_text(size = 11))
+   
+   ggsave("./Figures/MDM.SLPa.PC1.png", width = 11, height=  8.5, units = "in")
+   
+   
