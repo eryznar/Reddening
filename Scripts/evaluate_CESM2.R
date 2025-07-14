@@ -2427,7 +2427,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
      xlab("Latitude")+
      facet_wrap(~member)+
-     ggtitle("MDM SSTa EOF1")+
+     ggtitle("MDM SLPa EOF1")+
      ylab("Longitude")+
      scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
                           midpoint=  median(na.omit(mdm.slp.eof$EOF1)),
