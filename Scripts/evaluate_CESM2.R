@@ -2192,7 +2192,8 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
   
   # MDM SLP ----
   files <- list.files(mdm.slp.dir, full.names = TRUE)
-  mdm.slp.EOF <- tibble()
+  mdm.slp.EOF1 <- tibble()
+  mdm.slp.PC1 <- tibble()
   
   for(ii in 1:length(files)){
     
@@ -2299,7 +2300,8 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
     fcm.sst.eof <- readRDS(paste0(dir, "Output/FCM_SSTa_EOF1.rda")) %>%
                     mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
                            lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
-    fcm.sst.pc <- readRDS(paste0(dir, "Output/FCM_SSTa_PC1.rda"))
+    fcm.sst.pc <- readRDS(paste0(dir, "Output/FCM_SSTa_PC1.rda")) %>%
+                  mutate(year = year(time))
     
     fcm.sst.pc %>%
       mutate(year = year(time)) -> pp
@@ -2322,7 +2324,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    
    # PC1
    ggplot()+
-     geom_line(fcm.sst.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     geom_line(fcm.sst.pc, mapping= aes(year, PC1), linewidth = 0.15)+
      xlab("Time")+
      facet_wrap(~member)+
      ylab("PC1")+
@@ -2338,7 +2340,8 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    mdm.sst.eof <- readRDS(paste0(dir, "Output/MDM_SSTa_EOF1.rda")) %>%
      mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
             lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
-   mdm.sst.pc <- readRDS(paste0(dir, "Output/MDM_SSTa_PC1.rda"))
+   mdm.sst.pc <- readRDS(paste0(dir, "Output/MDM_SSTa_PC1.rda")) %>%
+     mutate(year = year(time))
    
    # EOF1
    ggplot()+
@@ -2358,7 +2361,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    
    # PC1
    ggplot()+
-     geom_line(mdm.sst.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     geom_line(mdm.sst.pc, mapping= aes(year, PC1), linewidth = 0.15)+
      xlab("Time")+
      facet_wrap(~member)+
      ylab("PC1")+
@@ -2374,10 +2377,10 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    fcm.slp.eof <- readRDS(paste0(dir, "Output/FCM_SLPa_EOF1.rda")) %>%
      mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
             lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
-   fcm.slp.pc <- readRDS(paste0(dir, "Output/FCM_SLPa_PC1.rda"))
-   
-   fcm.slp.pc %>%
-     mutate(year = year(time)) -> pp
+   fcm.slp.pc <- readRDS(paste0(dir, "Output/FCM_SLPa_PC1.rda")) %>%
+     mutate(year = year(time),
+            time = as.Date(time, format = "%Y-%m-%d"),
+            time_num = as.numeric(time))
    
    # EOF1
    ggplot()+
@@ -2397,7 +2400,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    
    # PC1
    ggplot()+
-     geom_line(fcm.slp.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     geom_line(fcm.slp.pc, mapping= aes(time, PC1, group = 1), linewidth = 0.15)+
      xlab("Time")+
      facet_wrap(~member)+
      ylab("PC1")+
@@ -2412,10 +2415,10 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    mdm.slp.eof <- readRDS(paste0(dir, "Output/MDM_SLPa_EOF1.rda")) %>%
      mutate(lat = as.numeric(sapply(strsplit(location, "-"), `[`, 1)),
             lon = as.numeric(sapply(strsplit(location, "-"), `[`, 2)))
-   mdm.slp.pc <- readRDS(paste0(dir, "Output/MDM_SLPa_PC1.rda"))
-   
-   mdm.slp.pc %>%
-     mutate(year = year(time)) -> pp
+   mdm.slp.pc <- readRDS(paste0(dir, "Output/MDM_SLPa_PC1.rda")) %>%
+     mutate(year = year(time),
+            time = as.Date(time, format = "%Y-%m-%d"),
+            time_num = as.numeric(time))
    
    # EOF1
    ggplot()+
@@ -2424,7 +2427,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
      xlab("Latitude")+
      facet_wrap(~member)+
-     ggtitle("MDM SLPa EOF1")+
+     ggtitle("MDM SSTa EOF1")+
      ylab("Longitude")+
      scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
                           midpoint=  median(na.omit(mdm.slp.eof$EOF1)),
@@ -2435,9 +2438,10 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
    
    # PC1
    ggplot()+
-     geom_line(mdm.slp.pc, mapping= aes(time, PC1), linewidth = 0.15)+
+     geom_line(mdm.slp.pc, mapping= aes(time, PC1, group = 1), linewidth = 0.15)+
      xlab("Time")+
      facet_wrap(~member)+
+     #scale_x_discrete(breaks = seq(min(mdm.slp.pc$time), max(mdm.slp.pc$time), by = 100))+
      ylab("PC1")+
      theme_bw()+
      ggtitle("MDM SLPa PC1")+
@@ -2445,5 +2449,4 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
            axis.title = element_text(size = 11))
    
    ggsave("./Figures/MDM.SLPa.PC1.png", width = 11, height=  8.5, units = "in")
-   
    
