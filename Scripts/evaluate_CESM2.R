@@ -13,6 +13,10 @@ mapWorld <- map_data('world', wrap=c(-25,335), ylim=c(-55,75))
 
 yrs <- 1850:2013 # these are years that are similar across SLP and SST models
 
+# Color palette
+library(oce)
+
+new.col <- oceColorsPalette(64)
 
 # 1) DOWNLOAD CESM2 MODEL OUTPUTS ----------------------------------------------
 # Authenticate google account
@@ -1678,7 +1682,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
       print(paste0("Processing file ", (1:length(files))[ii], "/", length(files))) # for progress tracking
       
       # load and process file
-      tidync(files[ii]) %>%
+      tidync(files[1]) %>%
         hyper_filter(lon = lon >= 125 & lon <= 255,
                      lat = lat >= 20 & lat <= 68) %>% # extra tropical north pacific region
         #time = time > 711475) %>% # greater than 1947
@@ -1687,7 +1691,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
         mutate(time = origin_date + lubridate::days(time),
                year = lubridate::year(time),
                month = lubridate::month(time),
-               member = substr(files[ii], 81, 88)) %>% # extracting ensemble member #
+               member = substr(files[1], 81, 88)) %>% # extracting ensemble member #
         group_by(lat, lon, month, member) %>%
         mutate(mean.month.SST = mean(SST),
                sd.month.SST = sd(SST)) %>% # compute monthly mean by grid cell and member
@@ -1695,6 +1699,18 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
         mutate(SSTa.deseasoned = SST-mean.month.SST, # remove monthly climatology
                time.index = row_number()) -> out # compute anomalies/z-scores
       
+      out %>%
+        group_by(lon, lat) %>%
+        reframe(mean.sst = mean(SST)) -> pp
+      
+    
+      ggplot()+
+        geom_tile(pp, mapping = aes(as.numeric(lon), as.numeric(lat), fill= mean.sst))+
+        geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
+        coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
+        xlab("Latitude")+
+        scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
+                             midpoint=  median(na.omit(pp$mean.sst)))
       
       # Detrend data and extract residuals, using data.table package (AWESOME!) to speed things up
       setDT(out) # convert to data.table
@@ -2315,10 +2331,7 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      facet_wrap(~member)+
      ggtitle("FCM SSTa EOF1")+
      ylab("Longitude")+
-     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                          midpoint=  median(na.omit(fcm.sst.eof$EOF1)),
-                          name = "EOF 1",
-                          limits = c(-(max(na.omit(abs(fcm.sst.eof$EOF1)))), max(na.omit(abs(fcm.sst.eof$EOF1)))))
+     scale_fill_gradientn(colors = new.col)
    
    ggsave("./Figures/FCM.SSTa.EOF1.png", width = 11, height=  8.5, units = "in")
    
@@ -2352,10 +2365,8 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      facet_wrap(~member)+
      ggtitle("MDM SSTa EOF1")+
      ylab("Longitude")+
-     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                          midpoint=  median(na.omit(mdm.sst.eof$EOF1)),
-                          name = "EOF 1",
-                          limits = c(-(max(na.omit(abs(mdm.sst.eof$EOF1)))), max(na.omit(abs(mdm.sst.eof$EOF1)))))
+     scale_fill_gradientn(colors = new.col)
+   
    
    ggsave("./Figures/MDM.SSTa.EOF1.png", width = 11, height=  8.5, units = "in")
    
@@ -2391,10 +2402,8 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      facet_wrap(~member)+
      ggtitle("FCM SLPa EOF1")+
      ylab("Longitude")+
-     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                          midpoint=  median(na.omit(fcm.slp.eof$EOF1)),
-                          name = "EOF 1",
-                          limits = c(-(max(na.omit(abs(fcm.slp.eof$EOF1)))), max(na.omit(abs(fcm.slp.eof$EOF1)))))
+     scale_fill_gradientn(colors = new.col)
+   
    
    ggsave("./Figures/FCM.SLPa.EOF1.png", width = 11, height=  8.5, units = "in")
    
@@ -2429,10 +2438,8 @@ ggsave("./Figures/CESM2_SD_MEAN.png", height= 7, width = 5, units = "in")
      facet_wrap(~member)+
      ggtitle("MDM SLPa EOF1")+
      ylab("Longitude")+
-     scale_fill_gradient2(high = scales::muted("red"), low = scales::muted("blue"), mid = "white",
-                          midpoint=  median(na.omit(mdm.slp.eof$EOF1)),
-                          name = "EOF 1",
-                          limits = c(-(max(na.omit(abs(mdm.slp.eof$EOF1)))), max(na.omit(abs(mdm.slp.eof$EOF1)))))
+     scale_fill_gradientn(colors = new.col)
+   
    
    ggsave("./Figures/MDM.SLPa.EOF1.png", width = 11, height=  8.5, units = "in")
    
