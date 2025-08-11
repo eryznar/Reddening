@@ -33,51 +33,37 @@ library(oce)
 
 new.col <- oceColorsPalette(64)
 
-# Identify folders to download files from
-fcm.sst.dir <- paste0(dir, "Data/CESM2 ensemble/SST/FCM/") #FCM SST
-mdm.sst.dir <- paste0(dir, "Data/CESM2 ensemble/SST/MDM/") #MDM SST
+theme_set(theme_bw())
 
-fcm.slp.dir <- paste0(dir, "Data/CESM2 ensemble/SLP/FCM/") #FCM SLP
-mdm.slp.dir <- paste0(dir, "Data/CESM2 ensemble/SLP/MDM/") #MDM SLP
+# Identify folders to download files from
+fcm.sst.dir <- "./Data/CESM2 ensemble/SST/FCM/"
+fcm.slp.dir <- "./Data/CESM2 ensemble/SLP/FCM/"
+
+# fcm.sst.dir <- paste0(dir, "./Data/CESM2 ensemble/SST/FCM/") #FCM SST
+# mdm.sst.dir <- paste0(dir, "Data/CESM2 ensemble/SST/MDM/") #MDM SST
+# 
+# fcm.slp.dir <- paste0(dir, "Data/CESM2 ensemble/SLP/FCM/") #FCM SLP
+# mdm.slp.dir <- paste0(dir, "Data/CESM2 ensemble/SLP/MDM/") #MDM SLP
+
+
+## Start with SST EOF/PC-----------
 
 # Extract time info for processing below (same across files)
 files <- list.files(fcm.sst.dir, full.names = TRUE)
 
-### Calculate EOF on SST data ----
+# Calculate EOF on SST data
 # first, load data
 nc.sst <- nc_open(files[1]) # Isolate one CESM member
 
-d <- nc.sst
-
-# Load the NetCDF file
-nc.sst <- tidync(files[1])
-
-# Apply spatial filter on lat and lon using hyper_filter
-SST <- nc.sst %>%
-  hyper_filter(lat = between(lat, 20, 70),
-               lon = between(lon, 120, 250)) %>% 
-  hyper_array(select_var = "SST")
-
-SST <- SST$SST
-
-dim(SST) 
-names(SST) <- c("lon", "lat", "time")
-# 105 lon x 53 lat x 1980 months
+# d <- nc.sst
 
 
-# get x and y for plotting 
-x <- dimnames(SST)[1]
-y <- dimnames(SST)[2]
-
-# wrangle for plotting
-x <- as.numeric(x[[1]])
-y <- as.numeric(y[[1]])
 
 # this is clunky - get the correct time variable for CESM using ncdf4.helper
 nc.sst <- nc_open(files[1])
 d <- nc.get.time.series(nc.sst)
-
-names(dim(SST)) <- c("lon", "lat", "time")
+# 
+# names(dim(SST)) <- c("lon", "lat", "time")
 
 # now trim SST to 1950:2014 (when we expect EOF to be the PDO!)
 # Split each string at "-" and put results into a matrix
@@ -87,73 +73,106 @@ date_parts <- str_split_fixed(d, "-", n = 3)
 year <- as.numeric(date_parts[, 1])
 month <- as.numeric(date_parts[, 2])
 
+# reload the NetCDF file
+nc.sst <- tidync(files[1])
+
+# Apply spatial filter on lat and lon using hyper_filter
+
+# and also filter for 1950-2014
+
+wanted <- which(year >= 1950 & year <= 2014)
+
+# limit d, month, year to same years
+d <- d[year >= 1950 & year <= 2014]
+month <- month[year >= 1950 & year <= 2014]
+year <- year[year >= 1950 & year <= 2014]
+
+SST <- nc.sst %>%
+  hyper_filter(lat = between(lat, 20, 70),
+               lon = between(lon, 120, 250),
+               time = index %in% wanted) %>% 
+  hyper_array(select_var = "SST")
+
+
+
+# Filter for the selected lat/lon after hyper_filter and pull their values as x,y
+
+lon_tbl <- attr(SST, "transforms")$lon
+
+x <- lon_tbl %>% 
+  filter(selected) %>% 
+  pull(lon)
+
+
+lat_tbl <- attr(SST, "transforms")$lat
+
+y <- lat_tbl %>% 
+  filter(selected) %>% 
+  pull(lat)
+
+x; y
+
+SST <- SST$SST
+
+dim(SST) 
+names(dim(SST)) <- c("lon", "lat", "time")
+# 105 lon x 53 lat x 780 months
+
+
+
 # limit SST to the desired years
-SST <- SST[, , year %in% 1950:2014] 
+# SST <- SST[, , year %in% 1950:2014] 
 
 # now get monthly means!
-monthly_means <- Season(
-  data = SST,
-  time_dim = "time",   # specify your time dimension name
-  monini = 1,           # first month of your data time series (e.g. January)
-  moninf = 1,           # start month for averaging (January)
-  monsup = 1,          # end month for averaging (December)
-  method = mean,        # function to aggregate data
-  na.rm = TRUE
-)
+# names(dim(SST)) <- c("lon", "lat", "time")
+# monthly_means <- Season(
+#   data = SST,
+#   time_dim = "time",   # specify your time dimension name
+#   monini = 1,           # first month of your data time series (e.g. January)
+#   moninf = 1,           # start month for averaging (January)
+#   monsup = 2,          # end month for averaging (December)
+#   method = mean,        # function to aggregate data
+#   na.rm = TRUE
+# )
+# 
+# 
+# dimnames(monthly_means)
+# 
+# dim(monthly_means)
+# 
+# 
+# str(monthly_means)
+# 
+# names(dim(monthly_means))
+# 
+# View(SST[,1,1])
+# # extract study area
+# # 20-70 deg. N, 120-250 deg. E
+# x <- ncvar_get(nc.sst, "lon")
+# y <- ncvar_get(nc.sst, "lat")
+# 
+# x; y # global, will need to be limited to study area
 
-
-dimnames(monthly_means)
-
-dim(monthly_means)
-
-str(monthly_means)
-
-names(dim(monthly_means))
-
-View(SST[,1,1])
-# extract study area
-# 20-70 deg. N, 120-250 deg. E
-x <- ncvar_get(nc.sst, "lon")
-y <- ncvar_get(nc.sst, "lat")
-
-x; y # global, will need to be limited to study area
-
-SST <- ncvar_get(nc.sst, "SST", verbose = F)
+# SST <- ncvar_get(nc.sst, "SST", verbose = F)
 
 # Change data from a 3-D array to a matrix of monthly data by grid point:
 # First, reverse order of dimensions ("transpose" array)
 SST <- aperm(SST, 3:1)  
 
 # limit x
-SST <- SST[(x>=120 & x <= 250),,]
+# SST <- SST[(x>=120 & x <= 250),,]
 
 # Change to matrix with column for each grid point, rows for monthly means
 SST <- matrix(SST, nrow=dim(SST)[1], ncol=prod(dim(SST)[2:3]))  
 
 # Keep track of corresponding latitudes and longitudes of each column:
 lat <- rep(y, length(x))   
-lon <- rep(x, each = length(y))   
+lon <- rep(x, each = length(y))
+
+
 dimnames(SST) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
 
-
-# Filter to region
-ebs.x <- c(125, 125, 255, 255, 125)
-#ebs.x <- ifelse(ebs.x > 180, ebs.x-360, ebs.x)
-ebs.y <- c(20, 68, 68, 20, 20)
-
-xp <- cbind(ebs.x, ebs.y)
-loc=cbind(lon, lat)
-check <- in.poly(loc, xp=xp)
-
-SST[,!check] <- NA
-
-m <- months(d)  # Extracts months from the date vector
-yr <- years(d)
-#m <- match(m, month.name)
-
-# # reset lat/lon
-# lat <- rep(y, length(x))   
-# lon <- rep(x, each = length(y))   
+   
 
 # and plot 
 SST.mean <- colMeans(SST)
@@ -172,14 +191,14 @@ land <- is.na(colMeans(SST))
 X <- SST[,!land] 
 
 
-f <- function(x) tapply(x, m, mean, na.rm = TRUE)  # function to compute monthly means for a single time series
+f <- function(x) tapply(x, month, mean, na.rm = TRUE)  # function to compute monthly means for a single time series
 # mu <- apply(SST.clean, 2, f)	# compute monthly means for each time series (cell)
 
 mu <- apply(X, 2, f)	# compute monthly means for each time series (cell)
 
 mu <- mu[rep(1:12, length(d)/12),]  # replicate means matrix for each year at each location
 
-mu <- mu[rep(1:12, floor(length(d)/12)),] 
+# mu <- mu[rep(1:12, floor(length(d)/12)),] 
 
 
 # anom <- SST.clean - mu   # compute matrix of anomalies
@@ -194,45 +213,211 @@ for(i in 1:ncol(anom)) {
 
 
 # get a vector of weights (square root of the cosine of latitude)
-temp1 <- str_split(colnames(anom), "E", simplify = T)[,1]
-lat <- as.numeric(str_split(temp1, "N", simplify = T)[,2])
-lon <- as.numeric(str_split(colnames(anom), "E", simplify = T)[,2])
 weight <- sqrt(cos(lat*pi/180))
 
 
-# EOF by era 
+# EOF
 # weighting the columns
-EOF.all <- svd.triplet(cov(anom), col.w=weight)
+EOF.all <- svd.triplet(cov(anom.detr), col.w=weight) # this wasn't detrended in the last version of the script,
+# might be a source of the problem?
 
-# get loadings for EOF1 and scale
-eig.1.all <- scale(EOF.all$U[,1])[,1]
+# get % variance explained by era
+var.all <- 100*round(prop.table(EOF.all$vs),3)
 
-plot.dat <- cbind(eig.1.all, lon, lat) %>% ## COULD THIS CAUSE THE ERROR??
-  as.data.frame(.) %>%
-  mutate(eig.1.all * -1)
+# get loadings for EOF1 and scale (reversing sign to match PDO)
+eig.1.all <- -scale(EOF.all$U[,1])[,1]
+
+# and get PC1 time series (reversing sign to match PDO)
+pc1.all = -scale(anom.detr %*% EOF.all$U[,1])
+
+# plot.dat <- cbind(eig.1.all, lon, lat) %>% ## COULD THIS CAUSE THE ERROR??
+# as.data.frame(.) %>%
+# mutate(eig.1.all * -1)
 
 lim <- range(eig.1.all)
 
-# Full time series!
+# plot loadings
+
+png("./Figures/FCM_SST_EOF1_example.png", res = 300, width = 6, height = 5, units = 'in')
+
 z <- rep(NA, ncol(SST))
 z[!land] <- eig.1.all
 z <- t(matrix(z, length(y))) 
+image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(lim[1], -lim[1]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
+contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+map('world2Hires', c('Canada', 'usa', 'USSR', 'Mexico', 'China', 'South Korea', 'North Korea', 'Japan') ,fill=T, add=T, lwd=1, col="darkgoldenrod3")
+mtext(paste("EOF1 1950-2014 (", var.all[1], "%)", sep=""), cex=0.8)
+
+dev.off()
+
+# plot PC1 time series - this looks legit as it captures the 1976/77 PDO switch
+
+# get decimal year and combine with PC1 in a DF to plot
+plot.pc1 <- data.frame(decimal_year = year + (month - 0.5)/12,
+                       PC1 = pc1.all,
+                       Rolling_13-month_mean = rollmean(pc1.all, 13, align = "center", fill = NA)) %>%
+  pivot_longer(cols = -decimal_year)
+
+ggplot(plot.pc1, aes(decimal_year, value, color = name)) +
+  geom_line() +
+  scale_color_manual(values = c("dark grey", "red")) 
+
+ggsave("./Figures/FCM_SST_PC1_time_series_example.png", width = 6, height = 4, units = 'in')
+
+## same thing with FCM SLP fields - examine EOF1/PC1 to make sure they look legit----------
+
+# Extract time info for processing below (same across files)
+files <- list.files(fcm.slp.dir, full.names = TRUE)
+
+# Calculate EOF on SLP data ----
+# first, load data
+nc.slp <- nc_open(files[1]) # Isolate one CESM member
+
+# this is clunky - get the correct time variable for CESM using ncdf4.helper
+nc.slp <- nc_open(files[1])
+d <- nc.get.time.series(nc.slp)
+
+# names(dim(SLP)) <- c("lon", "lat", "time")
+
+# now trim SLP to 1950:2014 
+# Split each string at "-" and put results into a matrix
+date_parts <- str_split_fixed(d, "-", n = 3)
+
+# Extract year and month as separate vectors
+year <- as.numeric(date_parts[, 1])
+month <- as.numeric(date_parts[, 2])
+
+# reload the NetCDF file
+nc.slp <- tidync(files[1])
+
+# Apply spatial filter on lat and lon using hyper_filter
+
+# and also filter for 1950-2014
+
+wanted <- which(year >= 1950 & year <= 2014)
+
+# limit d, month, year to same years
+d <- d[year >= 1950 & year <= 2014]
+month <- month[year >= 1950 & year <= 2014]
+year <- year[year >= 1950 & year <= 2014]
+
+SLP <- nc.slp %>%
+  hyper_filter(lat = between(lat, 20, 70),
+               lon = between(lon, 120, 250),
+               time = index %in% wanted) %>% 
+  hyper_array(select_var = "PSL")
+
+
+
+# Filter for the selected lat/lon after hyper_filter and pull their values as x,y
+
+lon_tbl <- attr(SLP, "transforms")$lon
+
+x <- lon_tbl %>% 
+  filter(selected) %>% 
+  pull(lon)
+
+
+lat_tbl <- attr(SLP, "transforms")$lat
+
+y <- lat_tbl %>% 
+  filter(selected) %>% 
+  pull(lat)
+
+x; y
+
+SLP <- SLP$PSL
+
+dim(SLP) 
+names(dim(SLP)) <- c("lon", "lat", "time")
+# 105 lon x 53 lat x 780 months
+
+# Change data from a 3-D array to a matrix of monthly data by grid point:
+# First, reverse order of dimensions ("transpose" array)
+SLP <- aperm(SLP, 3:1)  
+
+# Change to matrix with column for each grid point, rows for monthly means
+SLP <- matrix(SLP, nrow=dim(SLP)[1], ncol=prod(dim(SLP)[2:3]))  
+
+# Keep track of corresponding latitudes and longitudes of each column:
+lat <- rep(y, length(x))   
+lon <- rep(x, each = length(y))
+
+
+dimnames(SLP) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
+
+
+# and plot 
+SLP.mean <- colMeans(SLP)
+z <- t(matrix(SLP.mean,length(y)))  # Re-shape to a matrix with latitudes in columns, longitudes in rows
+image(x,y,z, col=new.col, ylim=c(20,68), xlim=c(120,250))
+contour(x, y, z, add=T, col="white")  
+map('world2Hires',fill=F,add=T, lwd=2)
+
+# that's totally right!
+
+f <- function(x) tapply(x, month, mean, na.rm = TRUE)  # function to compute monthly means for a single time series
+
+mu <- apply(SLP, 2, f)	# compute monthly means for each time series (cell)
+
+mu <- mu[rep(1:12, length(d)/12),]  # replicate means matrix for each year at each location
+
+anom <- SLP - mu   # compute matrix of anomalies
+
+# now detrend
+anom.detr <- anom
+for(i in 1:ncol(anom)) {
+  xx = seq(1,nrow(anom))
+  anom.detr[,i] = anom[,i] - predict(lm(anom[,i]~as.numeric(xx), na.action="na.exclude"), newdata=data.frame(xx=xx))
+}
+
+
+# get a vector of weights (square root of the cosine of latitude)
+weight <- sqrt(cos(lat*pi/180))
+
+# EOF
+# weighting the columns
+EOF.all <- svd.triplet(cov(anom.detr), col.w=weight) # this wasn't detrended in the last version of the script,
+# might be a source of the problem?
+
+# get % variance explained by era
+var.all <- 100*round(prop.table(EOF.all$vs),3)
+
+# get loadings for EOF1 and scale 
+eig.1.all <- scale(EOF.all$U[,1])[,1]
+
+# and get PC1 time series 
+pc1.all = scale(anom.detr %*% EOF.all$U[,1])
+
+# plot.dat <- cbind(eig.1.all, lon, lat) %>% ## COULD THIS CAUSE THE ERROR??
+# as.data.frame(.) %>%
+# mutate(eig.1.all * -1)
+
+lim <- range(eig.1.all)
+
+# plot loadings - these are totally legit as they capture the AL
+
+png("./Figures/FCM_SLP_EOF1_example.png", res = 300, width = 6, height = 5, units = 'in')
+
+z <- eig.1.all
+z <- t(matrix(z, length(y))) 
 image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
 contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
-map('world2Hires', c('Canada', 'usa', 'USSR', 'Mexico') ,fill=T, add=T, lwd=1, col="darkgoldenrod3")
-mtext(paste("EOF1 1949-2021 (", var.all[1], "%)", sep=""), cex=0.8)
-text(230, 63, labels = paste("r (PDO) = ", round(cor(pcs$pc1.all, pcs$pdo), 2), sep = ""), cex = cex)
+map('world2Hires', c('Canada', 'usa', 'USSR', 'Mexico', 'China', 'South Korea', 'North Korea', 'Japan') ,fill=T, add=T, lwd=1, col="darkgoldenrod3")
+mtext(paste("EOF1 1950-2014 (", var.all[1], "%)", sep=""), cex=0.8)
 
+dev.off()
 
-ggplot(plot.dat, aes(lon, lat, fill = eig.1.all))+
-  geom_tile()+
-  geom_polygon(data = mapWorld, aes(x=long, y = lat, group = group), fill = "darkgoldenrod", color = "black")+
-  coord_cartesian(ylim = c(20, 67.4), xlim = c(125, 260), expand = FALSE)+
-  xlab("Latitude")+
-  ggtitle("FCM SSTa EOF1")+
-  ylab("Longitude")+
-  scale_fill_gradientn(colors = new.col, limits = c(-(max(na.omit(abs(plot.dat$eig.1.all)))), max(na.omit(abs(plot.dat$eig.1.all)))))
+# plot PC1 time series - white noise, which is what we would expect
 
+# get decimal year and combine with PC1 in a DF to plot
+plot.pc1 <- data.frame(decimal_year = year + (month - 0.5)/12,
+                       PC1 = pc1.all,
+                       "Rolling_13-month_mean" = rollmean(pc1.all, 13, align = "center", fill = NA)) %>%
+  pivot_longer(cols = -decimal_year)
 
+ggplot(plot.pc1, aes(decimal_year, value, color = name)) +
+  geom_line() +
+  scale_color_manual(values = c("dark grey", "red")) 
 
-
+ggsave("./Figures/FCM_SLP_PC1_time_series_example.png", width = 6, height = 4, units = 'in')
