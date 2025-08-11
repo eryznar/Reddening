@@ -4,7 +4,7 @@ source("./Scripts/load.libs.functions.R")
 # several packages that are helpful for this process have been removed from CRAN, 
 # apparently because dependency PCICt was itself removed
 
-# these downloads require package "remotes"
+# these downloads may require package "remotes"
 
 # download dependency PCICt
 # remotes::install_version("PCICt", version = "0.5-4.3", repos = "http://cran.r-project.org")
@@ -119,42 +119,6 @@ names(dim(SST)) <- c("lon", "lat", "time")
 # 105 lon x 53 lat x 780 months
 
 
-
-# limit SST to the desired years
-# SST <- SST[, , year %in% 1950:2014] 
-
-# now get monthly means!
-# names(dim(SST)) <- c("lon", "lat", "time")
-# monthly_means <- Season(
-#   data = SST,
-#   time_dim = "time",   # specify your time dimension name
-#   monini = 1,           # first month of your data time series (e.g. January)
-#   moninf = 1,           # start month for averaging (January)
-#   monsup = 2,          # end month for averaging (December)
-#   method = mean,        # function to aggregate data
-#   na.rm = TRUE
-# )
-# 
-# 
-# dimnames(monthly_means)
-# 
-# dim(monthly_means)
-# 
-# 
-# str(monthly_means)
-# 
-# names(dim(monthly_means))
-# 
-# View(SST[,1,1])
-# # extract study area
-# # 20-70 deg. N, 120-250 deg. E
-# x <- ncvar_get(nc.sst, "lon")
-# y <- ncvar_get(nc.sst, "lat")
-# 
-# x; y # global, will need to be limited to study area
-
-# SST <- ncvar_get(nc.sst, "SST", verbose = F)
-
 # Change data from a 3-D array to a matrix of monthly data by grid point:
 # First, reverse order of dimensions ("transpose" array)
 SST <- aperm(SST, 3:1)  
@@ -172,8 +136,6 @@ lon <- rep(x, each = length(y))
 
 dimnames(SST) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
 
-   
-
 # and plot 
 SST.mean <- colMeans(SST)
 z <- t(matrix(SST.mean,length(y)))  # Re-shape to a matrix with latitudes in columns, longitudes in rows
@@ -181,27 +143,19 @@ image(x,y,z, col=new.col, ylim=c(20,68), xlim=c(125,255))
 contour(x, y, z, add=T, col="white")  
 map('world2Hires',fill=F,add=T, lwd=2)
 
-# remove seasonal means
-# SST.clean <- SST[, colSums(!is.na(SST)) > 0] # filtering columns with just NAs; COULD THIS CAUSE THE ERROR?
-
 # identify columns in SST matrix corresponding to land
 land <- is.na(colMeans(SST)) 
 
 # For analysis, we only use the columns of the matrix with non-missing values:
 X <- SST[,!land] 
 
-
-f <- function(x) tapply(x, month, mean, na.rm = TRUE)  # function to compute monthly means for a single time series
-# mu <- apply(SST.clean, 2, f)	# compute monthly means for each time series (cell)
+# function to compute monthly means for a single time series
+f <- function(x) tapply(x, month, mean, na.rm = TRUE)  
 
 mu <- apply(X, 2, f)	# compute monthly means for each time series (cell)
 
 mu <- mu[rep(1:12, length(d)/12),]  # replicate means matrix for each year at each location
 
-# mu <- mu[rep(1:12, floor(length(d)/12)),] 
-
-
-# anom <- SST.clean - mu   # compute matrix of anomalies
 anom <- X - mu   # compute matrix of anomalies
 
 # now detrend
@@ -255,7 +209,7 @@ dev.off()
 # get decimal year and combine with PC1 in a DF to plot
 plot.pc1 <- data.frame(decimal_year = year + (month - 0.5)/12,
                        PC1 = pc1.all,
-                       Rolling_13-month_mean = rollmean(pc1.all, 13, align = "center", fill = NA)) %>%
+                       "Rolling_13-month_mean" = rollmean(pc1.all, 13, align = "center", fill = NA)) %>%
   pivot_longer(cols = -decimal_year)
 
 ggplot(plot.pc1, aes(decimal_year, value, color = name)) +
@@ -306,8 +260,6 @@ SLP <- nc.slp %>%
                lon = between(lon, 120, 250),
                time = index %in% wanted) %>% 
   hyper_array(select_var = "PSL")
-
-
 
 # Filter for the selected lat/lon after hyper_filter and pull their values as x,y
 
