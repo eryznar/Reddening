@@ -5,9 +5,12 @@
 source("./Scripts/load.libs.functions.R")
 source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
 
+new.col <- oceColorsPalette(64)
 ### Process SST -----------------------------------------------------------------------------------------------------
 # Load data
-nc.sst <- nc_open(paste0(dir, "Data/nceiErsstv5_ee08_74ee_6f8f.nc"))
+# nc.sst <- nc_open(paste0(dir, "Data/nceiErsstv5_ee08_74ee_6f8f.nc"))
+
+nc.sst <- nc_open("./Data/nceiErsstv5_ee08_74ee_6f8f.nc")
 
 # process sst data - first, extract dates
 raw <- ncvar_get(nc.sst, "time")  # seconds since 1-1-1970
@@ -35,15 +38,28 @@ SST <- aperm(SST, 3:1)
   dimnames(SST.ebs) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
   
   # Filter to region
-  ebs.x <- c(183, 183, 203, 203, 191)
-  #ebs.x <- ifelse(ebs.x > 180, ebs.x-360, ebs.x)
-  ebs.y <- c(53, 65, 65, 57.5, 53)
+  # ebs.x <- c(183, 183, 203, 203, 191)
+  # #ebs.x <- ifelse(ebs.x > 180, ebs.x-360, ebs.x)
+  # ebs.y <- c(53, 65, 65, 57.5, 53)
+  
+  # EBS polygon
+  ebs.x <- c(187, 187, 203, 203, 191) 
+  ebs.y <- c(53, 61, 61, 57.5, 53)
+
   
   xp <- cbind(ebs.x, ebs.y)
   loc=cbind(lon, lat)
   check <- in.poly(loc, xp=xp)
   
   SST.ebs[,!check] <- NA
+  
+  # and plot to check
+  SST.mean <- colMeans(SST.ebs)
+  z <- t(matrix(SST.mean,length(y)))  # Re-shape to a matrix with latitudes in columns, longitudes in rows
+  image(x,y,z, col=new.col, ylim=c(20,68), xlim=c(125,255))
+  contour(x, y, z, add=T, col="white")  
+  map('world2Hires',fill=F,add=T, lwd=2)
+  
   
   SST.ebs %>%
     as.data.frame(.) %>%
@@ -88,16 +104,28 @@ SST <- aperm(SST, 3:1)
   SST.anom.ebs <- SST.m[,1:(ncol(SST.m)-2)] - mu   # Compute matrix of anomalies - dropping year and month!
   
   SST.ebs <- SST.m[, 1:(ncol(SST.m)-2)]
+  
+  # and detrend
+  SST.anom.ebs.detr <- SST.anom.ebs
+  for(i in 1:ncol(SST.anom.ebs)) {
+    xx = seq(1,nrow(SST.ebs))
+    SST.anom.ebs.detr[,i] = SST.anom.ebs[,i] - predict(lm(SST.anom.ebs[,i]~as.numeric(xx), na.action="na.exclude"), newdata=data.frame(xx=xx))
+  }
+  
+  
+  
   # get average anomaly across the area
-  SST.anom.ebs <- rowMeans(SST.anom.ebs)
+  SST.anom.ebs.detr <- rowMeans(SST.anom.ebs.detr)
   SST.ebs <- rowMeans(SST.ebs)
   
   # fit to winter means
   win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
-  SST.win.anom.ebs <- SST.anom.ebs[m %in% c(11,12,1:3)]
+  SST.win.anom.ebs.detr <- SST.anom.ebs.detr[m %in% c(11,12,1:3)]
   win.yr <- win.yr[m %in% c(11,12,1:3)]
   # SST.anom.ebs2 <- tapply(SST.win.anom.ebs, win.yr, mean)
   #SST.anom.ebs2 <- tapply(SST.anom.ebs, yr, mean)
+  
+
   
   
   #plot(1854:2024, SST.ebs2, type = "l")
@@ -107,40 +135,40 @@ SST <- aperm(SST, 3:1)
   
   #rownames(SST.anom.ebs2) <- NULL
   
-  data.frame(Date = names(SST.anom.ebs), sst = SST.anom.ebs) %>%
+  data.frame(Date = names(SST.anom.ebs.detr), sst.anom = SST.anom.ebs.detr) %>%
     mutate(Year = as.numeric(as.character(substr(Date, 1, 4))),
            Month = as.numeric(as.character(substr(Date, 6, 7))),
            Win.year = case_when((Month %in% c(10:12)) ~ (Year+1),
-                                TRUE ~ Year)) -> SST.anom.ebs2
+                                TRUE ~ Year)) -> SST.anom.ebs.detr2
   
-  rownames(SST.anom.ebs2) <- NULL
+  rownames(SST.anom.ebs.detr2) <- NULL
   
-  SST.anom.ebs2%>%
+  SST.anom.ebs.detr2%>%
     dplyr::select(!c(Date, Win.year)) %>%
-    rename(month.anom = sst) -> month.ebs
+    rename(month.anom = sst.anom) -> month.ebs.detr
   
-  write.csv(month.ebs, paste0("Output/ebs.monthlySSTanomalies.csv"))
+  write.csv(month.ebs.detr, paste0("Output/ebs.monthlySSTanomalies_detrended.csv"))
   
-  SST.anom.ebs2 %>%
+  SST.anom.ebs.detr2 %>%
     group_by(Year) %>%
-    reframe(mean.sst = mean(sst)) -> SST.anom.ebs.regyr
+    reframe(mean.anom = mean(sst.anom)) -> SST.anom.ebs.detr.regyr
   
-  SST.anom.ebs2 %>%
+  SST.anom.ebs.detr2 %>%
     group_by(Win.year) %>%
-    reframe(mean.sst = mean(sst)) %>%
-    rename(Year = Win.year)-> SST.anom.ebs.winyr
+    reframe(mean.anom = mean(sst.anom)) %>%
+    rename(Year = Win.year)-> SST.anom.ebs.detr.winyr
   
   
-  SST.anom.ebs2 %>%
+  SST.anom.ebs.detr2 %>%
     filter(Month %in% c(11:12, 1:3)) %>%
     group_by(Win.year) %>%
-    reframe(mean.sst = mean(sst)) %>%
-    rename(Year = Win.year)-> SST.anom.ebs.winter
+    reframe(mean.anom = mean(sst.anom)) %>%
+    rename(Year = Win.year)-> SST.anom.ebs.detr.winter
   
   # write csv
-  write.csv(SST.anom.ebs.regyr, paste0(dir, "Output/SST.anom.ebs.csv")) # regular years
-  write.csv(SST.anom.ebs.winyr, paste0(dir, "Output/SST.anom.ebs.winyr.csv")) # Oct-Sept, year of January
-  write.csv(SST.anom.ebs.winter, paste0(dir, "Output/SST.winter.anom.ebs.csv")) # winter months, year of January
+  write.csv(SST.anom.ebs.detr.regyr, paste0(dir, "Output/SST.anom.ebs.detr.csv")) # regular years
+  write.csv(SST.anom.ebs.detr.winyr, paste0(dir, "Output/SST.anom.ebs.winyr.detr.csv")) # Oct-Sept, year of January
+  write.csv(SST.anom.ebs.detr.winter, paste0(dir, "Output/SST.winter.anom.ebs.detr.csv")) # winter months, year of January
   
   
   # GOA: ----
@@ -156,6 +184,7 @@ SST <- aperm(SST, 3:1)
   goa.x <- c(201, 201, 205, 208, 225, 231, 201)
   #goa.x <- ifelse(goa.x > 180, goa.x-360, goa.x)
   goa.y <- c(55, 56.5, 59, 61, 61, 55, 55)
+
   
   xp <- cbind(goa.x, goa.y)
   loc=cbind(lon, lat)
