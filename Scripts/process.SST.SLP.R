@@ -193,6 +193,14 @@ SST <- aperm(SST, 3:1)
   SST.goa[,!check] <- NA
   
 
+  # and plot to check
+  SST.mean <- colMeans(SST.goa)
+  z <- t(matrix(SST.mean,length(y)))  # Re-shape to a matrix with latitudes in columns, longitudes in rows
+  image(x,y,z, col=new.col, ylim=c(20,68), xlim=c(125,255))
+  contour(x, y, z, add=T, col="white")  
+  map('world2Hires',fill=F,add=T, lwd=2)
+  
+  
   SST.goa %>%
     as.data.frame(.) %>%
     mutate(date = rownames(.)) %>%
@@ -234,20 +242,30 @@ SST <- aperm(SST, 3:1)
   mu <- rbind(mu, mu[1:xtra,])
   
   SST.anom.goa <- SST.m[,1:(ncol(SST.m)-2)] - mu   # Compute matrix of anomalies - dropping year and month!
-  SST.goa <- SST.m[,1:(ncol(SST.m)-2)] 
+  
+  SST.goa <- SST.m[, 1:(ncol(SST.m)-2)]
+  
+  # and detrend
+  SST.anom.goa.detr <- SST.anom.goa
+  for(i in 1:ncol(SST.anom.goa)) {
+    xx = seq(1,nrow(SST.goa))
+    SST.anom.goa.detr[,i] = SST.anom.goa[,i] - predict(lm(SST.anom.goa[,i]~as.numeric(xx), na.action="na.exclude"), newdata=data.frame(xx=xx))
+  }
+  
   
   
   # get average anomaly across the area
-  SST.anom.goa <- rowMeans(SST.anom.goa)
+  SST.anom.goa.detr <- rowMeans(SST.anom.goa.detr)
   SST.goa <- rowMeans(SST.goa)
-  
   
   # fit to winter means
   win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
-  SST.win.anom.goa <- SST.anom.goa[m %in% c(11,12,1:3)]
+  SST.win.anom.goa.detr <- SST.anom.goa.detr[m %in% c(11,12,1:3)]
   win.yr <- win.yr[m %in% c(11,12,1:3)]
   # SST.anom.goa2 <- tapply(SST.win.anom.goa, win.yr, mean)
   #SST.anom.goa2 <- tapply(SST.anom.goa, yr, mean)
+  
+  
   
   
   #plot(1854:2024, SST.goa2, type = "l")
@@ -257,40 +275,40 @@ SST <- aperm(SST, 3:1)
   
   #rownames(SST.anom.goa2) <- NULL
   
-  data.frame(Date = names(SST.anom.goa), sst = SST.anom.goa) %>%
+  data.frame(Date = names(SST.anom.goa.detr), sst.anom = SST.anom.goa.detr) %>%
     mutate(Year = as.numeric(as.character(substr(Date, 1, 4))),
            Month = as.numeric(as.character(substr(Date, 6, 7))),
            Win.year = case_when((Month %in% c(10:12)) ~ (Year+1),
-                                TRUE ~ Year)) -> SST.anom.goa2
+                                TRUE ~ Year)) -> SST.anom.goa.detr2
   
-  rownames(SST.anom.goa2) <- NULL
+  rownames(SST.anom.goa.detr2) <- NULL
   
-  SST.anom.goa2%>%
+  SST.anom.goa.detr2%>%
     dplyr::select(!c(Date, Win.year)) %>%
-    rename(month.anom = sst) -> month.goa
+    rename(month.anom = sst.anom) -> month.goa.detr
   
-  write.csv(month.goa, paste0(dir, "Output/goa.monthlySSTanomalies.csv"))
+  write.csv(month.goa.detr, paste0("Output/goa.monthlySSTanomalies_detrended.csv"))
   
-  SST.anom.goa2 %>%
+  SST.anom.goa.detr2 %>%
     group_by(Year) %>%
-    reframe(mean.sst = mean(sst)) -> SST.anom.goa.regyr
+    reframe(mean.anom = mean(sst.anom)) -> SST.anom.goa.detr.regyr
   
-  SST.anom.goa2 %>%
+  SST.anom.goa.detr2 %>%
     group_by(Win.year) %>%
-    reframe(mean.sst = mean(sst)) %>%
-    rename(Year = Win.year)-> SST.anom.goa.winyr
+    reframe(mean.anom = mean(sst.anom)) %>%
+    rename(Year = Win.year)-> SST.anom.goa.detr.winyr
   
-  SST.anom.goa2 %>%
+  
+  SST.anom.goa.detr2 %>%
     filter(Month %in% c(11:12, 1:3)) %>%
     group_by(Win.year) %>%
-    reframe(mean.sst = mean(sst)) %>%
-    rename(Year = Win.year)-> SST.anom.goa.winter
+    reframe(mean.anom = mean(sst.anom)) %>%
+    rename(Year = Win.year)-> SST.anom.goa.detr.winter
   
   # write csv
-  write.csv(SST.anom.goa.regyr, paste0(dir, "Output/SST.anom.goa.csv"))
-  write.csv(SST.anom.goa.winyr, paste0(dir, "Output/SST.anom.goa.winyr.csv"))
-  write.csv(SST.anom.goa.winter, paste0(dir, "Output/SST.winter.anom.goa.csv"))
-  
+  write.csv(SST.anom.goa.detr.regyr, paste0(dir, "Output/SST.anom.goa.detr.csv")) # regular years
+  write.csv(SST.anom.goa.detr.winyr, paste0(dir, "Output/SST.anom.goa.winyr.detr.csv")) # Oct-Sept, year of January
+  write.csv(SST.anom.goa.detr.winter, paste0(dir, "Output/SST.winter.anom.goa.detr.csv")) # winter months, year of January
   
 
 ### Process SLP -----------------------------------------------------------------------------------------------------
