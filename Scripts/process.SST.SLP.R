@@ -153,10 +153,10 @@ SST <- aperm(SST, 3:1)
     group_by(Year) %>%
     reframe(mean.anom = mean(sst.anom)) -> SST.anom.ebs.detr.regyr
   
-  SST.anom.ebs.detr2 %>%
-    group_by(Win.year) %>%
-    reframe(mean.anom = mean(sst.anom)) %>%
-    rename(Year = Win.year)-> SST.anom.ebs.detr.winyr
+  # SST.anom.ebs.detr2 %>%
+  #   group_by(Win.year) %>%
+  #   reframe(mean.anom = mean(sst.anom)) %>%
+  #   rename(Year = Win.year)-> SST.anom.ebs.detr.winyr
   
   
   SST.anom.ebs.detr2 %>%
@@ -166,10 +166,12 @@ SST <- aperm(SST, 3:1)
     rename(Year = Win.year)-> SST.anom.ebs.detr.winter
   
   # write csv
-  write.csv(SST.anom.ebs.detr.regyr, paste0(dir, "Output/SST.anom.ebs.detr.csv")) # regular years
-  write.csv(SST.anom.ebs.detr.winyr, paste0(dir, "Output/SST.anom.ebs.winyr.detr.csv")) # Oct-Sept, year of January
-  write.csv(SST.anom.ebs.detr.winter, paste0(dir, "Output/SST.winter.anom.ebs.detr.csv")) # winter months, year of January
+  write.csv(SST.anom.ebs.detr.regyr, "./Output/SST.anom.ebs.detr.csv") # regular years
+  # write.csv(SST.anom.ebs.detr.winyr, paste0(dir, "Output/SST.anom.ebs.winyr.detr.csv")) # Oct-Sept, year of January
+  write.csv(SST.anom.ebs.detr.winter, "./Output/SST.winter.anom.ebs.detr.csv") # winter months, year of January
   
+  ggplot(SST.anom.ebs.detr.winter, aes(Year, mean.anom)) + 
+    geom_line()
   
   # GOA: ----
   # Change to matrix
@@ -293,10 +295,10 @@ SST <- aperm(SST, 3:1)
     group_by(Year) %>%
     reframe(mean.anom = mean(sst.anom)) -> SST.anom.goa.detr.regyr
   
-  SST.anom.goa.detr2 %>%
-    group_by(Win.year) %>%
-    reframe(mean.anom = mean(sst.anom)) %>%
-    rename(Year = Win.year)-> SST.anom.goa.detr.winyr
+  # SST.anom.goa.detr2 %>%
+  #   group_by(Win.year) %>%
+  #   reframe(mean.anom = mean(sst.anom)) %>%
+  #   rename(Year = Win.year)-> SST.anom.goa.detr.winyr
   
   
   SST.anom.goa.detr2 %>%
@@ -306,9 +308,9 @@ SST <- aperm(SST, 3:1)
     rename(Year = Win.year)-> SST.anom.goa.detr.winter
   
   # write csv
-  write.csv(SST.anom.goa.detr.regyr, paste0(dir, "Output/SST.anom.goa.detr.csv")) # regular years
-  write.csv(SST.anom.goa.detr.winyr, paste0(dir, "Output/SST.anom.goa.winyr.detr.csv")) # Oct-Sept, year of January
-  write.csv(SST.anom.goa.detr.winter, paste0(dir, "Output/SST.winter.anom.goa.detr.csv")) # winter months, year of January
+  write.csv(SST.anom.goa.detr.regyr, "./Output/SST.anom.goa.detr.csv") # regular years
+  # write.csv(SST.anom.goa.detr.winyr, "./Output/SST.anom.goa.winyr.detr.csv") # Oct-Sept, year of January
+  write.csv(SST.anom.goa.detr.winter, "./Output/SST.winter.anom.goa.detr.csv") # winter months, year of January
   
 
 ### Process SLP -----------------------------------------------------------------------------------------------------
