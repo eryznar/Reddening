@@ -113,7 +113,6 @@ SST <- aperm(SST, 3:1)
   }
   
   
-  
   # get average anomaly across the area
   SST.anom.ebs.detr <- rowMeans(SST.anom.ebs.detr)
   SST.ebs <- rowMeans(SST.ebs)
@@ -122,18 +121,17 @@ SST <- aperm(SST, 3:1)
   win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
   SST.win.anom.ebs.detr <- SST.anom.ebs.detr[m %in% c(11,12,1:3)]
   win.yr <- win.yr[m %in% c(11,12,1:3)]
-  # SST.anom.ebs2 <- tapply(SST.win.anom.ebs, win.yr, mean)
-  #SST.anom.ebs2 <- tapply(SST.anom.ebs, yr, mean)
-  
 
+  # also get winter absolute temps as a check
+  SST.win.ebs <- SST.ebs[m %in% c(11,12,1:3)]
   
+  plot.check <- data.frame(year = unique(win.yr),
+                           ebs.win.mean = tapply(SST.win.ebs, win.yr, mean))  
   
-  #plot(1854:2024, SST.ebs2, type = "l")
+  ggplot(plot.check, aes(year, ebs.win.mean)) +
+    geom_line() # looks good
+ 
   
-  # pivot longer
-  #data.frame(Year = names(SST.anom.ebs2), mean.sst = SST.anom.ebs2) -> SST.anom.ebs2
-  
-  #rownames(SST.anom.ebs2) <- NULL
   
   data.frame(Date = names(SST.anom.ebs.detr), sst.anom = SST.anom.ebs.detr) %>%
     mutate(Year = as.numeric(as.character(substr(Date, 1, 4))),
@@ -264,18 +262,16 @@ SST <- aperm(SST, 3:1)
   win.yr <- ifelse(m %in% c(11,12), yr+1, yr)
   SST.win.anom.goa.detr <- SST.anom.goa.detr[m %in% c(11,12,1:3)]
   win.yr <- win.yr[m %in% c(11,12,1:3)]
-  # SST.anom.goa2 <- tapply(SST.win.anom.goa, win.yr, mean)
-  #SST.anom.goa2 <- tapply(SST.anom.goa, yr, mean)
+
+  # also get winter absolute temps as a check
+  SST.win.goa <- SST.goa[m %in% c(11,12,1:3)]
   
+  plot.check <- data.frame(year = unique(win.yr),
+                           goa.win.mean = tapply(SST.win.goa, win.yr, mean))  
   
+  ggplot(plot.check, aes(year, goa.win.mean)) +
+    geom_line() # looks good
   
-  
-  #plot(1854:2024, SST.goa2, type = "l")
-  
-  # pivot longer
-  #data.frame(Year = names(SST.anom.goa2), mean.sst = SST.anom.goa2) -> SST.anom.goa2
-  
-  #rownames(SST.anom.goa2) <- NULL
   
   data.frame(Date = names(SST.anom.goa.detr), sst.anom = SST.anom.goa.detr) %>%
     mutate(Year = as.numeric(as.character(substr(Date, 1, 4))),
