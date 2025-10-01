@@ -3,7 +3,7 @@
 ### LOAD PACKAGES -------------------------------------------------------------------------------------------------------
 
 source("./Scripts/load.libs.functions.R")
-source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
+# source("Y:/KOD_Survey/EBS Shelf/Spatial crab/load.spatialdata.R")
 
 new.col <- oceColorsPalette(64)
 ### Process SST -----------------------------------------------------------------------------------------------------
@@ -311,7 +311,7 @@ SST <- aperm(SST, 3:1)
 
 ### Process SLP -----------------------------------------------------------------------------------------------------
 # first, load data
-nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
+nc.slp <- nc_open("./Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc")
 
 # process SLP data - first, extract dates
 raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
@@ -352,6 +352,7 @@ z <- t(matrix(z, length(y)))
 image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(35,66), xlim=c(170,220))
 contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
 map('world2Hires',fill=F, xlim=c(130,250), ylim=c(20,66),add=T, lwd=1)
+
 # looks good
 
 SLP %>%
@@ -385,7 +386,7 @@ SLP.m$month <- as.numeric(vv[,2])
 
 SLP.m <- SLP.m %>%
   arrange(month) %>%
-  arrange(year)
+  arrange(year) 
 
 # remove seasonal signal
 m <- SLP.m$month
@@ -421,7 +422,9 @@ SLP.anom2%>%
   dplyr::select(!c(Date, Win.year)) %>%
   rename(month.anom = slp) -> month.slp
 
-write.csv(month.slp, paste0(dir, "Output/monthlySLPanomalies.csv"))
+# write.csv(month.slp, paste0(dir, "Output/monthlySLPanomalies.csv"))
+
+write.csv(month.slp, "./Output/monthlySLPanomalies.csv")
 
 
 # Calculate winter means
@@ -430,14 +433,17 @@ SLP.anom2 %>%
   group_by(Win.year) %>%
   reframe(SLP.win.anom = mean(slp)) -> SLP.dat
 
+ggplot(SLP.dat, aes(Win.year, SLP.win.anom)) +
+  geom_line()
 
-write.csv(SLP.dat, paste0(dir, "Output/monthlywinterSLPanomalies.csv"))
+# write.csv(SLP.dat, paste0(dir, "Output/monthlywinterSLPanomalies.csv"))
 
-
+write.csv(SLP.dat, "./Output/monthlywinterSLPanomalies.csv")
 
 ### Calculate EOF on SLP data ----
 # first, load data
-nc.slp <- nc_open(paste0(dir, "Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc"))
+
+nc.slp <- nc_open("Data/hawaii_soest_f19d_3925_d70b_1322_e90d_09e0NEW.nc")
 
 # process SLP data - first, extract dates
 raw <- ncvar_get(nc.slp, "time")  # seconds since 1-1-1970
@@ -462,87 +468,151 @@ lat <- rep(y, length(x))
 lon <- rep(x, each = length(y))   
 dimnames(SLP) <- list(as.character(d), paste("N", lat, "E", lon, sep=""))
 
-# Filter to area of interest
-poly.x <- c(191, 191, 208, 208, 191) 
-poly.y <- c(44, 55, 55, 44, 44)
+m <- months(d)  # Extracts months from the date vector
+yr <- years(d)
 
-xp <- cbind(poly.x, poly.y)
-loc=cbind(lon, lat)
-check <- in.poly(loc, xp=xp)
-
-SLP[,!check] <- NA
+# # Filter to area of interest
+# poly.x <- c(191, 191, 208, 208, 191) 
+# poly.y <- c(44, 55, 55, 44, 44)
+# 
+# xp <- cbind(poly.x, poly.y)
+# loc=cbind(lon, lat)
+# check <- in.poly(loc, xp=xp)
+# 
+# SLP[,!check] <- NA
 
 # plot to check
-z <- colMeans(SLP*100)
+z <- colMeans(SLP)
 z <- t(matrix(z, length(y)))
-image(x,y,z, col=tim.colors(64), xlab = "", ylab = "", ylim=c(35,66), xlim=c(170,220))
+image(x,y,z, col=tim.colors(64), xlab = "", ylab = "")
 contour(x,y,z, add=T, col="white",vfont=c("sans serif", "bold"))
-map('world2Hires',fill=F, xlim=c(130,250), ylim=c(20,66),add=T, lwd=1)
-# looks good
+map('world2Hires',fill=F,add=T, lwd=1)
 
-SLP %>%
-  as.data.frame(.) %>%
-  mutate(date = rownames(.)) %>%
-  #mutate(date = mdy(rownames(.))) %>%
-  pivot_longer(!date, names_to = "coords", values_to = "SLP") %>%
-  # mutate(year = year(date),
-  #        month = month(date)) %>%
-  # mutate(year = case_when((year > 2024) ~ year - 100,
-  #                        TRUE ~ year)) %>%
-  na.omit() %>%
-  mutate(SLP = SLP * 100) %>%
-  pivot_wider(., names_from = coords, values_from = SLP) %>%
-  as.data.frame(.) -> clean.SLP
+# # looks good
+# SLP %>%
+#   as.data.frame(.) %>%
+#   mutate(date = rownames(.)) %>%
+#   #mutate(date = mdy(rownames(.))) %>%
+#   pivot_longer(!date, names_to = "coords", values_to = "SLP") %>%
+#   # mutate(year = year(date),
+#   #        month = month(date)) %>%
+#   # mutate(year = case_when((year > 2024) ~ year - 100,
+#   #                        TRUE ~ year)) %>%
+#   na.omit() %>%
+#   mutate(SLP = SLP * 100) %>%
+#   pivot_wider(., names_from = coords, values_from = SLP) %>%
+#   as.data.frame(.) -> clean.SLP
+# 
+# rownames(clean.SLP) = clean.SLP$date
+# 
+# clean.SLP <- clean.SLP[,-1]
 
-rownames(clean.SLP) = clean.SLP$date
+# # now we need to get monthly means!
+# m.y <- paste(years(d), as.numeric(months(d)), sep="-") # make a month-year factor from the dates
+# 
+# f <- function(x) tapply(x, m.y, mean)
+# SLP.m <- as.data.frame(apply(clean.SLP, 2, f))
+# # an error get introduced here - year and month were left as columns in SLP.m
+# # and vv looks like this:
 
-clean.SLP <- clean.SLP[,-1]
+# > vv
+# [,1] [,2]
+# [1,] "1"  "2" 
+# [2,] "3"  "4" 
+# [3,] "5"  "6" 
+# [4,] "7"  "8" 
+# [5,] "9"  "10"
+# [6,] "11" "12"
 
-# now we need to get monthly means!
-m.y <- paste(years(d), as.numeric(months(d)), sep="-") # make a month-year factor from the dates
-
-f <- function(x) tapply(x, m.y, mean)
-SLP.m <- as.data.frame(apply(clean.SLP, 2, f))
-
-vv <- matrix(unlist(strsplit(as.character(rownames(SLP.m)), "-")),ncol=2, byrow = T)
-
-SLP.m$year <- as.numeric(vv[,1])
-SLP.m$month <- as.numeric(vv[,2])
-
-SLP.m <- SLP.m %>%
-  arrange(month) %>%
-  arrange(year)
-
-# remove seasonal signal
-m <- SLP.m$month
-yr <- SLP.m$year
+# so SLP.m$month and SLP.m$year were wrong
+# 
+# vv <- matrix(unlist(strsplit(as.character(rownames(SLP.m)), "-")),ncol=2, byrow = T) 
+# 
+# SLP.m$year <- as.numeric(vv[,1])
+# SLP.m$month <- as.numeric(vv[,2])
+# 
+# SLP.m <- SLP.m %>%
+#   arrange(month) %>%
+#   arrange(year)
+# 
+# # remove seasonal signal
+# m <- SLP.m$month 
+# yr <- SLP.m$year
 
 f <- function(x) tapply(x, m, mean)
-mu <- apply(SLP.m, 2, f)	# Compute monthly means for each cell
+mu <- apply(SLP, 2, f)	# Compute monthly means for each cell
 
 # process as for SST
 mu <- mu[rep(1:12, floor(length(d)/12)),] 
 xtra <- 12*((length(d)/12)-floor(length(d)/12))
 mu <- rbind(mu, mu[1:xtra,])
 
-slp.anom <- SLP.m[,1:35] - mu 
+slp.anom <- SLP - mu 
 
+# and detrend
+slp.anom.detr <- slp.anom
+
+for(i in 1:ncol(slp.anom)) {
+  xx = seq(1,nrow(slp.anom))
+  slp.anom.detr[,i] = slp.anom[,i] - predict(lm(slp.anom[,i]~as.numeric(xx), na.action="na.exclude"), newdata=data.frame(xx=xx))
+}
 
 # get a vector of weights (square root of the cosine of latitude)
 
-# identify columns containing NA
-temp1 <- str_split(colnames(SLP.m), "E", simplify = T)[,1]
-X.lats <- as.numeric(str_split(temp1, "N", simplify = T)[,2])
+weight <- sqrt(cos(lat*pi/180)) 
 
-weight <- sqrt(cos(X.lats*pi/180)) 
+pca <- FactoMineR::svd.triplet(cov(slp.anom.detr), col.w=na.omit(weight)) #weighting the columns
 
-
-pca <- FactoMineR::svd.triplet(cov(slp.anom), col.w=na.omit(weight)) #weighting the columns
-
-pc1_slp <- as.matrix(slp.anom) %*% pca$U[,1]
+pc1_slp <- as.matrix(slp.anom.detr) %*% pca$U[,1]
 
 # and scale!
 pc1_slp <- as.vector(scale(pc1_slp))
 
-write.csv(pc1_slp, paste0(dir, "Output/PC1slp.monthlyanomalies.csv"))
+# get % variance explained
+var.all <- 100*round(prop.table(pca$vs),3)
 
+# get loadings for EOF1 and scale 
+eig.1 <- scale(pca$U[,1])[,1]
+
+lim <- range(eig.1)
+
+# and plot to check
+z <- eig.1
+z <- t(matrix(z, length(y))) 
+image(x,y,z, col=new.col, xlab = "", ylab = "", yaxt="n", xaxt="n", zlim=c(-lim[2], lim[2]))#, legend.mar=l.mar, legend.line=l.l, axis.args=list(cex.axis=l.cex, tcl=tc.l, mgp=c(3,0.3,0)))
+contour(x, y, z, add=T, drawlabels = F, lwd=0.7, col="grey") 
+map('world2Hires', c('Canada', 'usa', 'USSR', 'Mexico', 'China', 'South Korea', 'North Korea', 'Japan') ,fill=T, add=T, lwd=1, col="darkgoldenrod3")
+mtext(paste("EOF1 (", var.all[1], "%)", sep=""), cex=0.8)
+
+
+pc1_slp_out <- data.frame(year = yr,
+                          month = as.numeric(m),
+                          pc1 = pc1_slp)
+
+write.csv(pc1_slp_out, "./Output/PC1slp.monthlyanomalies.detr.csv", row.names = F)
+
+### regress observed detrended SST anomalies on observed detrended SLP PC1 scores --------------
+
+# reload both
+slp.pc1 <- read.csv("./Output/PC1slp.monthlyanomalies.detr.csv")
+sst <- read.csv("./Output./SST.winter.anom.ebs.detr.csv", row.names = 1)
+
+# process slp and combine with sst in data frame
+
+slp.pc1 <- slp.pc1 %>% 
+  mutate(win.yr = if_else(month %in% 11:12, year+1, year)) %>%
+  filter(win.yr %in% 1950:2014) %>%
+  group_by(win.yr) %>%
+  summarize(pc1 = mean(pc1))
+
+sst <- sst %>%
+  rename(win.yr = Year,
+         sst = mean.anom)
+
+dat <- left_join(slp.pc1, sst)
+
+ggplot(dat, aes(pc1, sst)) +
+  geom_point() # actually quite a bit weaker than expected
+
+# compare SD in pc1 vs ar(1) in SST
+# might also compare SD in pc1 vs cor in pc1-sst
