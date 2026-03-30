@@ -32,7 +32,7 @@ library(broom)
 library(effects)
 
 ### DIRECTORIES ------------------------------
-dir <- "Y:/KOD_Research/Ryznar/Reddening/"
+# dir <- "Y:/KOD_Research/Ryznar/Reddening/"
 
 
 ### FUNCTIONS --------------------------------------------------------------------------
