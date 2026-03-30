@@ -6,8 +6,8 @@ source("./Scripts/load.libs.functions.R")
 
 # MAP OF GOA AND EBS POLYGONS ----------------------------------
 
-# Get world map layer (wrapped for Pacific-centered view)
-mapWorld <- map_data('world', wrap = c(-25, 335), ylim = c(-55, 75))
+# Get world map layer (high-resolution, wrapped for Pacific-centered view)
+mapWorld <- map_data('worldHires', wrap = c(-25, 335), ylim = c(40, 75))
 
 # Define GOA polygon (convert 0-360 longitudes to -180 to 180)
 goa.x <- c(201, 201, 205, 208, 225, 231, 201)
