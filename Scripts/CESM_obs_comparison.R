@@ -6,8 +6,7 @@ source("./Scripts/load.libs.functions.R")
 
 # MAP OF GOA AND EBS POLYGONS ----------------------------------
 
-# Get world map layer (high-resolution, wrapped for Pacific-centered view)
-mapWorld <- map_data('worldHires', wrap = c(-25, 335), ylim = c(40, 75))
+mapWorld <- map_data("world")
 
 # Define GOA polygon (convert 0-360 longitudes to -180 to 180)
 goa.x <- c(201, 201, 205, 208, 225, 231, 201)
@@ -28,13 +27,15 @@ polys <- bind_rows(goa.poly, ebs.poly)
 
 # Plot
 map.plot <- ggplot() +
-  geom_polygon(data = mapWorld, aes(x = long, y = lat, group = group),
+  geom_polygon(data = mapWorld,
+               aes(x = long, y = lat, group = group),
                fill = "gray80", color = "gray50", linewidth = 0.2) +
-  geom_polygon(data = polys, aes(x = lon, y = lat, fill = region, color = region),
+  geom_polygon(data = polys,
+               aes(x = lon, y = lat, group = region, fill = region, color = region),
                alpha = 0.4, linewidth = 1) +
   scale_fill_manual(values = c("GOA" = "steelblue", "EBS" = "darkorange")) +
   scale_color_manual(values = c("GOA" = "steelblue4", "EBS" = "darkorange4")) +
-  coord_cartesian(xlim = c(-195, -140), ylim = c(45, 70)) +
+  coord_cartesian(xlim = c(-180, -140), ylim = c(45, 70)) +
   labs(title = "GOA and EBS Study Regions",
        x = "Longitude", y = "Latitude",
        fill = "Region", color = "Region") +
