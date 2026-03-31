@@ -48,11 +48,13 @@ print(map.plot)
 
 library(ecmwfr)
 
-# Set CDS API key (only needs to be run once per machine)
-# wf_set_key(user = "your_uid", key = "your_api_key", service = "cds")
+# Set CDS API key (run once, then comment out — stores credentials in macOS Keychain)
+# Find your UID and API key at: https://cds.climate.copernicus.eu -> your profile
+# wf_set_key(user = "YOUR_CDS_UID", key = "YOUR_CDS_API_KEY", service = "cds")
 
 # Spatial domain encompassing GOA and EBS regions (N, W, S, E)
 request <- list(
+  dataset_short_name = "reanalysis-era5-single-levels-monthly-means",
   product_type    = "monthly_averaged_reanalysis",
   variable        = "sea_surface_temperature",
   year            = as.character(1950:2024),
@@ -60,13 +62,15 @@ request <- list(
   time            = "00:00",
   area            = c(70, -180, 45, -125),   # N, W, S, E
   data_format     = "netcdf",
-  download_format = "unarchived"
+  download_format = "unarchived",
+  target          = "era5_sst_GOA_EBS_1950_2024.nc"
 )
+
+# Slow down polling to avoid CDS rate limit (sleep 30s between status checks)
+options(ecmwfr.sleep = 30)
 
 wf_request(
   request  = request,
   transfer = TRUE,
-  path     = "./Data",
-  filename = "era5_sst_GOA_EBS_1950_2024.nc",
-  dataset  = "reanalysis-era5-single-levels-monthly-means"
+  path     = "./Data"
 )
