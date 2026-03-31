@@ -66,13 +66,13 @@ request <- list(
   dataset_short_name = "reanalysis-era5-single-levels-monthly-means",
   product_type    = "monthly_averaged_reanalysis",
   variable        = "sea_surface_temperature",
-  year            = as.character(1950:2024),
+  year            = as.character(1950:2025),
   month           = sprintf("%02d", 1:12),
   time            = "00:00",
   area            = c(66, 110, 20, -110),    # N, W, S, E (250E = -110W)
   data_format     = "netcdf",
   download_format = "unarchived",
-  target          = "era5_sst_NP_1950_2024.nc"
+  target          = "era5_sst_NP_1950_2025.nc"
 )
 
 # Slow down polling to avoid CDS rate limit
@@ -87,7 +87,7 @@ wf_request(
 # CALCULATE OBSERVED AR1 AND SD FROM ERA5 ----------------------------------
 
 # Load ERA5 SST netCDF (North Pacific domain)
-nc <- nc_open("./Data/era5_sst_NP_1950_2024.nc")
+nc <- nc_open("./Data/era5_sst_NP_1950_2025.nc")
 
 sst  <- ncvar_get(nc, "sst")        # [longitude x latitude x valid_time], units: K
 lons <- ncvar_get(nc, "longitude")
@@ -160,6 +160,11 @@ monthly <- monthly %>%
   mutate(GOA.anom = GOA - GOA.clim,
          EBS.anom = EBS - EBS.clim,
          NP.anom  = NP  - NP.clim)
+
+# Save non-detrended anomalies for plotting
+monthly.anom <- monthly %>%
+  mutate(date = as.Date(paste(year, month, "15", sep = "-"))) %>%
+  select(date, year, month, GOA.anom, EBS.anom, NP.anom)
 
 # --- Step 4: detrend each domain's anomaly time series ---
 detrend <- function(x) residuals(lm(x ~ seq_along(x)))
@@ -281,5 +286,25 @@ acf.plot <- ggplot(acf.out, aes(x = lag, y = acf, color = era)) +
   theme(legend.position = "bottom")
 
 print(acf.plot)
+
+# MONTHLY SST ANOMALY TIME SERIES ----------------------------------
+
+ts.plot <- monthly.anom %>%
+  pivot_longer(cols = c(GOA.anom, EBS.anom, NP.anom),
+               names_to = "region", values_to = "anom") %>%
+  mutate(region = recode(region,
+                         "GOA.anom" = "GOA",
+                         "EBS.anom" = "EBS",
+                         "NP.anom"  = "NP")) %>%
+  ggplot(aes(x = date, y = anom, color = region)) +
+  geom_line(linewidth = 0.4) +
+  scale_color_manual(values = c("GOA" = "steelblue4", "EBS" = "darkorange4", "NP" = "forestgreen")) +
+  facet_wrap(~ region, ncol = 1) +
+  labs(title = "Monthly SST Anomaly (1950–2025)",
+       x = "Year", y = "SST Anomaly (°C)", color = "Region") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+print(ts.plot)
 
 
