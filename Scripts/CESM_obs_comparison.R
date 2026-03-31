@@ -44,3 +44,23 @@ map.plot <- ggplot() +
 
 print(map.plot)
 
+# Load ERA5
+
+library(ecmwfr)
+
+request <- list(
+  product_type = "monthly_averaged_reanalysis",
+  variable = "sea_surface_temperature",
+  year = "2000",
+  month = sprintf("%02d", 1:12),
+  time = "00:00",
+  format = "netcdf"
+)
+
+wf_request(
+  user = "your_uid",
+  request = request,
+  transfer = TRUE,
+  path = "era5_sst_2000.nc",
+  dataset = "reanalysis-era5-single-levels-monthly-means"
+)
