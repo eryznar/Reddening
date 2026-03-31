@@ -16,3 +16,13 @@
     -ebs.y <- c(53, 65, 65, 57.5, 53)
 
 - Produce the map for confirmation
+
+# Add map   
+- Add the coastline to the map.
+
+# Query ERA5 data
+- Look at the code at the bottom of the script after "library(ecmwfr)"
+- Re-write this to download the necessary spatial domain, all years, all months.
+- Save the netcdf file to "Data"
+
+- Add a snippet to use wf_set_key() to use the API key.

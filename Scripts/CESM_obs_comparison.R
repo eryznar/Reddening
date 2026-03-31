@@ -48,6 +48,9 @@ print(map.plot)
 
 library(ecmwfr)
 
+# Set CDS API key (only needs to be run once per machine)
+# wf_set_key(user = "your_uid", key = "your_api_key", service = "cds")
+
 # Spatial domain encompassing GOA and EBS regions (N, W, S, E)
 request <- list(
   product_type    = "monthly_averaged_reanalysis",
