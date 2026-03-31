@@ -310,17 +310,28 @@ wavelet_df <- function(x, dec.year, dom) {
     verbose      = FALSE
   )
 
+  # Normalize power by series variance (Torrence & Compo 1998 convention).
+  # log2(power/variance): positive where local power exceeds background variance.
+  series.var <- var(x, na.rm = TRUE)
+
   # wt$axis.1 indexes the non-padded time steps within the padded matrix
   power.df <- expand.grid(
     period = wt$Period,
     time   = dec.year
   )
-  power.df$power  <- as.vector(wt$Power[, wt$axis.1])
+  power.df$power  <- as.vector(wt$Power[, wt$axis.1]) / series.var
   power.df$sig    <- as.vector(wt$Power.pval[, wt$axis.1]) < 0.05
   power.df$domain <- dom
 
-  # Subset COI to non-padded time steps
-  coi.df <- data.frame(time = dec.year, coi = wt$coi.1[wt$axis.1], domain = dom)
+  # Compute COI analytically from actual series length (avoids padding asymmetry).
+  # For a Morlet wavelet: COI(t) = sqrt(2) * dt * min(t_from_start, t_from_end).
+  # wt$coi.1 is computed on the zero-padded series, so the right-side boundary is
+  # artificially large (padding extends the apparent distance from the right edge).
+  n   <- length(x)
+  dt  <- 1/12
+  coi.periods <- sqrt(2) * dt * pmin(seq_len(n), rev(seq_len(n)))
+
+  coi.df <- data.frame(time = dec.year, coi = coi.periods, domain = dom)
 
   list(power = power.df, coi = coi.df)
 }
@@ -337,9 +348,8 @@ power.all <- power.all %>%
   left_join(coi.all %>% select(time, domain, coi), by = c("time", "domain")) %>%
   mutate(outside.coi = period > coi)
 
-# Plot
 wavelet.plot <- ggplot(power.all, aes(x = time, y = period, fill = log2(power))) +
-  geom_raster(interpolate = TRUE) +
+  geom_raster() +
   # shade outside-COI region with semi-transparent white overlay
   geom_raster(data = filter(power.all, outside.coi),
               aes(x = time, y = period), fill = "white", alpha = 0.6,
@@ -350,7 +360,7 @@ wavelet.plot <- ggplot(power.all, aes(x = time, y = period, fill = log2(power)))
                inherit.aes = FALSE,
                breaks = 0.5, color = "black", linewidth = 0.4) +
   scale_fill_distiller(palette = "Spectral", direction = -1,
-                       name = expression(log[2](power))) +
+                       name = expression(log[2](power/variance))) +
   scale_y_log10(breaks = c(0.5, 1, 2, 4, 8, 16, 32),
                 labels = c(0.5, 1, 2, 4, 8, 16, 32)) +
   facet_wrap(~ domain, ncol = 1) +
