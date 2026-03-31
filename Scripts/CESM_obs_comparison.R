@@ -9,9 +9,9 @@ source("./Scripts/load.libs.functions.R")
 mapWorld <- map_data("world")
 
 # Define GOA polygon (convert 0-360 longitudes to -180 to 180)
-goa.x <- c(201, 201, 205, 208, 225, 231, 201)
+goa.x <- c(198, 198, 203, 205, 208, 225, 231, 201)
 goa.x <- ifelse(goa.x > 180, goa.x - 360, goa.x)
-goa.y <- c(55, 56.5, 59, 61, 61, 55, 55)
+goa.y <- c(54, 55.5, 57.5, 59, 61, 61, 54, 54)
 
 goa.poly <- data.frame(lon = goa.x, lat = goa.y, region = "GOA")
 
@@ -35,7 +35,7 @@ map.plot <- ggplot() +
                alpha = 0.4, linewidth = 1) +
   scale_fill_manual(values = c("GOA" = "steelblue", "EBS" = "darkorange")) +
   scale_color_manual(values = c("GOA" = "steelblue4", "EBS" = "darkorange4")) +
-  coord_cartesian(xlim = c(-180, -140), ylim = c(45, 70)) +
+  coord_cartesian(xlim = c(-180, -125), ylim = c(45, 70)) +
   labs(title = "GOA and EBS Study Regions",
        x = "Longitude", y = "Latitude",
        fill = "Region", color = "Region") +
@@ -43,3 +43,4 @@ map.plot <- ggplot() +
   theme(legend.position = "bottom")
 
 print(map.plot)
+
