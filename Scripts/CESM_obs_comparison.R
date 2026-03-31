@@ -44,23 +44,26 @@ map.plot <- ggplot() +
 
 print(map.plot)
 
-# Load ERA5
+# DOWNLOAD ERA5 SST ----------------------------------
 
 library(ecmwfr)
 
+# Spatial domain encompassing GOA and EBS regions (N, W, S, E)
 request <- list(
-  product_type = "monthly_averaged_reanalysis",
-  variable = "sea_surface_temperature",
-  year = "2000",
-  month = sprintf("%02d", 1:12),
-  time = "00:00",
-  format = "netcdf"
+  product_type    = "monthly_averaged_reanalysis",
+  variable        = "sea_surface_temperature",
+  year            = as.character(1950:2024),
+  month           = sprintf("%02d", 1:12),
+  time            = "00:00",
+  area            = c(70, -180, 45, -125),   # N, W, S, E
+  data_format     = "netcdf",
+  download_format = "unarchived"
 )
 
 wf_request(
-  user = "your_uid",
-  request = request,
+  request  = request,
   transfer = TRUE,
-  path = "era5_sst_2000.nc",
-  dataset = "reanalysis-era5-single-levels-monthly-means"
+  path     = "./Data",
+  filename = "era5_sst_GOA_EBS_1950_2024.nc",
+  dataset  = "reanalysis-era5-single-levels-monthly-means"
 )
