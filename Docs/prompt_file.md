@@ -80,3 +80,45 @@
 # Clean up
 - Remove the confidence intervals (I didn't ask for them)
 - Use these eras instead of the ones originally specified: 1950-1988, 1989-2000, 2001-2025
+
+# Time series plots
+- Add a plot of the full monthly SST anomaly time series (not detrended) for the three areas
+- Add plots of annual winter (November-March, with the year corresponding to January) values of non-detrended anomalies. Plot as points and lines.
+
+# SLP analysis
+- Create a new script to download monthly mean SLP values from ERA5 for 20-70N, 120-250E, 1950-2025
+
+# Map
+- Add a Pacific-centered map with winter (November-March) mean values plotted.
+
+# SLP EOF
+- Add to this script to calculate the leading EOF (Empirical Orthogonal Function) of this SLP field.
+- EOF should be fit to detrended monthly anomalies.
+- I only need EOF 1 and 2 and the corresponding PC time series, so if there is a way calculate only those two leading axes to reduce computing time, use that.
+- EOF should be fit to the covariance matrix and the SLP data should be weighted by cell area based on latitude.
+- The EOF should include SLP over land and ocean.
+- Remove the references to variance explained from the script and the plots.
+- Add this box to the EOF 1 plot to evaluate if it identifies the area of highest loadings: x <- c(191, 191, 208, 208, 191), y <- c(44, 55, 55, 44, 44)
+
+# SLP time series for capturing Aleutian Low variability
+- Extract the mean detrended monthly SLP anomaly for the area inside the box in the EOF1 panel.
+- Calculate winter (November-March) means, with the year corresponding to January.
+- Save the resulting time series to the "Output" file.
+
+# Evaluate a driver-response relationship
+- Return to CESM_obs_comparison.R
+- Goal is to evaluate whether variability in the AL is related to AR1 (reddening) in SST for the GOA and EBS.
+- Follow these steps:
+    - Load the AL_winter_SLP_anomaly.csv file from Output
+    - Calculate a right-aligned SD time series on 15-year rolling windows as was done earlier for SST
+    - Make a two-panel scatter plot with AL SLP SD as the x-variable and AR1 for the GOA and EBS as the y-variables.
+
+# Test the relationships
+- Fit linear regressions with first-order autocorrelation in the residuals and add the resulting p and R2 values to each panel.
+
+# Now add time series plots
+- Make a two-panel plot with the EBS AR(1) time series and the SLP SD time series, both with points and lines; other (first) panel is for GOA SST AR1 and AL SLP SD
+
+# Other windows
+- Expand this plot to include windows of 10, 15, 20, and 25 years, for both the SLP SD and the SST AR1 results. 
+- Facet with ecosystem in the rows and window length in the columns. 
