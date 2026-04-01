@@ -122,3 +122,19 @@
 # Other windows
 - Expand this plot to include windows of 10, 15, 20, and 25 years, for both the SLP SD and the SST AR1 results. 
 - Facet with ecosystem in the rows and window length in the columns. 
+
+# Debug
+- Something is wrong with the AL SLP SD time series. Are these supposed to be z-scores? They should be - and thus should be centered on 0.
+- Make this fix.
+
+# Scatter plot
+- Now make a scatter plot for each SLP SD - SST AR1 combination, with p and R2 values as above.
+
+# Examine residuals over time
+- Fit linear regressions to the AL SLP SD - GOA SST AR1 and AL SLP SD - EBS SST AR1 relationships, based on 15-year rolling windows.
+- Plot the time series of residuals for each in a two-panel plot. Include a horizontal line at 0.
+
+# Examine CESM results
+- Now the analysis moves on to using CESM ensembles run with and without interannual variability in wind stress fields to evaluate the role of AL variability as a driver of reddening in GOA/EBS SST variability.
+- This step depends on comparing the Fully Coupled Model (FCM) ensmeble with the Mechanistically Decoupled Model (MDM) ensemble.
+
