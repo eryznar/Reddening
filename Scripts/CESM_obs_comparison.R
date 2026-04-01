@@ -299,12 +299,206 @@ ts.plot <- monthly.anom %>%
   ggplot(aes(x = date, y = anom, color = region)) +
   geom_line(linewidth = 0.4) +
   scale_color_manual(values = c("GOA" = "steelblue4", "EBS" = "darkorange4", "NP" = "forestgreen")) +
-  facet_wrap(~ region, ncol = 1) +
+  facet_wrap(~ region, ncol = 1, scale = "free_y") +
   labs(title = "Monthly SST Anomaly (1950–2025)",
        x = "Year", y = "SST Anomaly (°C)", color = "Region") +
   theme_bw() +
   theme(legend.position = "none")
 
 print(ts.plot)
+
+# ANNUAL WINTER SST ANOMALY TIME SERIES (non-detrended) ----------------------------------
+
+winter.anom <- monthly.anom %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  group_by(win.year) %>%
+  summarise(GOA = mean(GOA.anom, na.rm = TRUE),
+            EBS = mean(EBS.anom, na.rm = TRUE),
+            NP  = mean(NP.anom,  na.rm = TRUE),
+            .groups = "drop") %>%
+  rename(year = win.year)
+
+winter.anom.plot <- winter.anom %>%
+  pivot_longer(-year, names_to = "region", values_to = "anom") %>%
+  ggplot(aes(x = year, y = anom, color = region)) +
+  geom_line() +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = c("GOA" = "steelblue4", "EBS" = "darkorange4", "NP" = "forestgreen")) +
+  facet_wrap(~ region, ncol = 1, scales = "free_y") +
+  labs(title = "Annual Winter SST Anomaly (Nov–Mar, 1950–2025)",
+       x = "Year", y = "SST Anomaly (°C)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+print(winter.anom.plot)
+
+# AL SLP SD vs. SST AR1 ----------------------------------
+
+# Load Aleutian Low winter SLP anomaly
+al <- read.csv("./Output/AL_winter_SLP_anomaly.csv")
+
+# 15-year rolling SD of AL SLP (right-aligned), z-scored to center on 0
+al <- al %>%
+  arrange(year) %>%
+  mutate(AL.sd = roll_sd(SLP),
+         AL.sd = as.numeric(scale(AL.sd)))
+
+# Join AL SD with SST rolling AR1 from winter data frame
+al.sst <- winter %>%
+  select(year, GOA.ar1, EBS.ar1) %>%
+  left_join(al %>% select(year, AL.sd), by = "year") %>%
+  filter(!is.na(AL.sd))
+
+# Fit GLS with AR(1) residuals; extract slope p-value and marginal R²
+fit_gls_stats <- function(dat, y.col) {
+  dat <- dat %>% filter(!is.na(.data[[y.col]]), !is.na(AL.sd))
+  fit <- gls(as.formula(paste(y.col, "~ AL.sd")), data = dat,
+             correlation = corAR1(form = ~ 1), method = "ML")
+  p   <- summary(fit)$tTable["AL.sd", "p-value"]
+  # marginal R²: cor² between fitted and observed
+  r2  <- cor(dat[[y.col]], fitted(fit))^2
+  list(p = p, r2 = r2)
+}
+
+goa.stats <- fit_gls_stats(al.sst, "GOA.ar1")
+ebs.stats <- fit_gls_stats(al.sst, "EBS.ar1")
+
+fmt_label <- function(s) {
+  sprintf("R² = %.2f,  p = %.3f", s$r2, s$p)
+}
+
+# Two-panel scatter plot
+goa.scatter <- ggplot(al.sst, aes(x = AL.sd, y = GOA.ar1)) +
+  geom_point(color = "steelblue4", size = 2) +
+  geom_smooth(method = "lm", color = "steelblue4", fill = "steelblue", alpha = 0.2) +
+  annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.4,
+           label = fmt_label(goa.stats), size = 3.5) +
+  labs(title = "GOA",
+       x = "AL SLP SD (z-scored, 15-yr window)", y = "SST AR(1)") +
+  theme_bw()
+
+ebs.scatter <- ggplot(al.sst, aes(x = AL.sd, y = EBS.ar1)) +
+  geom_point(color = "darkorange4", size = 2) +
+  geom_smooth(method = "lm", color = "darkorange4", fill = "darkorange", alpha = 0.2) +
+  annotate("text", x = -Inf, y = Inf, hjust = -0.1, vjust = 1.4,
+           label = fmt_label(ebs.stats), size = 3.5) +
+  labs(title = "EBS",
+       x = "AL SLP SD (z-scored, 15-yr window)", y = "SST AR(1)") +
+  theme_bw()
+
+print(goa.scatter / ebs.scatter)
+
+# TIME SERIES: SST AR1 vs. AL SLP SD — multiple window lengths ----------------------------------
+
+windows <- c(10, 15, 20, 25)
+
+# Build long-format data frame with AR1 and AL SD for each window
+multi.win <- lapply(windows, function(w) {
+
+  # SST AR1 for this window
+  sst.w <- winter %>%
+    arrange(year) %>%
+    mutate(GOA.ar1 = rollapply(GOA, width = w, fill = NA, align = "right",
+                               FUN = function(v) acf(v, lag.max = 1, plot = FALSE)$acf[2]),
+           EBS.ar1 = rollapply(EBS, width = w, fill = NA, align = "right",
+                               FUN = function(v) acf(v, lag.max = 1, plot = FALSE)$acf[2]))
+
+  # AL SLP SD for this window, z-scored to center on 0
+  al.w <- al %>%
+    arrange(year) %>%
+    mutate(AL.sd = rollapply(SLP, width = w, fill = NA, align = "right", FUN = sd),
+           AL.sd = as.numeric(scale(AL.sd)))
+
+  sst.w %>%
+    select(year, GOA.ar1, EBS.ar1) %>%
+    left_join(al.w %>% select(year, AL.sd), by = "year") %>%
+    mutate(window = paste0(w, "-yr"))
+
+}) %>% bind_rows()
+
+multi.win$window <- factor(multi.win$window,
+                           levels = paste0(windows, "-yr"))
+
+# Long format: one row per year/window/variable
+ts.long <- multi.win %>%
+  pivot_longer(cols = c(GOA.ar1, EBS.ar1, AL.sd),
+               names_to = "variable", values_to = "value") %>%
+  mutate(
+    region = case_when(
+      variable == "GOA.ar1" ~ "GOA",
+      variable == "EBS.ar1" ~ "EBS",
+      variable == "AL.sd"   ~ "GOA"   # AL SD plotted in both rows via duplication below
+    ),
+    series = ifelse(variable == "AL.sd", "AL SLP SD", "SST AR(1)")
+  )
+
+# Duplicate AL SD rows for EBS panel
+al.ebs <- ts.long %>%
+  filter(variable == "AL.sd") %>%
+  mutate(region = "EBS")
+
+ts.long <- bind_rows(ts.long %>% filter(variable != "AL.sd" | region == "GOA"),
+                     al.ebs)
+
+ts.multi.plot <- ggplot(ts.long %>% filter(!is.na(value)),
+                        aes(x = year, y = value,
+                            color = series, linetype = series, shape = series)) +
+  geom_line() +
+  geom_point(size = 1.2) +
+  scale_color_manual(values   = c("SST AR(1)" = "steelblue4", "AL SLP SD" = "gray30")) +
+  scale_linetype_manual(values = c("SST AR(1)" = "solid",     "AL SLP SD" = "dashed")) +
+  scale_shape_manual(values    = c("SST AR(1)" = 16,          "AL SLP SD" = 1)) +
+  facet_grid(region ~ window, scales = "free_y") +
+  labs(title = "SST AR(1) and AL SLP SD — multiple rolling windows",
+       x = "Year", y = NULL,
+       color = NULL, linetype = NULL, shape = NULL) +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+print(ts.multi.plot)
+
+# SCATTER PLOTS — all window x region combinations ----------------------------------
+
+# Build long-format scatter data from multi.win
+scatter.long <- multi.win %>%
+  pivot_longer(cols = c(GOA.ar1, EBS.ar1),
+               names_to = "region", values_to = "ar1") %>%
+  mutate(region = sub(".ar1", "", region, fixed = TRUE)) %>%
+  filter(!is.na(ar1), !is.na(AL.sd))
+
+# GLS stats for each window x region combination
+gls.stats <- scatter.long %>%
+  group_by(window, region) %>%
+  group_modify(~ {
+    fit <- tryCatch(
+      gls(ar1 ~ AL.sd, data = .x,
+          correlation = corAR1(form = ~ 1), method = "ML"),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) return(data.frame(label = "p = NA,  R² = NA"))
+    p  <- summary(fit)$tTable["AL.sd", "p-value"]
+    r2 <- cor(.x$ar1, fitted(fit))^2
+    data.frame(label = sprintf("R² = %.2f,  p = %.3f", r2, p))
+  }) %>%
+  ungroup()
+
+region.colors <- c("GOA" = "steelblue4", "EBS" = "darkorange4")
+
+scatter.multi.plot <- ggplot(scatter.long, aes(x = AL.sd, y = ar1, color = region)) +
+  geom_point(size = 1.5) +
+  geom_smooth(method = "lm", aes(fill = region), alpha = 0.2) +
+  geom_text(data = gls.stats, aes(label = label),
+            x = -Inf, y = Inf, hjust = -0.05, vjust = 1.5,
+            inherit.aes = FALSE, size = 3) +
+  scale_color_manual(values = region.colors) +
+  scale_fill_manual(values  = region.colors) +
+  facet_grid(region ~ window, scales = "free_y") +
+  labs(title = "AL SLP SD vs. SST AR(1) — multiple rolling windows",
+       x = "AL SLP SD (z-scored)", y = "SST AR(1)") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+print(scatter.multi.plot)
 
 
