@@ -137,4 +137,164 @@
 # Examine CESM results
 - Now the analysis moves on to using CESM ensembles run with and without interannual variability in wind stress fields to evaluate the role of AL variability as a driver of reddening in GOA/EBS SST variability.
 - This step depends on comparing the Fully Coupled Model (FCM) ensmeble with the Mechanistically Decoupled Model (MDM) ensemble.
+- Begin by plotting the SST AR(1) time series for the GOA and EBS based on 15-year windows, following the same workflow as for the ERA5 observations.
+- For both FCM and MDM, plot the ensemble mean as a heavy line and the individual ensemble members for the individual ensemble members.
+- Result should be a four-panel plot with ecosystem in rows and model type (FCM or MDM) in columns.
+- Create the initial script to plot only five ensemble members from each model type to test the script. 
 
+
+# Debug
+- For the first call to process_ensemble on line 129, I get the error below (with traceback). Diagnose, explain, and fix.
+Error in sst[, , 1, ] : incorrect number of dimensions
+9.
+process_member(files[i])
+8.
+mutate(., member = i, model = model.type)
+7.
+process_member(files[i]) %>% mutate(member = i, model = model.type)
+6.
+FUN(X[[i]], ...)
+5.
+lapply(seq_along(files), function(i) {
+cat(" member", i, "\n")
+process_member(files[i]) %>% mutate(member = i, model = model.type)
+})
+4.
+list2(...)
+3.
+bind_rows(.)
+2.
+lapply(seq_along(files), function(i) {
+cat(" member", i, "\n")
+process_member(files[i]) %>% mutate(member = i, model = model.type)
+}) %>% bind_rows()
+1.
+process_ensemble(fcm.dir, "FCM", n.members)
+
+# Expand 
+- Make the following changes to the script:
+    - Plot all ensemble members.
+    - Plot the 95% CI as a ribbon around the mean line, rather than plotting the individual ensemble members.
+    - Add the observed AR(1) time series (ERA5) to each panel.
+
+# Clarification
+- Change the CESM2 plots to winter annual values as for ERA5
+- This means using the November-March means, with the year corresponding to January, as was done for CESM_obs_comparison.R
+- Also limit this to years of overlap between ERA5 and CESM2.
+
+# Debug
+- I now get the error below. Diagnose, explain, and fix.
+- Error in `mutate()`:
+ℹ In argument: `GOA.anom = residuals(lm(GOA.anom ~ seq_along(GOA.anom)))`.
+Caused by error in `lm.fit()`:
+! 0 (non-NA) cases
+Run `rlang::last_trace()` to see where the error occurred.
+
+# Fix time series length
+- The CESM2 time series should only be plotted for right-aligned 15-year windows that can be calculated from the time series available for ERA5 and CESM2 (individual years for 1950-2014).
+
+# Debug again.
+- I seem to be getting the same or similar error as described in line 185 of the prompt file. Diagnose, explain, and fix.
+- Error in `mutate()`:
+ℹ In argument: `GOA.anom = residuals(lm(GOA.anom ~ seq_along(GOA.anom)))`.
+Caused by error in `lm.fit()`:
+! 0 (non-NA) cases
+Run `rlang::last_trace()` to see where the error occurred.
+
+> rlang::last_trace()
+<error/dplyr:::mutate_error>
+Error in `mutate()`:
+ℹ In argument: `GOA.anom = residuals(lm(GOA.anom ~ seq_along(GOA.anom)))`.
+Caused by error in `lm.fit()`:
+! 0 (non-NA) cases
+---
+Backtrace:
+     ▆
+  1. ├─global process_ensemble(fcm.dir, "FCM", n.members)
+  2. │ ├─... %>% bind_rows()
+  3. │ └─base::lapply(...)
+  4. │   └─FUN(X[[i]], ...)
+  5. │     ├─process_member(files[i]) %>% mutate(member = i, model = model.type)
+  6. │     └─global process_member(files[i])
+  7. │       └─monthly %>% left_join(clim, by = "month") %>% ...
+  8. ├─dplyr::bind_rows(.)
+  9. │ └─rlang::list2(...)
+ 10. ├─dplyr::mutate(., member = i, model = model.type)
+ 11. ├─dplyr::mutate(...)
+ 12. ├─dplyr:::mutate.data.frame(...)
+ 13. │ └─dplyr:::mutate_cols(.data, dplyr_quosures(...), by)
+ 14. │   ├─base::withCallingHandlers(...)
+ 15. │   └─dplyr:::mutate_col(dots[[i]], data, mask, new_columns)
+ 16. │     └─mask$eval_all_mutate(quo)
+ 17. │       └─dplyr (local) eval()
+ 18. ├─stats::residuals(lm(GOA.anom ~ seq_along(GOA.anom)))
+ 19. └─stats::lm(GOA.anom ~ seq_along(GOA.anom))
+ 20.   └─stats::lm.fit(...)
+ 21.     └─base::stop("0 (non-NA) cases")
+Run rlang::last_trace(drop = FALSE) to see 3 hidden frames.
+
+# Debug
+- Still getting this error. Fix.
+-Error in `mutate()`:
+ℹ In argument: `GOA.ar1 = rollapply(...)`.
+Caused by error in `na.fail.default()`:
+! missing values in object
+Run `rlang::last_trace()` to see where the error occurred.
+
+> rlang::last_trace()
+<error/dplyr:::mutate_error>
+Error in `mutate()`:
+ℹ In argument: `GOA.ar1 = rollapply(...)`.
+Caused by error in `na.fail.default()`:
+! missing values in object
+---
+Backtrace:
+     ▆
+  1. ├─global process_ensemble(fcm.dir, "FCM", n.members)
+  2. │ ├─... %>% bind_rows()
+  3. │ └─base::lapply(...)
+  4. │   └─FUN(X[[i]], ...)
+  5. │     ├─process_member(files[i]) %>% mutate(member = i, model = model.type)
+  6. │     └─global process_member(files[i])
+  7. │       └─... %>% select(year, GOA.ar1, EBS.ar1)
+  8. ├─dplyr::bind_rows(.)
+  9. │ └─rlang::list2(...)
+ 10. ├─dplyr::mutate(., member = i, model = model.type)
+ 11. ├─dplyr::select(., year, GOA.ar1, EBS.ar1)
+ 12. ├─dplyr::filter(., year >= 1964, year <= 2014)
+ 13. ├─dplyr::mutate(...)
+ 14. ├─dplyr:::mutate.data.frame(...)
+ 15. │ └─dplyr:::mutate_cols(.data, dplyr_quosures(...), by)
+ 16. │   ├─base::withCallingHandlers(...)
+ 17. │   └─dplyr:::mutate_col(dots[[i]], data, mask, new_columns)
+ 18. │     └─mask$eval_all_mutate(quo)
+ 19. │       └─dplyr (local) eval()
+ 20. ├─zoo::rollapply(...)
+ 21. └─zoo:::rollapply.default(...)
+ 22.   ├─zoo::coredata(rollapply(zoo(data), ...))
+ 23.   ├─zoo::rollapply(zoo(data), ...)
+ 24.   └─zoo:::rollapply.zoo(zoo(data), ...)
+ 25.     └─base::mapply(...)
+ 26.       └─zoo (local) `<fn>`(dots[[1L]][[15L]], dots[[2L]][[15L]], data = `<dbl>`)
+ 27.         └─FUN(data[posns], ...)
+ 28.           └─stats::acf(v, lag.max = 1, plot = FALSE)
+ 29.             ├─stats::na.action(as.ts(x))
+ 30.             └─stats:::na.fail.default(as.ts(x))
+ 31.               └─base::stop("missing values in object")
+Run rlang::last_trace(drop = FALSE) to see 3 hidden frames.
+> 
+# SLP-SST correlation in observations
+- Evaluate the direct relationship 
+- Plot cross-correlations between detrended SLP anomalies in the AL box with detrended SST anomalies for the two systems (annual Nov-March mean for SLP and SST).
+- Plot CCF for unsmoothed SLP/SST data, 2-year rolling means and three-year rolling means.
+
+- Add a similar analysis using November-March values of N. Pac PC1 instead of AL SLP.
+
+# Examine MLD responses
+- Start a new script to download mixed layer depth fields for the N. Pacific spatial domain for 1950-2025 from ORAS5.
+- Use the N. Pacific spatial domain that was queried for SST.
+
+# Debug
+- I get this error. Fix.
+- Error in copernicus_marine_subset(dataset_id = "global-reanalysis-phy-001-031-grepv2-monthly",  : 
+  could not find function "copernicus_marine_subset"
