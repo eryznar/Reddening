@@ -210,3 +210,16 @@ al.winter <- al.monthly %>%
 
 # Save to Output
 write.csv(al.winter, "./Output/AL_winter_SLP_anomaly.csv", row.names = FALSE)
+
+# NORTH PACIFIC PC1 WINTER TIME SERIES ----------------------------------
+
+# Winter (Nov-Mar) means of PC1, year = January year
+pc1.winter <- pc.df %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  group_by(win.year) %>%
+  summarise(PC1 = mean(PC1, na.rm = TRUE), .groups = "drop") %>%
+  rename(year = win.year) %>%
+  arrange(year)
+
+write.csv(pc1.winter, "./Output/NP_PC1_winter.csv", row.names = FALSE)

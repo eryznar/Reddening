@@ -501,4 +501,158 @@ scatter.multi.plot <- ggplot(scatter.long, aes(x = AL.sd, y = ar1, color = regio
 
 print(scatter.multi.plot)
 
+# RESIDUALS OVER TIME — 15-year window AL SLP SD ~ SST AR1 ----------------------------------
 
+# Use the 15-yr window data from al.sst
+resid.dat <- al.sst %>% filter(!is.na(GOA.ar1), !is.na(EBS.ar1), !is.na(AL.sd))
+
+goa.lm <- lm(GOA.ar1 ~ AL.sd, data = resid.dat)
+ebs.lm <- lm(EBS.ar1 ~ AL.sd, data = resid.dat)
+
+resid.df <- resid.dat %>%
+  select(year) %>%
+  mutate(GOA = residuals(goa.lm),
+         EBS = residuals(ebs.lm)) %>%
+  pivot_longer(-year, names_to = "region", values_to = "resid")
+
+resid.plot <- ggplot(resid.df, aes(x = year, y = resid, color = region)) +
+  geom_hline(yintercept = 0, linewidth = 0.4, color = "gray50") +
+  geom_line() +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = c("GOA" = "steelblue4", "EBS" = "darkorange4")) +
+  facet_wrap(~ region, ncol = 1) +
+  labs(title = "Residuals: AL SLP SD ~ SST AR(1), 15-yr rolling window",
+       x = "Year", y = "Residual") +
+  theme_bw() +
+  theme(legend.position = "none")
+
+print(resid.plot)
+
+# SLP-SST CROSS-CORRELATIONS ----------------------------------
+
+# Use winter means: detrended SLP anomaly (AL box) and detrended SST anomaly (GOA, EBS)
+# al.winter has SLP; winter.anom has non-detrended SST anomalies
+# Detrend both before CCF
+
+# Join on year; keep complete cases over the common period
+ccf.dat <- al.winter %>%
+  rename(SLP = SLP) %>%
+  mutate(SLP = residuals(lm(SLP ~ year))) %>%
+  inner_join(winter.anom %>% select(year, GOA, EBS), by = "year") %>%
+  mutate(GOA = residuals(lm(GOA ~ year)),
+         EBS = residuals(lm(EBS ~ year))) %>%
+  arrange(year)
+
+# Rolling mean helper (returns NA-padded vector of same length)
+roll_mean <- function(x, w) as.numeric(rollapply(x, width = w, FUN = mean,
+                                                  fill = NA, align = "center"))
+
+# Build smoothed versions
+smoothing <- list(
+  "Unsmoothed" = ccf.dat,
+  "2-yr mean"  = ccf.dat %>% mutate(across(c(SLP, GOA, EBS), ~ roll_mean(.x, 2))),
+  "3-yr mean"  = ccf.dat %>% mutate(across(c(SLP, GOA, EBS), ~ roll_mean(.x, 3)))
+)
+
+max.lag <- 10
+
+# Compute CCF for all smoothing x region combinations
+ccf.out <- purrr::map_dfr(names(smoothing), function(sm) {
+  dat <- smoothing[[sm]] %>% filter(!is.na(SLP), !is.na(GOA), !is.na(EBS))
+  purrr::map_dfr(c("GOA", "EBS"), function(region) {
+    cc <- ccf(dat$SLP, dat[[region]], lag.max = max.lag,
+              plot = FALSE, na.action = na.pass)
+    data.frame(
+      smoothing = sm,
+      region    = region,
+      lag       = as.integer(cc$lag),
+      ccf       = as.numeric(cc$acf)
+    )
+  })
+})
+
+# 95% CI (approximate ±1.96/sqrt(n))
+n.obs  <- nrow(ccf.dat %>% filter(!is.na(SLP), !is.na(GOA)))
+ci.val <- 1.96 / sqrt(n.obs)
+
+ccf.out$smoothing <- factor(ccf.out$smoothing,
+                             levels = c("Unsmoothed", "2-yr mean", "3-yr mean"))
+
+ccf.plot <- ggplot(ccf.out, aes(x = lag, y = ccf, color = smoothing)) +
+  geom_hline(yintercept = 0,      linewidth = 0.3, color = "gray50") +
+  geom_hline(yintercept =  ci.val, linewidth = 0.3, color = "gray50", linetype = "dashed") +
+  geom_hline(yintercept = -ci.val, linewidth = 0.3, color = "gray50", linetype = "dashed") +
+  geom_line() +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = c("Unsmoothed" = "steelblue4",
+                                "2-yr mean"  = "darkorange3",
+                                "3-yr mean"  = "firebrick3")) +
+  scale_x_continuous(breaks = seq(-max.lag, max.lag, by = 2)) +
+  facet_wrap(~ region, ncol = 1) +
+  labs(title = "Cross-correlation: AL SLP vs. SST (detrended winter means)",
+       x = "Lag (years; positive = SLP leads SST)",
+       y = "Cross-correlation", color = "Smoothing") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+print(ccf.plot)
+
+# CCF: N. PACIFIC PC1 vs. GOA/EBS SST ----------------------------------
+
+# Load PC1 winter means (from ERA5_SLP_download.R)
+pc1.winter <- read.csv("./Output/NP_PC1_winter.csv")
+
+# Build detrended data frame: PC1 and SST winter anomalies
+pc1.ccf.dat <- pc1.winter %>%
+  mutate(PC1 = residuals(lm(PC1 ~ year))) %>%
+  inner_join(winter.anom %>% select(year, GOA, EBS), by = "year") %>%
+  mutate(GOA = residuals(lm(GOA ~ year)),
+         EBS = residuals(lm(EBS ~ year))) %>%
+  arrange(year)
+
+# Smoothed versions
+pc1.smoothing <- list(
+  "Unsmoothed" = pc1.ccf.dat,
+  "2-yr mean"  = pc1.ccf.dat %>% mutate(across(c(PC1, GOA, EBS), ~ roll_mean(.x, 2))),
+  "3-yr mean"  = pc1.ccf.dat %>% mutate(across(c(PC1, GOA, EBS), ~ roll_mean(.x, 3)))
+)
+
+# Compute CCF
+pc1.ccf.out <- purrr::map_dfr(names(pc1.smoothing), function(sm) {
+  dat <- pc1.smoothing[[sm]] %>% filter(!is.na(PC1), !is.na(GOA), !is.na(EBS))
+  purrr::map_dfr(c("GOA", "EBS"), function(region) {
+    cc <- ccf(dat$PC1, dat[[region]], lag.max = max.lag,
+              plot = FALSE, na.action = na.pass)
+    data.frame(
+      smoothing = sm,
+      region    = region,
+      lag       = as.integer(cc$lag),
+      ccf       = as.numeric(cc$acf)
+    )
+  })
+})
+
+n.obs.pc1  <- nrow(pc1.ccf.dat %>% filter(!is.na(PC1), !is.na(GOA)))
+ci.val.pc1 <- 1.96 / sqrt(n.obs.pc1)
+
+pc1.ccf.out$smoothing <- factor(pc1.ccf.out$smoothing,
+                                levels = c("Unsmoothed", "2-yr mean", "3-yr mean"))
+
+pc1.ccf.plot <- ggplot(pc1.ccf.out, aes(x = lag, y = ccf, color = smoothing)) +
+  geom_hline(yintercept = 0,          linewidth = 0.3, color = "gray50") +
+  geom_hline(yintercept =  ci.val.pc1, linewidth = 0.3, color = "gray50", linetype = "dashed") +
+  geom_hline(yintercept = -ci.val.pc1, linewidth = 0.3, color = "gray50", linetype = "dashed") +
+  geom_line() +
+  geom_point(size = 1.5) +
+  scale_color_manual(values = c("Unsmoothed" = "steelblue4",
+                                "2-yr mean"  = "darkorange3",
+                                "3-yr mean"  = "firebrick3")) +
+  scale_x_continuous(breaks = seq(-max.lag, max.lag, by = 2)) +
+  facet_wrap(~ region, ncol = 1) +
+  labs(title = "Cross-correlation: N. Pac PC1 vs. SST (detrended winter means)",
+       x = "Lag (years; positive = PC1 leads SST)",
+       y = "Cross-correlation", color = "Smoothing") +
+  theme_bw() +
+  theme(legend.position = "bottom")
+
+print(pc1.ccf.plot)
