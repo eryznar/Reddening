@@ -80,10 +80,13 @@ compute_eof1 <- function(arr, lons, lats, years, months) {
   grid    <- expand.grid(lon = lons, lat = lats)
   weights <- sqrt(cos(grid$lat[good] * pi / 180))
 
+  # Replace remaining NAs with 0 before SVD (irlba cannot handle NAs)
+  mat2[is.na(mat2)] <- 0
+
   # Weight columns of data matrix — equivalent to weighted covariance SVD
   # but avoids forming the [cells x cells] covariance matrix
   mat.w <- sweep(mat2, 2, weights, "*")
-  sv    <- irlba(mat.w, nv = 1, nu = 0)
+  sv    <- irlba(mat.w, nv = 1, nu = 0, maxit = 1000)
 
   loading       <- rep(NA_real_, nlon * nlat)
   loading[good] <- sv$v[, 1]
