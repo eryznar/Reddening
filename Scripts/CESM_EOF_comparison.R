@@ -2,7 +2,7 @@
 # Author: Mike Litzow
 #
 # Produces four 4x3 panel plots (12 panels each):
-#   Panel 1    = ERA5 observations
+#   Panel 1     = ERA5 observations
 #   Panels 2-12 = 11 CESM2 ensemble members
 #
 # Plot 1: SST EOF1 — ERA5 obs vs FCM members
@@ -10,15 +10,21 @@
 # Plot 3: SLP EOF1 — ERA5 obs vs FCM members
 # Plot 4: SLP EOF1 — ERA5 obs vs MDM members
 #
-# Common period: 1950-2014 (CESM2 ends 2014)
-# Season: winter (Nov-Mar); year assigned to January year
-# Domain: 20-66N, 110-250E
+# EOF fitting details:
+#   - All months (not seasonal subset)
+#   - Monthly anomalies from 1950-1979 climatology
+#   - Linear detrending of each grid cell
+#   - Latitude weighting: sqrt(cos(lat))
+#   - Fitted via irlba (memory-efficient; avoids forming cells x cells matrix)
+#   - Only leading EOF extracted
+#   - Common period: 1950-2014
 
 source("./Scripts/load.libs.functions.R")
+library(irlba)
 
 # ---- SETTINGS ----
-win.months <- c(11, 12, 1, 2, 3)
 yr.range   <- c(1950, 2014)
+clim.range <- c(1950, 1979)
 n.members  <- 11
 lat.min    <- 20;  lat.max    <- 66
 lon.min360 <- 110; lon.max360 <- 250
@@ -27,57 +33,67 @@ mapWorld <- map_data("world", wrap = c(20, 380))
 
 # ---- HELPER FUNCTIONS ----
 
-# Compute winter-mean anomalies from monthly [lon x lat x time] array.
-# Climatology computed over all months in the input array.
-# Returns list: arr [lon x lat x n.winter.years], years vector.
-winter_anom <- function(arr, years, months) {
-  clim <- array(NA, dim = c(dim(arr)[1], dim(arr)[2], 12))
+# Compute EOF1 from a raw monthly [lon x lat x time] array.
+# Steps: trim to yr.range, anomaly from clim.range climatology,
+#        detrend each cell, latitude-weight, irlba for leading EOF.
+# Returns data frame: lon, lat, loading.
+compute_eof1 <- function(arr, lons, lats, years, months) {
+
+  # Trim to analysis period
+  tidx   <- which(years >= yr.range[1] & years <= yr.range[2])
+  arr    <- arr[, , tidx]
+  yrs    <- years[tidx]
+  mons   <- months[tidx]
+
+  nlon <- length(lons); nlat <- length(lats); nt <- dim(arr)[3]
+
+  # Monthly climatology from clim.range
+  clim <- array(NA_real_, dim = c(nlon, nlat, 12))
   for (m in 1:12) {
-    mi <- which(months == m)
-    if (length(mi) > 0)
-      clim[, , m] <- apply(arr[, , mi, drop = FALSE], c(1, 2),
+    ci <- which(mons == m & yrs >= clim.range[1] & yrs <= clim.range[2])
+    if (length(ci) > 0)
+      clim[, , m] <- apply(arr[, , ci, drop = FALSE], c(1, 2),
                            mean, na.rm = TRUE)
   }
+
+  # Anomalies
   anom <- arr
-  for (t in seq_along(months))
-    anom[, , t] <- arr[, , t] - clim[, , months[t]]
+  for (t in seq_len(nt))
+    anom[, , t] <- arr[, , t] - clim[, , mons[t]]
 
-  wi   <- which(months %in% win.months)
-  wyrs <- ifelse(months[wi] %in% c(11, 12), years[wi] + 1L, years[wi])
-  uyrs <- sort(unique(wyrs[wyrs >= yr.range[1] & wyrs <= yr.range[2]]))
+  # Reshape to [time x cells]
+  mat  <- matrix(anom, nrow = nt)
 
-  out <- array(NA, dim = c(dim(arr)[1], dim(arr)[2], length(uyrs)))
-  for (i in seq_along(uyrs)) {
-    ti       <- wi[wyrs == uyrs[i]]
-    out[,,i] <- apply(anom[, , ti, drop = FALSE], c(1, 2), mean, na.rm = TRUE)
-  }
-  list(arr = out, years = uyrs)
-}
-
-# Compute EOF1 loadings from [lon x lat x time] array.
-# Returns data frame: lon, lat, loading.
-compute_eof1 <- function(arr, lons, lats) {
-  nlon <- length(lons); nlat <- length(lats); nt <- dim(arr)[3]
-  mat  <- matrix(arr, nrow = nt)
+  # Retain cells with data in > 50% of time steps
   good <- which(colSums(!is.na(mat)) > nt * 0.5)
   mat2 <- mat[, good]
+
+  # Detrend each cell (linear trend on anomaly time series)
   mat2 <- apply(mat2, 2, function(x) {
     ok <- !is.na(x)
-    if (sum(ok) > 5) x[ok] <- residuals(lm(x[ok] ~ seq_len(sum(ok))))
+    if (sum(ok) > 5)
+      x[ok] <- residuals(lm(x[ok] ~ seq_len(sum(ok))))
     x
   })
+
+  # Latitude weights: sqrt(cos(lat))
   grid    <- expand.grid(lon = lons, lat = lats)
   weights <- sqrt(cos(grid$lat[good] * pi / 180))
-  pca     <- svd.triplet(cov(mat2, use = "pairwise.complete.obs"),
-                         col.w = weights)
-  loadings         <- rep(NA_real_, nlon * nlat)
-  loadings[good]   <- pca$U[, 1]
-  df               <- expand.grid(lon = lons, lat = lats)
-  df$loading       <- loadings
+
+  # Weight columns of data matrix — equivalent to weighted covariance SVD
+  # but avoids forming the [cells x cells] covariance matrix
+  mat.w <- sweep(mat2, 2, weights, "*")
+  sv    <- irlba(mat.w, nv = 1, nu = 0)
+
+  loading       <- rep(NA_real_, nlon * nlat)
+  loading[good] <- sv$v[, 1]
+
+  df          <- expand.grid(lon = lons, lat = lats)
+  df$loading  <- loading
   df
 }
 
-# Sign convention: flip so overall mean loading is negative
+# Sign convention: flip so dominant lobe is negative
 orient_eof <- function(df) {
   if (mean(df$loading, na.rm = TRUE) > 0) df$loading <- -df$loading
   df
@@ -104,16 +120,16 @@ eof_panel <- function(df, title, col.lim) {
     labs(title = title) +
     theme_bw(base_size = 8) +
     theme(
-      plot.title      = element_text(size = 7, hjust = 0.5),
-      axis.title      = element_blank(),
-      axis.text       = element_text(size = 5),
-      panel.grid      = element_blank(),
-      legend.position = "right",
+      plot.title        = element_text(size = 7, hjust = 0.5),
+      axis.title        = element_blank(),
+      axis.text         = element_text(size = 5),
+      panel.grid        = element_blank(),
+      legend.position   = "right",
       legend.key.height = unit(0.8, "cm")
     )
 }
 
-# 4x3 panel plot: obs + n.members model members
+# Build 4x3 panel plot: obs + 11 model members
 make_12panel <- function(obs.df, member.dfs, var.label, model.label) {
   all.load <- c(obs.df$loading, unlist(lapply(member.dfs, `[[`, "loading")))
   col.lim  <- max(abs(all.load), na.rm = TRUE)
@@ -121,23 +137,21 @@ make_12panel <- function(obs.df, member.dfs, var.label, model.label) {
   panels <- c(
     list(eof_panel(obs.df, paste0("ERA5 Obs (", var.label, ")"), col.lim)),
     lapply(seq_along(member.dfs), function(i)
-      eof_panel(member.dfs[[i]],
-                paste0(model.label, " member ", i), col.lim))
+      eof_panel(member.dfs[[i]], paste0(model.label, " member ", i), col.lim))
   )
 
   wrap_plots(panels, ncol = 4) +
     plot_layout(guides = "collect") +
     plot_annotation(
-      title = paste(
-        "EOF1 Loadings — ERA5 vs CESM2", model.label, "(", var.label, ")",
-        "\nWinter (Nov-Mar), 1950-2014"
+      title = paste0(
+        "EOF1 Loadings — ERA5 vs CESM2 ", model.label, " (", var.label, ")\n",
+        "All months, 1950-2014, anomaly from 1950-1979 climatology"
       ),
       theme = theme(plot.title = element_text(size = 10, hjust = 0.5))
     )
 }
 
-# ---- LOAD CESM2 MEMBER ----
-# Returns list: arr [lon x lat x time], lons, lats, years, months
+# Load one CESM2 member; returns list with arr, lons, lats, years, months
 load_cesm <- function(file, varname) {
   nc  <- nc_open(file)
   lon <- ncvar_get(nc, "lon")
@@ -151,8 +165,8 @@ load_cesm <- function(file, varname) {
   lon.idx <- which(lon >= lon.min360 & lon <= lon.max360)
   dat     <- dat[lon.idx, lat.idx, ]
 
-  nt     <- dim(dat)[3]
-  dates  <- seq(as.Date("1850-01-15"), by = "month", length.out = nt)
+  nt    <- dim(dat)[3]
+  dates <- seq(as.Date("1850-01-15"), by = "month", length.out = nt)
   list(arr    = dat,
        lons   = lon[lon.idx],
        lats   = lat[lat.idx],
@@ -169,13 +183,15 @@ lats.sst <- ncvar_get(nc, "latitude")
 time     <- ncvar_get(nc, "valid_time")
 nc_close(nc)
 
-dates.e  <- as.Date(as.POSIXct(time, origin = "1970-01-01", tz = "UTC"))
-yrs.e    <- as.integer(format(dates.e, "%Y"))
-mons.e   <- as.integer(format(dates.e, "%m"))
+dates.e <- as.Date(as.POSIXct(time, origin = "1970-01-01", tz = "UTC"))
+yrs.e   <- as.integer(format(dates.e, "%Y"))
+mons.e  <- as.integer(format(dates.e, "%m"))
 
-idx.e    <- which(yrs.e >= yr.range[1] & yrs.e <= yr.range[2])
-wa.sst   <- winter_anom(sst.raw[, , idx.e], yrs.e[idx.e], mons.e[idx.e])
-eof.sst.obs <- orient_eof(compute_eof1(wa.sst$arr, lons.sst, lats.sst))
+message("Computing ERA5 SST EOF1...")
+eof.sst.obs <- orient_eof(
+  compute_eof1(sst.raw, lons.sst, lats.sst, yrs.e, mons.e)
+)
+rm(sst.raw); gc()
 
 # ---- ERA5 SLP ----
 message("Loading ERA5 SLP...")
@@ -186,21 +202,24 @@ lats.slp <- ncvar_get(nc, "latitude")
 time     <- ncvar_get(nc, "valid_time")
 nc_close(nc)
 
-dates.s  <- as.Date(as.POSIXct(time, origin = "1970-01-01", tz = "UTC"))
-yrs.s    <- as.integer(format(dates.s, "%Y"))
-mons.s   <- as.integer(format(dates.s, "%m"))
+dates.s <- as.Date(as.POSIXct(time, origin = "1970-01-01", tz = "UTC"))
+yrs.s   <- as.integer(format(dates.s, "%Y"))
+mons.s  <- as.integer(format(dates.s, "%m"))
 
-# Restrict to common lat/lon domain (SLP file has broader coverage)
+# Restrict to North Pacific domain
 lat.idx.slp <- which(lats.slp >= lat.min & lats.slp <= lat.max)
 lon.idx.slp <- which(to360(lons.slp) >= lon.min360 &
                        to360(lons.slp) <= lon.max360)
 slp.crop  <- slp.raw[lon.idx.slp, lat.idx.slp, ]
 lons.slp2 <- lons.slp[lon.idx.slp]
 lats.slp2 <- lats.slp[lat.idx.slp]
+rm(slp.raw); gc()
 
-idx.s    <- which(yrs.s >= yr.range[1] & yrs.s <= yr.range[2])
-wa.slp   <- winter_anom(slp.crop[, , idx.s], yrs.s[idx.s], mons.s[idx.s])
-eof.slp.obs <- orient_eof(compute_eof1(wa.slp$arr, lons.slp2, lats.slp2))
+message("Computing ERA5 SLP EOF1...")
+eof.slp.obs <- orient_eof(
+  compute_eof1(slp.crop, lons.slp2, lats.slp2, yrs.s, mons.s)
+)
+rm(slp.crop); gc()
 
 # ---- CESM2 FILE LISTS ----
 fcm.sst.files <- head(sort(list.files("./Data/CESM2 ensemble/SST/FCM",
@@ -216,37 +235,32 @@ mdm.slp.files <- head(sort(list.files("./Data/CESM2 ensemble/SLP/MDM",
                                       pattern = "\\.nc$", full.names = TRUE)),
                       n.members)
 
-# ---- PROCESS CESM2 MEMBERS ----
-
+# Process one CESM2 member: load, compute EOF1, orient
 eof_cesm <- function(file, varname, scale.pa = FALSE) {
   d <- load_cesm(file, varname)
   if (scale.pa) d$arr <- d$arr / 100
-  wa <- winter_anom(d$arr, d$years, d$months)
-  orient_eof(compute_eof1(wa$arr, d$lons, d$lats))
+  orient_eof(compute_eof1(d$arr, d$lons, d$lats, d$years, d$months))
 }
 
+# ---- PROCESS CESM2 MEMBERS ----
 message("Processing FCM SST members (", length(fcm.sst.files), ")...")
 fcm.sst.eofs <- lapply(seq_along(fcm.sst.files), function(i) {
-  message("  member ", i)
-  eof_cesm(fcm.sst.files[i], "SST")
+  message("  member ", i); eof_cesm(fcm.sst.files[i], "SST")
 })
 
 message("Processing MDM SST members (", length(mdm.sst.files), ")...")
 mdm.sst.eofs <- lapply(seq_along(mdm.sst.files), function(i) {
-  message("  member ", i)
-  eof_cesm(mdm.sst.files[i], "SST")
+  message("  member ", i); eof_cesm(mdm.sst.files[i], "SST")
 })
 
 message("Processing FCM SLP members (", length(fcm.slp.files), ")...")
 fcm.slp.eofs <- lapply(seq_along(fcm.slp.files), function(i) {
-  message("  member ", i)
-  eof_cesm(fcm.slp.files[i], "PSL", scale.pa = TRUE)
+  message("  member ", i); eof_cesm(fcm.slp.files[i], "PSL", scale.pa = TRUE)
 })
 
 message("Processing MDM SLP members (", length(mdm.slp.files), ")...")
 mdm.slp.eofs <- lapply(seq_along(mdm.slp.files), function(i) {
-  message("  member ", i)
-  eof_cesm(mdm.slp.files[i], "PSL", scale.pa = TRUE)
+  message("  member ", i); eof_cesm(mdm.slp.files[i], "PSL", scale.pa = TRUE)
 })
 
 # ---- PLOTS ----
