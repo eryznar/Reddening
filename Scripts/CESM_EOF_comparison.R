@@ -5,22 +5,18 @@
 #   Panel 1     = ERA5 observations
 #   Panels 2-12 = 11 CESM2 ensemble members
 #
-# Plot 1: SST EOF1 — ERA5 obs vs FCM members
-# Plot 2: SST EOF1 — ERA5 obs vs MDM members
-# Plot 3: SLP EOF1 — ERA5 obs vs FCM members
-# Plot 4: SLP EOF1 — ERA5 obs vs MDM members
-#
 # EOF fitting details:
 #   - All months (not seasonal subset)
 #   - Monthly anomalies from 1950-1979 climatology
 #   - Linear detrending of each grid cell
 #   - Latitude weighting: sqrt(cos(lat))
-#   - Fitted via irlba (memory-efficient; avoids forming cells x cells matrix)
+#   - Temporal covariance approach: eigen([time x time]) — avoids memory issues
+#     and is more numerically stable than SVD on large spatial matrices
 #   - Only leading EOF extracted
 #   - Common period: 1950-2014
+#   - Same spatial domain for SST and SLP: 20-66N, 110-250E
 
 source("./Scripts/load.libs.functions.R")
-library(irlba)
 
 # ---- SETTINGS ----
 yr.range   <- c(1950, 2014)
@@ -30,24 +26,31 @@ lat.min    <- 20;  lat.max    <- 66
 lon.min360 <- 110; lon.max360 <- 250
 
 mapWorld <- map_data("world", wrap = c(20, 380))
+to360    <- function(lon) ifelse(lon < 0, lon + 360, lon)
 
-# ---- HELPER FUNCTIONS ----
+# ---- EOF COMPUTATION ----
+# Input:  arr [lon x lat x time], coordinate vectors, year/month index vectors
+# Method: temporal covariance eigen-decomposition
+#   1. Trim to yr.range
+#   2. Monthly anomaly relative to clim.range climatology
+#   3. Linear detrend each cell
+#   4. Latitude-weight columns: w = sqrt(cos(lat))
+#   5. Form [time x time] covariance C = X_w X_w^T / (n-1)
+#   6. Leading eigenvector of C = PC1 time series
+#   7. Project X_w^T onto PC1 to recover EOF1 spatial loadings
+# Returns data frame: lon, lat, loading
 
-# Compute EOF1 from a raw monthly [lon x lat x time] array.
-# Steps: trim to yr.range, anomaly from clim.range climatology,
-#        detrend each cell, latitude-weight, irlba for leading EOF.
-# Returns data frame: lon, lat, loading.
 compute_eof1 <- function(arr, lons, lats, years, months) {
 
-  # Trim to analysis period
-  tidx   <- which(years >= yr.range[1] & years <= yr.range[2])
-  arr    <- arr[, , tidx]
-  yrs    <- years[tidx]
-  mons   <- months[tidx]
+  tidx <- which(years >= yr.range[1] & years <= yr.range[2])
+  arr  <- arr[, , tidx]
+  yrs  <- years[tidx]
+  mons <- months[tidx]
+  nt   <- dim(arr)[3]
+  nlon <- length(lons)
+  nlat <- length(lats)
 
-  nlon <- length(lons); nlat <- length(lats); nt <- dim(arr)[3]
-
-  # Monthly climatology from clim.range
+  # Monthly climatology over clim.range
   clim <- array(NA_real_, dim = c(nlon, nlat, 12))
   for (m in 1:12) {
     ci <- which(mons == m & yrs >= clim.range[1] & yrs <= clim.range[2])
@@ -61,50 +64,61 @@ compute_eof1 <- function(arr, lons, lats, years, months) {
   for (t in seq_len(nt))
     anom[, , t] <- arr[, , t] - clim[, , mons[t]]
 
-  # Reshape to [time x cells]
+  # [time x cells]
   mat  <- matrix(anom, nrow = nt)
 
-  # Retain cells with data in > 50% of time steps
-  good <- which(colSums(!is.na(mat)) > nt * 0.5)
+  # Keep cells with data present in all time steps.
+  # Relax to 95% if needed (e.g. sparse sea-ice months).
+  complete <- colSums(!is.na(mat))
+  good <- which(complete == nt)
+  if (length(good) < 50) good <- which(complete >= nt * 0.95)
+
   mat2 <- mat[, good]
 
-  # Detrend each cell (linear trend on anomaly time series)
-  mat2 <- apply(mat2, 2, function(x) {
-    ok <- !is.na(x)
-    if (sum(ok) > 5)
-      x[ok] <- residuals(lm(x[ok] ~ seq_len(sum(ok))))
-    x
-  })
+  # Fill any residual sparse NAs with the cell temporal mean (= ~0 for anomalies)
+  for (j in seq_len(ncol(mat2))) {
+    bad <- is.na(mat2[, j])
+    if (any(bad)) mat2[bad, j] <- mean(mat2[, j], na.rm = TRUE)
+  }
+
+  # Detrend each cell
+  t.seq <- seq_len(nt)
+  mat2  <- apply(mat2, 2, function(x) residuals(lm(x ~ t.seq)))
 
   # Latitude weights: sqrt(cos(lat))
   grid    <- expand.grid(lon = lons, lat = lats)
   weights <- sqrt(cos(grid$lat[good] * pi / 180))
 
-  # Replace remaining NAs with 0 before SVD (irlba cannot handle NAs)
-  mat2[is.na(mat2)] <- 0
-
-  # Weight columns of data matrix — equivalent to weighted covariance SVD
-  # but avoids forming the [cells x cells] covariance matrix
+  # Weighted data matrix [time x cells]
   mat.w <- sweep(mat2, 2, weights, "*")
-  sv    <- irlba(mat.w, nv = 1, nu = 0, maxit = 1000)
+
+  # Temporal covariance [time x time] — small matrix, numerically stable
+  C   <- tcrossprod(mat.w) / (nt - 1)
+  eig <- eigen(C, symmetric = TRUE)
+
+  # Leading PC (time scores)
+  pc1 <- eig$vectors[, 1]
+
+  # Recover EOF1 spatial loadings by projecting weighted matrix onto PC1
+  eof1.good <- as.vector(crossprod(mat.w, pc1))
+  eof1.good <- eof1.good / sqrt(sum(eof1.good^2))
 
   loading       <- rep(NA_real_, nlon * nlat)
-  loading[good] <- sv$v[, 1]
+  loading[good] <- eof1.good
 
-  df          <- expand.grid(lon = lons, lat = lats)
-  df$loading  <- loading
+  df         <- expand.grid(lon = lons, lat = lats)
+  df$loading <- loading
   df
 }
 
-# Sign convention: flip so dominant lobe is negative
+# Sign convention: flip so dominant lobe is negative (PDO convention: cool central NP)
 orient_eof <- function(df) {
   if (mean(df$loading, na.rm = TRUE) > 0) df$loading <- -df$loading
   df
 }
 
-to360 <- function(lon) ifelse(lon < 0, lon + 360, lon)
+# ---- PLOTTING ----
 
-# Single map panel
 eof_panel <- function(df, title, col.lim) {
   df$lon360 <- to360(df$lon)
   ggplot() +
@@ -132,7 +146,6 @@ eof_panel <- function(df, title, col.lim) {
     )
 }
 
-# Build 4x3 panel plot: obs + 11 model members
 make_12panel <- function(obs.df, member.dfs, var.label, model.label) {
   all.load <- c(obs.df$loading, unlist(lapply(member.dfs, `[[`, "loading")))
   col.lim  <- max(abs(all.load), na.rm = TRUE)
@@ -154,7 +167,8 @@ make_12panel <- function(obs.df, member.dfs, var.label, model.label) {
     )
 }
 
-# Load one CESM2 member; returns list with arr, lons, lats, years, months
+# ---- LOAD CESM2 MEMBER ----
+# Crops to the common domain (lon.min360-lon.max360, lat.min-lat.max) on load.
 load_cesm <- function(file, varname) {
   nc  <- nc_open(file)
   lon <- ncvar_get(nc, "lon")
@@ -190,11 +204,19 @@ dates.e <- as.Date(as.POSIXct(time, origin = "1970-01-01", tz = "UTC"))
 yrs.e   <- as.integer(format(dates.e, "%Y"))
 mons.e  <- as.integer(format(dates.e, "%m"))
 
+# Enforce common domain (SST file already covers 110-250E but confirm)
+lon.idx.sst <- which(to360(lons.sst) >= lon.min360 & to360(lons.sst) <= lon.max360)
+lat.idx.sst <- which(lats.sst >= lat.min & lats.sst <= lat.max)
+sst.crop    <- sst.raw[lon.idx.sst, lat.idx.sst, ]
+lons.sst2   <- lons.sst[lon.idx.sst]
+lats.sst2   <- lats.sst[lat.idx.sst]
+rm(sst.raw); gc()
+
 message("Computing ERA5 SST EOF1...")
 eof.sst.obs <- orient_eof(
-  compute_eof1(sst.raw, lons.sst, lats.sst, yrs.e, mons.e)
+  compute_eof1(sst.crop, lons.sst2, lats.sst2, yrs.e, mons.e)
 )
-rm(sst.raw); gc()
+rm(sst.crop); gc()
 
 # ---- ERA5 SLP ----
 message("Loading ERA5 SLP...")
@@ -209,13 +231,12 @@ dates.s <- as.Date(as.POSIXct(time, origin = "1970-01-01", tz = "UTC"))
 yrs.s   <- as.integer(format(dates.s, "%Y"))
 mons.s  <- as.integer(format(dates.s, "%m"))
 
-# Restrict to North Pacific domain
+# Crop to same domain as SST and CESM2: 110-250E, 20-66N
+lon.idx.slp <- which(to360(lons.slp) >= lon.min360 & to360(lons.slp) <= lon.max360)
 lat.idx.slp <- which(lats.slp >= lat.min & lats.slp <= lat.max)
-lon.idx.slp <- which(to360(lons.slp) >= lon.min360 &
-                       to360(lons.slp) <= lon.max360)
-slp.crop  <- slp.raw[lon.idx.slp, lat.idx.slp, ]
-lons.slp2 <- lons.slp[lon.idx.slp]
-lats.slp2 <- lats.slp[lat.idx.slp]
+slp.crop    <- slp.raw[lon.idx.slp, lat.idx.slp, ]
+lons.slp2   <- lons.slp[lon.idx.slp]
+lats.slp2   <- lats.slp[lat.idx.slp]
 rm(slp.raw); gc()
 
 message("Computing ERA5 SLP EOF1...")
@@ -238,7 +259,6 @@ mdm.slp.files <- head(sort(list.files("./Data/CESM2 ensemble/SLP/MDM",
                                       pattern = "\\.nc$", full.names = TRUE)),
                       n.members)
 
-# Process one CESM2 member: load, compute EOF1, orient
 eof_cesm <- function(file, varname, scale.pa = FALSE) {
   d <- load_cesm(file, varname)
   if (scale.pa) d$arr <- d$arr / 100
