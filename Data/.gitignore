@@ -4,3 +4,10 @@ era5_sst_NP_1950_2025.nc
 CESM2 ensemble
 tmp_oras5
 oras5_mld_NP_1958_2025.nc
+oras5_mld_EBS_box.nc
+oras5_mld_GOA_box.nc
+oras5_mld_NP_mean_all.nc
+oras5_mld_NP_mean_win.nc
+oras5_mld_NP_fldmean.nc
+oras5_mld_NP_detr_anom_winmon.nc
+oras5_mld_NEP_detr_anom_winmon.nc
