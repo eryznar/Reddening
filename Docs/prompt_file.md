@@ -298,3 +298,46 @@ Run rlang::last_trace(drop = FALSE) to see 3 hidden frames.
 - I get this error. Fix.
 - Error in copernicus_marine_subset(dataset_id = "global-reanalysis-phy-001-031-grepv2-monthly",  : 
   could not find function "copernicus_marine_subset"
+
+  # Restart
+  - I am in a new session and trying to run ORAS5_MLD_download.R
+  - I get this error when running the script:
+  sh: copernicusmarine: command not found
+Warning message:
+In system(cmd) : error in running command
+- I have copernicusmarine open in the terminal for this VS Code session
+- But I am running the script in an R studio session.
+- How can I successfully run the R script calling the MLD data from Copernicus?
+
+# Debug
+- I get this warning and this error. Diagnose, explain, and fix.
+- WARNING - 2026-04-02T23:27:45Z - '--force-download' has been deprecated.
+ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-grepv2-monthly Please check that the dataset exists and the input datasetID is correct.
+
+# Summarize/confirm MLD output
+- Plot maps with cell-wise mean MLD for the North Pacific spatial domain, all years.
+- Create separate maps for all months and winter (November-March) only.
+- Add the polygons for the EBS and GOA areas to the plots.
+
+# Debug
+- At line 16 I get the error below.
+- Tell me the spatial resolution of the MLD data. Is it possible to coarsen the data too 1/12 degree to make the vector smaller?
+- Error: vector memory limit of 16.0 Gb reached, see mem.maxVSize()
+
+
+# Observation - CESM2 comparison
+- Return to the comparison between ERA5 SST and SLP vs CESM2 FCM/MDM
+- Create a new R script to do this.
+- Rely on data handling and analysis approaches used earlier in this project.
+- For both SST and SLP, compare the loadings (on maps) for EOF1.
+- Compare the EOF loadings between observations (1 panel) and 11 ensemble members (12 panel plot, 4 columns x 3 rows)
+- Four separate plots - SST observations vs FCM, SST observations vs MDM, SLP observations vs FCM, SLP observations vs MDM. 
+- Confirm that the EOFs are fit to the same time domain for observations and CESM2
+- Rewrite to call needed packages 
+
+# Debug
+- I get this error when running the SST EOF for ERA5: cannote allocate vector size of 38.3 Gb
+- Confirm that you are using package irlba and fitting only the leading EOF axis
+- Confirm that the cells are weighted by size based on latitude, and the EOF is fit on the covariance matrix.
+- Confirm the EOF is fitted to detrended monthly anomaly values for each cell (1950-1979 climatology).
+- The EOF should be fit to all months, not winter means.
