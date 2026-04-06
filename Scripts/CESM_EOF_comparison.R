@@ -308,6 +308,9 @@ save_panel(make_12panel(eof.sst.obs, fcm.sst.eofs, "SST", "FCM"),
            "./Figures/EOF1_SST_FCM.png")
 save_panel(make_12panel(eof.sst.obs, mdm.sst.eofs, "SST", "MDM"),
            "./Figures/EOF1_SST_MDM.png")
+write.csv(eof.slp.obs, "./Output/era5_slp_eof1_loadings.csv", row.names = FALSE)
+message("Saved: Output/era5_slp_eof1_loadings.csv")
+
 save_panel(make_12panel(eof.slp.obs, fcm.slp.eofs, "SLP", "FCM"),
            "./Figures/EOF1_SLP_FCM.png")
 save_panel(make_12panel(eof.slp.obs, mdm.slp.eofs, "SLP", "MDM"),
