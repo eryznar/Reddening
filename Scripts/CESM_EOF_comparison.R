@@ -117,9 +117,19 @@ orient_eof <- function(df) {
   df
 }
 
+# Coarsen a loading data frame to ~res degree bins for faster plotting
+coarsen_df <- function(df, res = 1) {
+  df %>%
+    mutate(lon = round(lon / res) * res,
+           lat = round(lat / res) * res) %>%
+    group_by(lon, lat) %>%
+    summarise(loading = mean(loading, na.rm = TRUE), .groups = "drop")
+}
+
 # ---- PLOTTING ----
 
 eof_panel <- function(df, title, col.lim) {
+  df <- coarsen_df(df, res = 2)
   df$lon360 <- to360(df$lon)
   ggplot() +
     geom_tile(data = filter(df, !is.na(loading)),
@@ -289,12 +299,16 @@ mdm.slp.eofs <- lapply(seq_along(mdm.slp.files), function(i) {
 # ---- PLOTS ----
 message("Plotting...")
 
-p1 <- make_12panel(eof.sst.obs, fcm.sst.eofs, "SST", "FCM")
-p2 <- make_12panel(eof.sst.obs, mdm.sst.eofs, "SST", "MDM")
-p3 <- make_12panel(eof.slp.obs, fcm.slp.eofs, "SLP", "FCM")
-p4 <- make_12panel(eof.slp.obs, mdm.slp.eofs, "SLP", "MDM")
+save_panel <- function(p, filename) {
+  ggsave(filename, plot = p, width = 16, height = 10, dpi = 150)
+  message("Saved: ", filename)
+}
 
-print(p1)
-print(p2)
-print(p3)
-print(p4)
+save_panel(make_12panel(eof.sst.obs, fcm.sst.eofs, "SST", "FCM"),
+           "./Figures/EOF1_SST_FCM.png")
+save_panel(make_12panel(eof.sst.obs, mdm.sst.eofs, "SST", "MDM"),
+           "./Figures/EOF1_SST_MDM.png")
+save_panel(make_12panel(eof.slp.obs, fcm.slp.eofs, "SLP", "FCM"),
+           "./Figures/EOF1_SLP_FCM.png")
+save_panel(make_12panel(eof.slp.obs, mdm.slp.eofs, "SLP", "MDM"),
+           "./Figures/EOF1_SLP_MDM.png")
