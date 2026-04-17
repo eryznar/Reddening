@@ -136,7 +136,7 @@
 
 # Examine CESM results
 - Now the analysis moves on to using CESM ensembles run with and without interannual variability in wind stress fields to evaluate the role of AL variability as a driver of reddening in GOA/EBS SST variability.
-- This step depends on comparing the Fully Coupled Model (FCM) ensmeble with the Mechanistically Decoupled Model (MDM) ensemble.
+- This step depends on comparing the Fully Coupled Model (FCM) ensemble with the Mechanistically Decoupled Model (MDM) ensemble.
 - Begin by plotting the SST AR(1) time series for the GOA and EBS based on 15-year windows, following the same workflow as for the ERA5 observations.
 - For both FCM and MDM, plot the ensemble mean as a heavy line and the individual ensemble members for the individual ensemble members.
 - Result should be a four-panel plot with ecosystem in rows and model type (FCM or MDM) in columns.
@@ -319,11 +319,83 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Create separate maps for all months and winter (November-March) only.
 - Add the polygons for the EBS and GOA areas to the plots.
 
+# MLD time series
+- Continue in the same script.
+- Calculate monthly area-wide means for the EBS and GOA. Use area-weighted values for each cell, with the areas based on latitude.
+- Calculate the monthly anomalies for each area for the 1958-1987 reference period.
+- Summarize three time series as winter (November-March) means with the year corresponding to January:
+    - Raw mean MLD.
+    - Mean monthly anomaly MLD.
+    - Detrended monthly anomaly MLD.
+    - Remember that each of these three time series is plotted as a winter mean.
+    - Remember that these three time series should be plotted separately for the GOA and EBS areas only.
+
 # Debug
 - At line 16 I get the error below.
 - Tell me the spatial resolution of the MLD data. Is it possible to coarsen the data too 1/12 degree to make the vector smaller?
 - Error: vector memory limit of 16.0 Gb reached, see mem.maxVSize()
 
+# Regress SLP PC1 onto cellwise MLD
+- Continue adding onto the same script
+- Use SLP PC1 for detrended monthly anomaly SLP values as calculated earlier. 
+- Plot the regression coefficients for the regression of November-March SLP PC1 (x) onto cellwise detrended MLD monthly anomalies (November-March means, y).
+- Restrict the spatial domain to the NE Pacific: 170-250 degrees E, >=30 degrees N.
+- Use a regression with 1st-order autocorrelation in the residuals.
+- Surround areas with p < 0.05 with a line. 
+- Confirm that the SLP PC1 time series from ERA5_SLP_download.R is being used in the regressions (and is then correctly subset fo November-March mean values.)
+
+# Redraw 15-yr windows AL SD vs SST AR1
+- Return to CESM_obs_comparison.R
+- At line 460, add in script that was previously in place to plot AL SD and EBS/GOA SST AR(1) for 15-year windows.
+- AL SD and SST AR1 should be on two labeled y-axes, one panel for EBS, 1 for GOA.
+- Save the figure to /figures as a .png.
+
+# Draw 15-yr windows AL SD vs MLD AR1
+- Use the same layout and approach as ./Figures/AL_SD_SST_AR1_15yr_dual_axis.png
+- Specifically, 15-year windows, annual means of winter (November-March) values.
+- Instead of SST AR(1), use MLD AR(1) for each system.-
+- This is not a regressopn, rather each time series is plotted, with dual y axes, as in the reference figure.
+- Add the correlation coefficient to each panel.
+
+# Draw regression maps for AL - MLD by era
+- Make a second version of the map in "Regress SLP PC1 onto cellwise MLD"
+- This version will be two panels (one column, two rows)
+- First panel is for the low-variability AL era (years 1998-2010).
+- Second panel is for the high-variability era (years 2016-2025).
+- All other details of the regression and plotting foloow the first map for all years.
+- Save as a png in the Figures folder. 
+
+# Compare era differences in cellwise SST and MLD AR(1) values in two maps.
+- Think hard. There are multiple steps for this analysis, and it is critical to get them all right.
+- In addition to executing the steps presented here, also develop a series of checks that can evalaute whether each step is coded correctly. Do this in terms of:
+    - 1) the coding, 
+    - 2) consistency with earlier accepted results on this project,
+    - 3) the consistency with understanding of physical SLP-SST-MLD relationships. 
+- Present this error-checking plan before writing code, and then integrate the approved code checks in the script.
+- The goal here is to compare changes in AR(1) values for SST and MLD for era 2 (2003-2024) vs. era 1 (1987-2008).
+- (As an aside, these are the years that are included in 15-year windows for 2017-2024 and 2017-2024.)
+- Analysis will use annual winter (November-March) means values of SST and MLD for each cell.
+- Use the full North Pacific domain (20-66N, 110-250E).
+- For each cell, calculate AR(1) values for each cell in each era, then plot the era difference (era2 - era1).
+- Make a separate map for SST AR(1) differences (left panel) and for MLD AR(1) differences (right panel).
+
+# Check eras
+- I realized the two eras overlap, which is not what we want.
+- Plot the time series of mean winter SST for the EBS and GOA, save as a .png file.
+
+# Revisions / next steps
+- Return to the era difference maps for SST and MLD.
+- Instead of 1987-2008 and 2003-2024 for era 1, and era 2, use 1989-2006 and 2007-2024. 
+- This refers to the section of "ORAS5_MLD_summary.R" beginning on line 695.
+
+# Second version, using average MLD
+- Create a second version of this plot.
+- The only difference is that instead of plotting the change in AR(1) values for MLD, plot the change in average MLD values between eras.
+
+# Now add SST era difference in AR(1) / SLP PC1 - MLD regression maps
+- Left-hand panel should be the era difference in SST AR(1) as just implemented.
+- Right-hand panel should be the cellwise SLP PC1 - MLD regression map.
+- The regression map should be for the same spatial domain as the SST AR(1) map, but otherwise should follow the same workflow as the earlier standalone SLP PC1 - MLD regression map.
 
 # Observation - CESM2 comparison
 - Return to the comparison between ERA5 SST and SLP vs CESM2 FCM/MDM
@@ -341,3 +413,8 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Confirm that the cells are weighted by size based on latitude, and the EOF is fit on the covariance matrix.
 - Confirm the EOF is fitted to detrended monthly anomaly values for each cell (1950-1979 climatology).
 - The EOF should be fit to all months, not winter means.
+
+# SLP PC1 instead of SLP box values
+- Revise the p.dual plot on line 503 of the CESM_obs_comparison.R file.
+- Instead of the 15-year rolling window Aleutian Low SLP SD values, subsitute 15-year rolling window (right aligned) values of SD in SLP PC1 values.
+- Use SLP PC1 values calculated elsewhere in the project. 
