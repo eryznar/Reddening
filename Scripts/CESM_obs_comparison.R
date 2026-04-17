@@ -10,8 +10,8 @@ source("./Scripts/load.libs.functions.R")
 mapWorld <- map_data("world", wrap = c(20, 380))
 
 # Define GOA polygon in 0-360 space (for masking, convert to -180/180 below)
-goa.x <- c(198, 198, 203, 205, 208, 225, 231, 201)
-goa.y <- c(54, 55.5, 57.5, 59, 61, 61, 54, 54)
+goa.x <- c(191, 191, 203, 205, 208, 223, 234)
+goa.y <- c(50, 53, 57.5, 59, 61, 61, 50)
 
 goa.poly <- data.frame(lon = goa.x, lat = goa.y, region = "GOA")
 
@@ -457,6 +457,119 @@ ts.multi.plot <- ggplot(ts.long %>% filter(!is.na(value)),
   theme(legend.position = "bottom")
 
 print(ts.multi.plot)
+
+# 15-YR WINDOW: AL SD vs SST AR1 TIME SERIES — dual y-axis, GOA and EBS panels --------
+
+# Scale factor to map AL SD onto SST AR1 axis
+al.sd.range  <- range(al.sst$AL.sd,  na.rm = TRUE)
+goa.ar1.range <- range(al.sst$GOA.ar1, na.rm = TRUE)
+ebs.ar1.range <- range(al.sst$EBS.ar1, na.rm = TRUE)
+
+make_dual_axis_plot <- function(dat, ar1.col, ar1.color, region.label, ar1.range) {
+  # Linear transform: map AL.sd range onto AR1 range for sec axis
+  k <- diff(ar1.range) / diff(al.sd.range)
+  b <- ar1.range[1] - k * al.sd.range[1]
+
+  dat <- dat %>% filter(!is.na(.data[[ar1.col]]), !is.na(AL.sd))
+
+  r   <- cor(dat[[ar1.col]], dat$AL.sd, use = "complete.obs")
+  lbl <- sprintf("r = %.2f", r)
+
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[ar1.col]], color = "SST AR(1)"), linewidth = 0.7) +
+    geom_point(aes(y = .data[[ar1.col]], color = "SST AR(1)"), size = 1.5) +
+    geom_line(aes(y = k * AL.sd + b, color = "AL SLP SD"),
+              linewidth = 0.7, linetype = "dashed") +
+    geom_point(aes(y = k * AL.sd + b, color = "AL SLP SD"), size = 1.5, shape = 1) +
+    annotate("text", x = Inf, y = Inf, label = lbl,
+             hjust = 1.1, vjust = 1.5, size = 3.5) +
+    scale_y_continuous(
+      name     = "SST AR(1)",
+      sec.axis = sec_axis(~ (. - b) / k, name = "AL SLP SD (z-scored)")
+    ) +
+    scale_color_manual(values = c("SST AR(1)" = ar1.color, "AL SLP SD" = "gray30")) +
+    labs(title = region.label, x = "Year", color = NULL) +
+    theme_bw() +
+    theme(legend.position   = "bottom",
+          axis.title.y.left  = element_text(color = ar1.color),
+          axis.text.y.left   = element_text(color = ar1.color),
+          axis.title.y.right = element_text(color = "gray30"),
+          axis.text.y.right  = element_text(color = "gray30"))
+}
+
+p.goa.dual <- make_dual_axis_plot(al.sst, "GOA.ar1", "steelblue4", "GOA", goa.ar1.range)
+p.ebs.dual <- make_dual_axis_plot(al.sst, "EBS.ar1", "darkorange4", "EBS", ebs.ar1.range)
+
+p.dual <- p.goa.dual / p.ebs.dual +
+  plot_annotation(
+    title = "15-yr Rolling AL SLP SD vs. SST AR(1) — Winter (Nov-Mar)",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+
+ggsave("./Figures/AL_SD_SST_AR1_15yr_dual_axis.png",
+       plot = p.dual, width = 7, height = 7, dpi = 300)
+message("Saved: Figures/AL_SD_SST_AR1_15yr_dual_axis.png")
+
+# SLP PC1 SD vs SST AR1 — dual y-axis ------------------------------------------------
+# Replace AL box SD with 15-yr rolling SD of SLP PC1 (z-scored), same layout as above.
+
+pc1.win <- read.csv("./Output/NP_PC1_winter.csv") %>%
+  arrange(year) %>%
+  mutate(PC1.sd = roll_sd(PC1),
+         PC1.sd = as.numeric(scale(PC1.sd)))
+
+pc1.sst <- winter %>%
+  select(year, GOA.ar1, EBS.ar1) %>%
+  left_join(pc1.win %>% select(year, PC1.sd), by = "year") %>%
+  filter(!is.na(PC1.sd))
+
+pc1.sd.range   <- range(pc1.sst$PC1.sd,   na.rm = TRUE)
+goa.ar1.range2 <- range(pc1.sst$GOA.ar1,  na.rm = TRUE)
+ebs.ar1.range2 <- range(pc1.sst$EBS.ar1,  na.rm = TRUE)
+
+make_pc1_dual_plot <- function(dat, ar1.col, ar1.color, region.label, ar1.range) {
+  k <- diff(ar1.range) / diff(pc1.sd.range)
+  b <- ar1.range[1] - k * pc1.sd.range[1]
+
+  dat <- dat %>% filter(!is.na(.data[[ar1.col]]), !is.na(PC1.sd))
+
+  r   <- cor(dat[[ar1.col]], dat$PC1.sd, use = "complete.obs")
+  lbl <- sprintf("r = %.2f", r)
+
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[ar1.col]], color = "SST AR(1)"), linewidth = 0.7) +
+    geom_point(aes(y = .data[[ar1.col]], color = "SST AR(1)"), size = 1.5) +
+    geom_line(aes(y = k * PC1.sd + b, color = "SLP PC1 SD"),
+              linewidth = 0.7, linetype = "dashed") +
+    geom_point(aes(y = k * PC1.sd + b, color = "SLP PC1 SD"), size = 1.5, shape = 1) +
+    annotate("text", x = Inf, y = Inf, label = lbl,
+             hjust = 1.1, vjust = 1.5, size = 3.5) +
+    scale_y_continuous(
+      name     = "SST AR(1)",
+      sec.axis = sec_axis(~ (. - b) / k, name = "SLP PC1 SD (z-scored)")
+    ) +
+    scale_color_manual(values = c("SST AR(1)" = ar1.color, "SLP PC1 SD" = "gray30")) +
+    labs(title = region.label, x = "Year", color = NULL) +
+    theme_bw() +
+    theme(legend.position   = "bottom",
+          axis.title.y.left  = element_text(color = ar1.color),
+          axis.text.y.left   = element_text(color = ar1.color),
+          axis.title.y.right = element_text(color = "gray30"),
+          axis.text.y.right  = element_text(color = "gray30"))
+}
+
+p.goa.pc1 <- make_pc1_dual_plot(pc1.sst, "GOA.ar1", "steelblue4", "GOA", goa.ar1.range2)
+p.ebs.pc1 <- make_pc1_dual_plot(pc1.sst, "EBS.ar1", "darkorange4", "EBS", ebs.ar1.range2)
+
+p.dual.pc1 <- p.goa.pc1 / p.ebs.pc1 +
+  plot_annotation(
+    title = "15-yr Rolling SLP PC1 SD vs. SST AR(1) — Winter (Nov-Mar)",
+    theme = theme(plot.title = element_text(hjust = 0.5))
+  )
+
+ggsave("./Figures/SLP_PC1_SD_SST_AR1_15yr_dual_axis.png",
+       plot = p.dual.pc1, width = 7, height = 7, dpi = 300)
+message("Saved: Figures/SLP_PC1_SD_SST_AR1_15yr_dual_axis.png")
 
 # SCATTER PLOTS — all window x region combinations ----------------------------------
 
