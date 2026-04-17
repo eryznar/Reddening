@@ -315,3 +315,70 @@ save_panel(make_12panel(eof.slp.obs, fcm.slp.eofs, "SLP", "FCM"),
            "./Figures/EOF1_SLP_FCM.png")
 save_panel(make_12panel(eof.slp.obs, mdm.slp.eofs, "SLP", "MDM"),
            "./Figures/EOF1_SLP_MDM.png")
+
+# ---- ERA5 GOA/EBS WINTER MEAN SST TIME SERIES ----
+message("Computing ERA5 GOA/EBS winter mean SST time series...")
+
+# Reload ERA5 SST (sst.crop was removed from memory earlier)
+nc.obs   <- nc_open("./Data/era5_sst_NP_1950_2025.nc")
+sst.obs  <- ncvar_get(nc.obs, "sst") - 273.15
+lons.obs <- ncvar_get(nc.obs, "longitude")
+lats.obs <- ncvar_get(nc.obs, "latitude")
+time.obs <- ncvar_get(nc.obs, "valid_time")
+nc_close(nc.obs)
+
+dates.obs   <- as.Date(as.POSIXct(time.obs, origin = "1970-01-01", tz = "UTC"))
+yrs.obs     <- as.integer(format(dates.obs, "%Y"))
+mons.obs    <- as.integer(format(dates.obs, "%m"))
+lons.obs360 <- to360(lons.obs)
+
+# Region bounding boxes (lon in 0-360)
+# GOA: 198-231E, 54-61N  |  EBS: 183-203E, 53-65N
+region_ts_era5 <- function(lon.min, lon.max, lat.mn, lat.mx) {
+  li <- which(lons.obs360 >= lon.min & lons.obs360 <= lon.max)
+  ai <- which(lats.obs    >= lat.mn  & lats.obs    <= lat.mx)
+  sub <- sst.obs[li, ai, ]
+  w   <- cos(lats.obs[ai] * pi / 180)
+  # weighted spatial mean each time step
+  sapply(seq_len(dim(sub)[3]), function(t) {
+    vals <- as.vector(sub[, , t])
+    if (all(is.na(vals))) return(NA_real_)
+    weighted.mean(vals, w = rep(w, each = length(li)), na.rm = TRUE)
+  })
+}
+
+goa.ts.obs <- region_ts_era5(198, 231, 54, 61)
+ebs.ts.obs <- region_ts_era5(183, 203, 53, 65)
+rm(sst.obs); gc()
+
+# Winter means (Nov-Mar, year = January year)
+win_means <- function(ts, yrs, mons, region) {
+  data.frame(year = yrs, month = mons, sst = ts) %>%
+    filter(month %in% c(11, 12, 1, 2, 3)) %>%
+    mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+    group_by(win.year) %>%
+    summarise(sst = mean(sst, na.rm = TRUE), .groups = "drop") %>%
+    rename(year = win.year) %>%
+    mutate(region = region)
+}
+
+sst.win.ts <- bind_rows(
+  win_means(goa.ts.obs, yrs.obs, mons.obs, "GOA"),
+  win_means(ebs.ts.obs, yrs.obs, mons.obs, "EBS")
+)
+
+region.colors <- c("GOA" = "steelblue4", "EBS" = "darkorange4")
+
+p.sst.ts <- ggplot(sst.win.ts, aes(x = year, y = sst, color = region)) +
+  geom_line() +
+  geom_point(size = 1.2) +
+  scale_color_manual(values = region.colors) +
+  labs(title  = "ERA5 Winter (Nov-Mar) Mean SST — GOA and EBS",
+       x = "Year", y = "SST (°C)", color = "Region") +
+  theme_bw() +
+  theme(plot.title      = element_text(hjust = 0.5),
+        legend.position = "bottom")
+
+ggsave("./Figures/ERA5_SST_winter_ts_GOA_EBS.png",
+       plot = p.sst.ts, width = 9, height = 5, dpi = 150)
+message("Saved: Figures/ERA5_SST_winter_ts_GOA_EBS.png")
