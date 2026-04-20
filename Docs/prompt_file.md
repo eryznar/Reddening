@@ -418,3 +418,55 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Revise the p.dual plot on line 503 of the CESM_obs_comparison.R file.
 - Instead of the 15-year rolling window Aleutian Low SLP SD values, subsitute 15-year rolling window (right aligned) values of SD in SLP PC1 values.
 - Use SLP PC1 values calculated elsewhere in the project. 
+
+# Data update to include winter 2026.
+- Combine the existing download scripts for MLD, SLP, and SST into a single script called 'downloads.R'.
+- Add a section of code to run an additional download of data from January-March 2026.
+- Set up the additional download script so it will not require downloading data that are already downloaded for the project.
+- Also set up the additional download so that the new data can be added to the existing data seamlessly.
+- Check the full script carefully to ensure it will run as intended, including both the previous sections for downloads, as well as the section for the new months. 
+
+# Clean up workflow into a single analysis script
+- Start a new script called "analysis.R"
+- Start the script by producing a reference map of the North Pacific that includes the following areas indicated as boxes on the map and referenced in a legend:
+    - Area of SLP EOF analysis.
+    - EBS and GOA study areas.
+    - Area over which Aleutian Low SLP SD is calculated.
+    - Save the map to /Figures as a .png
+
+# SST monthly anomaly time series
+- To the same analysis.R file, copy over the analysis from CESM_obs_comparison.R to: 
+    -Calculate monthly anomalies with respect to the 1950-1979 climatology for EBS, GOA, and North Pacific (20-66N, 110-250E (area: N, W, S, E in -180/180))
+    - Calculate annual winter (November-March) anomaly values with the year corresponding to January.
+    - Plot the non-detrended time series for 1950-2026 for all three areas (seaparate panels) and save as a .png 
+
+# All months anomaly
+- Add an intermediate step, before plotting winter means, to plot the time series of non-detrended anomalies for all months for all three areas.
+
+# AR(1) and SD time series
+- Now find the earlier script for calculating EBS and GOA AR(1) and SD values for winter SST on 15-year, right aligned rolling windows and append it as the next step in the script.
+- Make the plot of AR(1) and SD for each system (four panels) and save as a .png.
+- Make each panel in the plot roughly 4:3 aspect ratio.
+
+# AL SD 
+- Now make the plot with EOF1 loadings for SLP (calculations done the same as earlier).
+- Plot the loadings on an Albers projection.
+- If needed, change the sign so the box holds positive values.
+- Plot on a Mercator projection.
+
+# SLP SD vs SST AR1
+- Now add the analysis plotting 15-year windows for SLP SD and SST AR(1), one panel per system.
+
+# Significance step
+- Use a randomization approach to test the significance of the SLP Sd - SST AR(1) calculations.
+- For each system, generate 1000 pairs of simulated SLP SD and SST AR(1) time series, using arima.sim to mimic the actual SD and AR(1) values in the time series plots.
+- Be careful and think hard! We are not referencing the SLP and SST SD/AR in the simulations. Instead we are just using the SD and AR1 of the plotted lines and points on each panel!
+- For each of the simulated pairs, calculate the correlation coefficient.
+- Estimate the p value for each panel as the proportion of simulated correlation coefficients that are as strong as or stronger than the actual correlation coefficient.
+- Plot the resulting p-values on each panel.
+- Update: in line 474, the code identifies the absolute value of r. But we want the proportion of raw r values, not absolute value, that are less than the observed correlation. In other words, the test is one-tailed. 
+
+# Intermediate plot
+- Add a plot of all the r values from the randomization for each ecosystem (EBS and GOA) compared to the observed r value in each system.
+- The distribution of randomized r values should be a barplot, and the observedr should be indicated by a vertical dashed line.
+- Make in a two-panel plot (one for each system), and save as a .png.
