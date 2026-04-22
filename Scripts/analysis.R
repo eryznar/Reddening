@@ -48,8 +48,8 @@ lon_label <- function(x) {
          paste0(x, "\u00b0E")))
 }
 
-area.colors    <- c("GOA" = "steelblue4",
-                    "EBS" = "darkorange4")
+area.colors    <- c("GOA" = "darkorange4",
+                    "EBS" = "steelblue4")
 
 area.linetypes <- c("GOA" = "solid",
                     "EBS" = "solid")
@@ -62,7 +62,7 @@ area.labels <- c(
   "EBS" = "Eastern Bering Sea (EBS)"
 )
 
-region.fills <- c("GOA" = "steelblue", "EBS" = "darkorange")
+region.fills <- c("GOA" = "darkorange", "EBS" = "steelblue")
 
 ref.map <- ggplot() +
   geom_polygon(data = mapWorld,
@@ -200,6 +200,10 @@ monthly.anom <- monthly.sst %>%
          date     = as.Date(paste(year, month, "15", sep = "-"))) %>%
   select(date, year, month, GOA.anom, EBS.anom, NP.anom)
 
+region.colors <- c("GOA" = "darkorange4", "EBS" = "steelblue4", "NP" = "forestgreen")
+region.labels <- c("GOA" = "Gulf of Alaska", "EBS" = "Eastern Bering Sea",
+                   "NP"  = "North Pacific")
+
 # --- All-months anomaly time series plot ---
 end.mo <- max(monthly.anom$date, na.rm = TRUE)
 
@@ -241,10 +245,6 @@ winter.anom <- monthly.anom %>%
   arrange(year)
 
 # --- Plot ---
-region.colors <- c("GOA" = "steelblue4", "EBS" = "darkorange4", "NP" = "forestgreen")
-region.labels <- c("GOA" = "Gulf of Alaska", "EBS" = "Eastern Bering Sea",
-                   "NP"  = "North Pacific")
-
 end.yr <- max(winter.anom$year, na.rm = TRUE)
 
 p.win.anom <- winter.anom %>%
@@ -299,26 +299,26 @@ winter.roll <- winter.detr %>%
 
 # Four panels: GOA AR1, EBS AR1, GOA SD, EBS SD
 p.goa.ar1 <- ggplot(winter.roll, aes(x = year, y = GOA.ar1)) +
-  geom_line(color = "steelblue4") +
-  geom_point(color = "steelblue4", size = 1.4) +
+  geom_line(color = "darkorange4") +
+  geom_point(color = "darkorange4", size = 1.4) +
   labs(title = "Gulf of Alaska", x = NULL, y = "AR(1)") +
   theme_bw(base_size = 11)
 
 p.ebs.ar1 <- ggplot(winter.roll, aes(x = year, y = EBS.ar1)) +
-  geom_line(color = "darkorange4") +
-  geom_point(color = "darkorange4", size = 1.4) +
+  geom_line(color = "steelblue4") +
+  geom_point(color = "steelblue4", size = 1.4) +
   labs(title = "Eastern Bering Sea", x = NULL, y = "AR(1)") +
   theme_bw(base_size = 11)
 
 p.goa.sd <- ggplot(winter.roll, aes(x = year, y = GOA.sd)) +
-  geom_line(color = "steelblue4") +
-  geom_point(color = "steelblue4", size = 1.4) +
+  geom_line(color = "darkorange4") +
+  geom_point(color = "darkorange4", size = 1.4) +
   labs(x = "Year", y = "SD (\u00b0C)") +
   theme_bw(base_size = 11)
 
 p.ebs.sd <- ggplot(winter.roll, aes(x = year, y = EBS.sd)) +
-  geom_line(color = "darkorange4") +
-  geom_point(color = "darkorange4", size = 1.4) +
+  geom_line(color = "steelblue4") +
+  geom_point(color = "steelblue4", size = 1.4) +
   labs(x = "Year", y = "SD (\u00b0C)") +
   theme_bw(base_size = 11)
 
@@ -337,8 +337,8 @@ message("Saved: Figures/ERA5_SST_AR1_SD_15yr_rolling.png")
 # ============================================================
 # Reproduces the EOF1 analysis from ERA5_SLP_download.R and plots
 # the spatial loadings on a Mercator projection, with the Aleutian
-# Low box (191-208E, 44-55N) overlaid. Sign is flipped if needed
-# so the AL box region holds positive loadings.
+# Low box (192.5-207.5E, 45-55N; Litzow et al. 2020 PNAS) overlaid.
+# Sign is flipped if needed so the AL box region holds positive loadings.
 
 library(irlba)
 
@@ -387,10 +387,11 @@ w.slp    <- sqrt(cos(grid.slp$lat * pi / 180))
 sv.slp   <- irlba(sweep(detrend.slp, 1, w.slp, "*"), nv = 1)
 eof1.slp <- sv.slp$u[, 1] / w.slp
 
-# Flip sign so AL box (191-208E, 44-55N) has positive mean loading.
+# Flip sign so AL box (192.5-207.5E, 45-55N; Litzow et al. 2020 PNAS)
+# has positive mean loading.
 # grid.slp$lon is in 0-360 space (ERA5 returns 120-250E for this domain).
-al.box.mask <- grid.slp$lon >= 191 & grid.slp$lon <= 208 &
-               grid.slp$lat >=  44 & grid.slp$lat <=  55
+al.box.mask <- grid.slp$lon >= 192.5 & grid.slp$lon <= 207.5 &
+               grid.slp$lat >=  45   & grid.slp$lat <=  55
 al.box.mean <- mean(eof1.slp[al.box.mask], na.rm = TRUE)
 if (!is.na(al.box.mean) && al.box.mean < 0) eof1.slp <- -eof1.slp
 
@@ -399,10 +400,10 @@ eof.df.slp <- grid.slp %>%
   mutate(lon  = ifelse(lon < 0, lon + 360, lon),
          EOF1 = eof1.slp)
 
-# AL box in 0-360 space
+# AL box in 0-360 space (Litzow et al. 2020 PNAS: 192.5-207.5E, 45-55N)
 al.box.df <- data.frame(
-  x = c(191, 208, 208, 191, 191),
-  y = c(44,  44,  55,  55,  44)
+  x = c(192.5, 207.5, 207.5, 192.5, 192.5),
+  y = c(45,    45,    55,    55,    45)
 )
 
 mapWorld.slp <- map_data("world", wrap = c(20, 380))
@@ -435,11 +436,24 @@ message("Saved: Figures/ERA5_SLP_EOF1_loadings.png")
 # ============================================================
 # SECTION 5: AL SLP SD vs SST AR(1) — 15-yr dual-axis plot
 # ============================================================
-# Loads the pre-computed AL winter SLP anomaly, calculates 15-yr
-# rolling SD (z-scored), joins with SST AR(1) from Section 3,
-# and plots dual-axis time series for GOA and EBS.
+# Computes AL winter SLP anomaly inline from the detrended monthly
+# anomaly matrix built in Section 4 (al.box.mask = Litzow et al. 2020
+# PNAS box, 192.5-207.5E / 45-55N). Calculates 15-yr rolling SD
+# (z-scored), joins with SST AR(1) from Section 3, and plots
+# dual-axis time series for GOA and EBS.
 
-al <- read.csv("./Output/AL_winter_SLP_anomaly.csv") %>%
+al.monthly <- data.frame(
+  year  = years.slp,
+  month = months.slp,
+  SLP   = apply(detrend.slp[al.box.mask, ], 2, mean, na.rm = TRUE)
+)
+
+al <- al.monthly %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  group_by(win.year) %>%
+  summarise(SLP = mean(SLP, na.rm = TRUE), .groups = "drop") %>%
+  rename(year = win.year) %>%
   arrange(year) %>%
   mutate(AL.sd = roll_sd(SLP),
          AL.sd = as.numeric(scale(AL.sd)))
@@ -482,9 +496,9 @@ dat.ebs  <- al.sst %>% filter(!is.na(EBS.ar1), !is.na(AL.sd))
 chel.goa <- chelton_test(dat.goa$GOA.ar1, dat.goa$AL.sd)
 chel.ebs <- chelton_test(dat.ebs$EBS.ar1, dat.ebs$AL.sd)
 
-message(sprintf("GOA: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+message(sprintf("GOA Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
                 chel.goa$r.obs, chel.goa$n.eff, chel.goa$t.obs, chel.goa$pval))
-message(sprintf("EBS: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+message(sprintf("EBS Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
                 chel.ebs$r.obs, chel.ebs$n.eff, chel.ebs$t.obs, chel.ebs$pval))
 
 make_dual_axis_plot <- function(dat, ar1.col, ar1.color, region.label, ar1.range, chel) {
@@ -518,8 +532,8 @@ make_dual_axis_plot <- function(dat, ar1.col, ar1.color, region.label, ar1.range
           axis.text.y.right  = element_text(color = "gray30"))
 }
 
-p.goa.dual <- make_dual_axis_plot(al.sst, "GOA.ar1", "steelblue4", "GOA", goa.ar1.range, chel.goa)
-p.ebs.dual <- make_dual_axis_plot(al.sst, "EBS.ar1", "darkorange4", "EBS", ebs.ar1.range, chel.ebs)
+p.goa.dual <- make_dual_axis_plot(al.sst, "GOA.ar1", "darkorange4", "GOA", goa.ar1.range, chel.goa)
+p.ebs.dual <- make_dual_axis_plot(al.sst, "EBS.ar1", "steelblue4", "EBS", ebs.ar1.range, chel.ebs)
 
 p.dual <- p.goa.dual / p.ebs.dual +
   plot_annotation(
@@ -530,37 +544,6 @@ p.dual <- p.goa.dual / p.ebs.dual +
 ggsave("./Figures/AL_SD_SST_AR1_15yr_dual_axis.png",
        plot = p.dual, width = 7, height = 7, dpi = 300)
 message("Saved: Figures/AL_SD_SST_AR1_15yr_dual_axis.png")
-
-# --- Modified Chelton method (Pyper & Peterman 1998) ---
-# Effective sample size accounts for autocorrelation in both series:
-#   1/N* ≈ 1/N + (2/N) * Σ_{j=1}^{N/5} (1 - j/N) * ρ_xx(j) * ρ_yy(j)
-# t = r * sqrt(N* - 2) / sqrt(1 - r²), one-sided p from t-distribution.
-chelton_test <- function(x, y) {
-  n       <- length(x)
-  r.obs   <- cor(x, y, use = "complete.obs")
-  max.lag <- floor(n / 5)
-
-  acf.x <- acf(x, lag.max = max.lag, plot = FALSE, na.action = na.pass)$acf[-1]
-  acf.y <- acf(y, lag.max = max.lag, plot = FALSE, na.action = na.pass)$acf[-1]
-
-  j     <- seq_len(max.lag)
-  n.eff <- n / (1 + 2 * sum((1 - j / n) * acf.x * acf.y))
-  n.eff <- max(3, min(n, n.eff))   # clamp to [3, n]
-
-  t.obs <- r.obs * sqrt(n.eff - 2) / sqrt(1 - r.obs^2)
-  df    <- n.eff - 2
-  pval  <- pt(t.obs, df = df, lower.tail = FALSE)   # one-sided
-
-  list(r.obs = r.obs, t.obs = t.obs, n.eff = n.eff, df = df, pval = pval)
-}
-
-chel.goa <- chelton_test(dat.goa$GOA.ar1, dat.goa$AL.sd)
-chel.ebs <- chelton_test(dat.ebs$EBS.ar1, dat.ebs$AL.sd)
-
-message(sprintf("GOA Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
-                chel.goa$r.obs, chel.goa$n.eff, chel.goa$t.obs, chel.goa$pval))
-message(sprintf("EBS Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
-                chel.ebs$r.obs, chel.ebs$n.eff, chel.ebs$t.obs, chel.ebs$pval))
 
 make_chelton_panel <- function(t.obs, df, n.eff, pval, region.label) {
   t.range <- seq(-4, max(4, t.obs + 0.5), length.out = 500)
@@ -587,4 +570,162 @@ p.chelton <- p.goa.chel / p.ebs.chel +
 ggsave("./Figures/AL_SD_SST_AR1_chelton_dist.png",
        plot = p.chelton, width = 5, height = 7, dpi = 300)
 message("Saved: Figures/AL_SD_SST_AR1_chelton_dist.png")
+
+# ============================================================
+# SECTION 6: WINTER MLD REGRESSED ON WINTER AL SLP (full EOF domain)
+# ============================================================
+# Cellwise regression of detrended winter-mean MLD anomaly (y) on the
+# annual Nov-Mar mean AL-box SLP anomaly (x; al$SLP from Section 5,
+# single-year winter means, year = January year). Spatial domain matches
+# the SLP EOF1 domain (20-66N, 110-250E). Full series through winter 2026.
+# GLS with AR(1) residuals (nlme::gls + corAR1), then Benjamini-Hochberg
+# FDR (Wilks 2016, BAMS). Contour drawn around cells with q <= 0.05.
+
+library(nlme)
+
+mld.winmon.file <- "./Data/oras5_mld_NP_detr_anom_winmon.nc"
+mld.reg.cache   <- "./Output/mld_al_slp_regression.csv"
+
+if (file.exists(mld.reg.cache)) {
+  message("Loading cached MLD ~ AL SLP SD regression from: ", mld.reg.cache)
+  mld.reg.df <- read.csv(mld.reg.cache)
+} else {
+  message("Loading detrended winter-month MLD anomalies (full NP domain)...")
+  nc.m   <- nc_open(mld.winmon.file)
+  mld.w  <- ncvar_get(nc.m, "somxl030")
+  lons.m <- ncvar_get(nc.m, "nav_lon")
+  lats.m <- ncvar_get(nc.m, "nav_lat")
+  time.m <- ncvar_get(nc.m, "time_counter")
+  tun.m  <- ncatt_get(nc.m, "time_counter", "units")$value
+  nc_close(nc.m)
+
+  mld.w[mld.w > 1e10] <- NA
+  origin.m  <- sub(".*since ", "", tun.m)
+  dates.m   <- as.Date(as.POSIXct(time.m, origin = origin.m, tz = "UTC"))
+  years.m   <- as.integer(format(dates.m, "%Y"))
+  months.m  <- as.integer(format(dates.m, "%m"))
+  winyrs.m  <- ifelse(months.m %in% c(11, 12), years.m + 1L, years.m)
+  lons.m360 <- ifelse(lons.m < 0, lons.m + 360, lons.m)
+
+  nx <- dim(mld.w)[1]; ny <- dim(mld.w)[2]; nt <- dim(mld.w)[3]
+  mat <- matrix(mld.w, nrow = nx * ny, ncol = nt)
+  rm(mld.w); gc()
+
+  uy <- sort(unique(winyrs.m))
+  win.mld <- matrix(NA_real_, nrow = nx * ny, ncol = length(uy))
+  for (k in seq_along(uy)) {
+    ti <- which(winyrs.m == uy[k])
+    win.mld[, k] <- rowMeans(mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(mat); gc()
+
+  # Align years with al$SLP (annual Nov-Mar mean AL-box SLP anomaly, single-year)
+  al.df   <- al %>% select(year, SLP) %>% filter(!is.na(SLP))
+  yr.use  <- intersect(uy, al.df$year)
+  x.vec   <- al.df$SLP[match(yr.use, al.df$year)]
+  win.mld <- win.mld[, match(yr.use, uy), drop = FALSE]
+  n.yrs   <- length(yr.use)
+  message(sprintf("Regression years: %d-%d (%d years)",
+                  min(yr.use), max(yr.use), n.yrs))
+
+  good.cells <- which(rowSums(!is.na(win.mld)) >= max(10, 0.5 * n.yrs))
+  message(sprintf("Fitting GLS AR(1) at %d cells over %d years (slow)...",
+                  length(good.cells), n.yrs))
+
+  beta.vec <- rep(NA_real_, length(good.cells))
+  pval.vec <- rep(NA_real_, length(good.cells))
+  df.reg   <- data.frame(y = NA_real_, x = x.vec)
+
+  for (k in seq_along(good.cells)) {
+    y <- win.mld[good.cells[k], ]
+    if (sum(!is.na(y)) < 10) next
+    df.reg$y <- y
+    fit <- tryCatch(
+      gls(y ~ x, data = df.reg,
+          correlation = corAR1(form = ~ 1),
+          method = "ML", na.action = na.omit),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    s <- summary(fit)$tTable
+    if (nrow(s) < 2) next
+    beta.vec[k] <- s[2, 1]
+    pval.vec[k] <- s[2, 4]
+  }
+
+  beta.full <- rep(NA_real_, nx * ny)
+  pval.full <- rep(NA_real_, nx * ny)
+  beta.full[good.cells] <- beta.vec
+  pval.full[good.cells] <- pval.vec
+
+  mld.reg.df <- data.frame(
+    lon  = as.vector(lons.m360),
+    lat  = as.vector(lats.m),
+    beta = beta.full,
+    pval = pval.full
+  ) %>% filter(!is.na(beta))
+
+  write.csv(mld.reg.df, mld.reg.cache, row.names = FALSE)
+  message("Saved: ", mld.reg.cache)
+}
+
+# Restrict to SLP EOF1 domain
+mld.reg.df <- mld.reg.df %>%
+  filter(lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+
+# --- Benjamini-Hochberg FDR (Wilks 2016, BAMS) ---
+mld.reg.df$qval <- p.adjust(mld.reg.df$pval, method = "BH")
+
+n.sig.raw <- sum(mld.reg.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr <- sum(mld.reg.df$qval <= 0.05, na.rm = TRUE)
+message(sprintf("Raw p<=0.05: %d cells | BH-FDR q<=0.05: %d cells (of %d)",
+                n.sig.raw, n.sig.fdr, nrow(mld.reg.df)))
+
+# Regular 0.5-deg grid for continuous raster + FDR contouring (ORAS5 is irregular)
+mld.reg.grid <- mld.reg.df %>%
+  mutate(lon = round(lon / 0.5) * 0.5,
+         lat = round(lat / 0.5) * 0.5) %>%
+  group_by(lon, lat) %>%
+  summarise(beta = mean(beta, na.rm = TRUE),
+            qval = mean(qval, na.rm = TRUE),
+            .groups = "drop") %>%
+  complete(lon = seq(110, 250, by = 0.5),
+           lat = seq(20,  66,  by = 0.5))
+
+col.lim.mld <- max(abs(mld.reg.df$beta), na.rm = TRUE)
+
+# Clean 0-360 world map (avoids horizontal wrap artifacts from map_data("world", wrap=...))
+mapWorld.clean <- map_data("world2")
+
+p.mld.reg <- ggplot() +
+  geom_raster(data = filter(mld.reg.grid, !is.na(beta)),
+              aes(x = lon, y = lat, fill = beta)) +
+  geom_contour(data = filter(mld.reg.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.05, color = "black", linewidth = 0.4) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-col.lim.mld, col.lim.mld),
+                       name = "\u03b2 (m / hPa)") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(110, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "\u00b0N")) +
+  labs(title    = "Winter MLD regressed on winter AL SLP (annual Nov\u2013Mar means)",
+       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.05 (Wilks 2016)",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
+
+ggsave("./Figures/MLD_AL_SLP_regression.png",
+       plot = p.mld.reg, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/MLD_AL_SLP_regression.png")
 
