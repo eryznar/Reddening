@@ -479,3 +479,26 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Create a new script called annual_analysis_comparison.R for this evaluation.
 - Re-write all of the code in analysis.R that uses winter means amd use annual means instead.
 - Give any output or figure files that are produced a name with 'annual' appended to make the different outputs (winter/annual) easy to distinguish.
+
+# SLP SD - MLD map
+- Return to the analysis.R workflow.
+- RESUME USING WINTER-ONLY VALUES FOR ALL ANALYSIS (THIS IS CRITICAL).
+- As employed earlier, calculate regression coefficients for winter MLD (response variable) regressed on winter SLP SD for the designated box (explanatory variable). 
+- Expand the earlier analysis in space to cover the entire area of SLP values used in the EOF1 calculation.
+- Also continue to use GLS regression to control for autocorrelated residuals.
+- In addition, add Benjamini-Hochberg False Discovery Rate (FDR) control as described in Wilks (2016, BAMS).
+- Add lines around p <= 0.05 after using these controls, as in the original version.
+- Append this step to analysis.R and save the resulting figure as a .png file.
+- Clarification: AL SLP SD should be annual Nov-Mar mean (sing year winter means) rather than a 15-year window of any kind. Response should be annual Nov-Mar mean MLD. Both variables should be aligned with the year corresponding to January. And the analysis should continue for the entire time series, through winter 2026.
+
+# Revisiting CESM analysis
+- Start with three tests on the FCM / MDM ensembles (not linked SST-SLP outputs from individual members)
+    Test 1 — SST AR(1) trajectories: per-member 15-yr rolling winter AR(1) in GOA and EBS, then plots the 5–95% envelope + ensemble mean for FCM and MDM, with ERA5 overlaid as a single black line. Saved to Figures/CESM_ensemble_SST_AR1_trajectories.png.
+
+    Test 2 — AL SLP SD sanity check: per-member 15-yr rolling SD of winter AL-box SLP for both ensembles. FCM should track ERA5; MDM should be ~flat by design. Saved to Figures/CESM_ensemble_AL_SLP_SD_trajectories.png.
+
+    Test 3 — Trend distribution test: per-member slope of rolling AR(1) vs. year over 1964–2014, histogrammed by ensemble × region. ERA5's slope is overlaid as a dashed line. Writes an empirical one-sided p-value (fraction of members with slope ≥ ERA5) to Output/CESM_ensemble_AR1_trend_pvals.csv. The key attribution statement: if ERA5's reddening sits in the tail of MDM but inside FCM, wind variability is required.
+
+# Revise CESM ensemble analysis
+- Test 1 and Test 2 are repeats or expansions on earlier analysis, and do not seem to track what we expect - I'm not sure how different members are initialized and how closely MDM and FCM runs should track each other and/or observations.
+- Drop Test 1 and Test 2 from the script.
