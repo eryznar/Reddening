@@ -464,9 +464,18 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - For each of the simulated pairs, calculate the correlation coefficient.
 - Estimate the p value for each panel as the proportion of simulated correlation coefficients that are as strong as or stronger than the actual correlation coefficient.
 - Plot the resulting p-values on each panel.
-- Update: in line 474, the code identifies the absolute value of r. But we want the proportion of raw r values, not absolute value, that are less than the observed correlation. In other words, the test is one-tailed. 
+- Update: in line 474, the code identifies the absolute value of r. But we want the proportion of raw r values, not absolute value, that 1are less than the observed correlation. In other words, the test is one-tailed. 
 
 # Intermediate plot
 - Add a plot of all the r values from the randomization for each ecosystem (EBS and GOA) compared to the observed r value in each system.
-- The distribution of randomized r values should be a barplot, and the observedr should be indicated by a vertical dashed line.
+- The distribution of randomized r values should be a barplot, and the observed r should be indicated by a vertical dashed line.
 - Make in a two-panel plot (one for each system), and save as a .png.
+
+# Make SLP box consistent with Litzow et al. (2020) PNAS
+- Redefine the SLP box in analysis.R as 45-55N, 192.5-207.5E.
+
+# Evaluate annual SST AR(1) & SD, and relationship with annual SLP SD
+- A previous round of analysis on this project used annual SLP / SST data, not winter values.
+- Create a new script called annual_analysis_comparison.R for this evaluation.
+- Re-write all of the code in analysis.R that uses winter means amd use annual means instead.
+- Give any output or figure files that are produced a name with 'annual' appended to make the different outputs (winter/annual) easy to distinguish.
