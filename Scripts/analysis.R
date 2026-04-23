@@ -729,3 +729,1360 @@ ggsave("./Figures/MLD_AL_SLP_regression.png",
        plot = p.mld.reg, width = 9, height = 6, dpi = 300)
 message("Saved: Figures/MLD_AL_SLP_regression.png")
 
+# ============================================================
+# SECTION 7: 15-YR ROLLING AL SLP SD vs. MLD AR(1) — dual axis
+# ============================================================
+# Mirrors Section 5 (SST AR(1) dual-axis) but uses winter-mean MLD
+# anomaly (detrended) for GOA and EBS. Loads pre-extracted ORAS5
+# MLD box NetCDFs, masks to the GOA/EBS polygons (goa.sf / ebs.sf
+# from Section 2), computes area-weighted monthly series, detrends
+# monthly anomalies, then rolls 15-yr right-aligned AR(1). AL SLP
+# SD is the same 15-yr rolling z-scored series from Section 5.
+
+mld.ts.cache <- "./Output/oras5_mld_GOA_EBS_winter_anom.csv"
+
+if (file.exists(mld.ts.cache)) {
+  message("Loading cached GOA/EBS winter MLD anomaly from: ", mld.ts.cache)
+  mld.win <- read.csv(mld.ts.cache)
+} else {
+  load_mld_box <- function(file) {
+    nc   <- nc_open(file)
+    m    <- ncvar_get(nc, "somxl030")
+    lons <- ncvar_get(nc, "nav_lon")
+    lats <- ncvar_get(nc, "nav_lat")
+    tv   <- ncvar_get(nc, "time_counter")
+    tu   <- ncatt_get(nc, "time_counter", "units")$value
+    nc_close(nc)
+    m[m > 1e10] <- NA
+    origin <- sub(".*since ", "", tu)
+    dates  <- as.Date(as.POSIXct(tv, origin = origin, tz = "UTC"))
+    list(mld = m, lons = lons, lats = lats, dates = dates)
+  }
+
+  region_ts_mld <- function(d, poly.sf) {
+    lons.v <- as.vector(d$lons); lats.v <- as.vector(d$lats)
+    pts <- st_as_sf(data.frame(lon = lons.v, lat = lats.v),
+                    coords = c("lon", "lat"), crs = 4326)
+    in.poly <- lengths(st_within(pts, poly.sf)) > 0
+    if (!any(in.poly)) stop("no MLD cells inside polygon")
+    w  <- cos(lats.v[in.poly] * pi / 180)
+    nt <- dim(d$mld)[3]
+    mat <- matrix(d$mld, nrow = prod(dim(d$mld)[1:2]), ncol = nt)
+    sapply(seq_len(nt), function(t) {
+      v <- mat[in.poly, t]
+      if (all(is.na(v))) NA_real_ else weighted.mean(v, w = w, na.rm = TRUE)
+    })
+  }
+
+  message("Loading GOA / EBS MLD boxes and masking to polygons...")
+  goa.d <- load_mld_box("./Data/oras5_mld_GOA_box.nc")
+  ebs.d <- load_mld_box("./Data/oras5_mld_EBS_box.nc")
+
+  goa.mld.ts <- region_ts_mld(goa.d, goa.sf)
+  ebs.mld.ts <- region_ts_mld(ebs.d, ebs.sf)
+
+  dates.mld  <- goa.d$dates
+  years.mld  <- as.integer(format(dates.mld, "%Y"))
+  months.mld <- as.integer(format(dates.mld, "%m"))
+
+  monthly_anom <- function(ts) {
+    df <- data.frame(year = years.mld, month = months.mld, mld = ts)
+    clim <- df %>% group_by(month) %>%
+      summarise(clim = mean(mld, na.rm = TRUE), .groups = "drop")
+    df %>% left_join(clim, by = "month") %>%
+      mutate(anom      = mld - clim,
+             anom.detr = residuals(lm(anom ~ seq_along(anom))))
+  }
+
+  winter_from_monthly <- function(df) {
+    df %>%
+      filter(month %in% c(11, 12, 1, 2, 3)) %>%
+      mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+      group_by(win.year) %>%
+      summarise(anom.detr = mean(anom.detr, na.rm = TRUE), .groups = "drop") %>%
+      rename(year = win.year) %>%
+      arrange(year)
+  }
+
+  goa.mld.win <- winter_from_monthly(monthly_anom(goa.mld.ts)) %>%
+    rename(GOA = anom.detr)
+  ebs.mld.win <- winter_from_monthly(monthly_anom(ebs.mld.ts)) %>%
+    rename(EBS = anom.detr)
+  mld.win <- inner_join(goa.mld.win, ebs.mld.win, by = "year")
+
+  write.csv(mld.win, mld.ts.cache, row.names = FALSE)
+  message("Saved: ", mld.ts.cache)
+}
+
+mld.roll <- mld.win %>%
+  arrange(year) %>%
+  mutate(GOA.ar1 = roll_ar1(GOA),
+         EBS.ar1 = roll_ar1(EBS))
+
+al.mld <- mld.roll %>%
+  select(year, GOA.ar1, EBS.ar1) %>%
+  left_join(al %>% select(year, AL.sd), by = "year") %>%
+  filter(!is.na(AL.sd))
+
+mld.al.sd.range   <- range(al.mld$AL.sd,   na.rm = TRUE)
+goa.mld.ar1.range <- range(al.mld$GOA.ar1, na.rm = TRUE)
+ebs.mld.ar1.range <- range(al.mld$EBS.ar1, na.rm = TRUE)
+
+dat.goa.mld <- al.mld %>% filter(!is.na(GOA.ar1), !is.na(AL.sd))
+dat.ebs.mld <- al.mld %>% filter(!is.na(EBS.ar1), !is.na(AL.sd))
+
+chel.goa.mld <- chelton_test(dat.goa.mld$GOA.ar1, dat.goa.mld$AL.sd)
+chel.ebs.mld <- chelton_test(dat.ebs.mld$EBS.ar1, dat.ebs.mld$AL.sd)
+
+message(sprintf("MLD GOA Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+                chel.goa.mld$r.obs, chel.goa.mld$n.eff,
+                chel.goa.mld$t.obs, chel.goa.mld$pval))
+message(sprintf("MLD EBS Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+                chel.ebs.mld$r.obs, chel.ebs.mld$n.eff,
+                chel.ebs.mld$t.obs, chel.ebs.mld$pval))
+
+make_mld_dual_axis_plot <- function(dat, ar1.col, ar1.color, region.label,
+                                    ar1.range, chel) {
+  k <- diff(ar1.range) / diff(mld.al.sd.range)
+  b <- ar1.range[1] - k * mld.al.sd.range[1]
+
+  dat <- dat %>% filter(!is.na(.data[[ar1.col]]), !is.na(AL.sd))
+
+  lbl <- sprintf("r = %.2f, N* = %.1f\nt = %.2f, p = %.3f",
+                 chel$r.obs, chel$n.eff, chel$t.obs, chel$pval)
+
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[ar1.col]], color = "MLD AR(1)"), linewidth = 0.7) +
+    geom_point(aes(y = .data[[ar1.col]], color = "MLD AR(1)"), size = 1.5) +
+    geom_line(aes(y = k * AL.sd + b, color = "AL SLP SD"),
+              linewidth = 0.7, linetype = "dashed") +
+    geom_point(aes(y = k * AL.sd + b, color = "AL SLP SD"), size = 1.5, shape = 1) +
+    annotate("text", x = Inf, y = -Inf, label = lbl,
+             hjust = 1.1, vjust = -0.4, size = 3.5, lineheight = 1.3) +
+    scale_y_continuous(
+      name     = "MLD AR(1)",
+      sec.axis = sec_axis(~ (. - b) / k, name = "AL SLP SD (z-scored)")
+    ) +
+    scale_color_manual(values = c("MLD AR(1)" = ar1.color, "AL SLP SD" = "gray30")) +
+    labs(title = region.label, x = "Year", color = NULL) +
+    theme_bw(base_size = 11) +
+    theme(legend.position    = "bottom",
+          axis.title.y.left  = element_text(color = ar1.color),
+          axis.text.y.left   = element_text(color = ar1.color),
+          axis.title.y.right = element_text(color = "gray30"),
+          axis.text.y.right  = element_text(color = "gray30"))
+}
+
+p.goa.mld.dual <- make_mld_dual_axis_plot(al.mld, "GOA.ar1", "darkorange4", "GOA",
+                                          goa.mld.ar1.range, chel.goa.mld)
+p.ebs.mld.dual <- make_mld_dual_axis_plot(al.mld, "EBS.ar1", "steelblue4",  "EBS",
+                                          ebs.mld.ar1.range, chel.ebs.mld)
+
+p.mld.dual <- p.goa.mld.dual / p.ebs.mld.dual +
+  plot_annotation(
+    title = "15-yr Rolling AL SLP SD vs. MLD AR(1) \u2014 Winter (Nov\u2013Mar)",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 12))
+  )
+
+ggsave("./Figures/AL_SD_MLD_AR1_15yr_dual_axis.png",
+       plot = p.mld.dual, width = 7, height = 7, dpi = 300)
+message("Saved: Figures/AL_SD_MLD_AR1_15yr_dual_axis.png")
+
+# ============================================================
+# SECTION 8: 15-YR ROLLING AL SLP SD vs. MLD ANOMALY — dual axis
+# ============================================================
+# Same style as Section 7, but the response is the 15-yr right-
+# aligned rolling MEAN of winter detrended MLD anomaly (instead of
+# AR(1)). AL SLP SD is the same 15-yr rolling z-score from Section 5.
+# Inputs reuse mld.win (winter detrended MLD anomaly) built above.
+
+roll_mean_15 <- function(x, width = 15) {
+  rollapply(x, width = width, fill = NA, align = "right",
+            FUN = mean, na.rm = TRUE)
+}
+
+mld.anom.roll <- mld.win %>%
+  arrange(year) %>%
+  mutate(GOA.anom = roll_mean_15(GOA),
+         EBS.anom = roll_mean_15(EBS))
+
+al.mld.anom <- mld.anom.roll %>%
+  select(year, GOA.anom, EBS.anom) %>%
+  left_join(al %>% select(year, AL.sd), by = "year") %>%
+  filter(!is.na(AL.sd))
+
+mld.anom.al.sd.range <- range(al.mld.anom$AL.sd,    na.rm = TRUE)
+goa.mld.anom.range   <- range(al.mld.anom$GOA.anom, na.rm = TRUE)
+ebs.mld.anom.range   <- range(al.mld.anom$EBS.anom, na.rm = TRUE)
+
+dat.goa.manom <- al.mld.anom %>% filter(!is.na(GOA.anom), !is.na(AL.sd))
+dat.ebs.manom <- al.mld.anom %>% filter(!is.na(EBS.anom), !is.na(AL.sd))
+
+chel.goa.manom <- chelton_test(dat.goa.manom$GOA.anom, dat.goa.manom$AL.sd)
+chel.ebs.manom <- chelton_test(dat.ebs.manom$EBS.anom, dat.ebs.manom$AL.sd)
+
+message(sprintf("MLD anom GOA Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+                chel.goa.manom$r.obs, chel.goa.manom$n.eff,
+                chel.goa.manom$t.obs, chel.goa.manom$pval))
+message(sprintf("MLD anom EBS Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+                chel.ebs.manom$r.obs, chel.ebs.manom$n.eff,
+                chel.ebs.manom$t.obs, chel.ebs.manom$pval))
+
+make_mld_anom_dual_plot <- function(dat, anom.col, anom.color, region.label,
+                                    anom.range, chel) {
+  k <- diff(anom.range) / diff(mld.anom.al.sd.range)
+  b <- anom.range[1] - k * mld.anom.al.sd.range[1]
+
+  dat <- dat %>% filter(!is.na(.data[[anom.col]]), !is.na(AL.sd))
+
+  lbl <- sprintf("r = %.2f, N* = %.1f\nt = %.2f, p = %.3f",
+                 chel$r.obs, chel$n.eff, chel$t.obs, chel$pval)
+
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[anom.col]], color = "MLD anomaly"), linewidth = 0.7) +
+    geom_point(aes(y = .data[[anom.col]], color = "MLD anomaly"), size = 1.5) +
+    geom_line(aes(y = k * AL.sd + b, color = "AL SLP SD"),
+              linewidth = 0.7, linetype = "dashed") +
+    geom_point(aes(y = k * AL.sd + b, color = "AL SLP SD"), size = 1.5, shape = 1) +
+    annotate("text", x = Inf, y = -Inf, label = lbl,
+             hjust = 1.1, vjust = -0.4, size = 3.5, lineheight = 1.3) +
+    scale_y_continuous(
+      name     = "MLD anomaly (m)",
+      sec.axis = sec_axis(~ (. - b) / k, name = "AL SLP SD (z-scored)")
+    ) +
+    scale_color_manual(values = c("MLD anomaly" = anom.color,
+                                  "AL SLP SD"    = "gray30")) +
+    labs(title = region.label, x = "Year", color = NULL) +
+    theme_bw(base_size = 11) +
+    theme(legend.position    = "bottom",
+          axis.title.y.left  = element_text(color = anom.color),
+          axis.text.y.left   = element_text(color = anom.color),
+          axis.title.y.right = element_text(color = "gray30"),
+          axis.text.y.right  = element_text(color = "gray30"))
+}
+
+p.goa.manom.dual <- make_mld_anom_dual_plot(al.mld.anom, "GOA.anom", "darkorange4",
+                                            "GOA", goa.mld.anom.range, chel.goa.manom)
+p.ebs.manom.dual <- make_mld_anom_dual_plot(al.mld.anom, "EBS.anom", "steelblue4",
+                                            "EBS", ebs.mld.anom.range, chel.ebs.manom)
+
+p.manom.dual <- p.goa.manom.dual / p.ebs.manom.dual +
+  plot_annotation(
+    title = "15-yr Rolling AL SLP SD vs. MLD Anomaly \u2014 Winter (Nov\u2013Mar)",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 12))
+  )
+
+ggsave("./Figures/AL_SD_MLD_anom_15yr_dual_axis.png",
+       plot = p.manom.dual, width = 7, height = 7, dpi = 300)
+message("Saved: Figures/AL_SD_MLD_anom_15yr_dual_axis.png")
+
+# ============================================================
+# SECTION 9: Cellwise regression of MLD AR(1) on AL SLP SD
+# ============================================================
+# Same style as Section 6 MLD ~ AL SLP regression map, but both
+# variables are 15-yr right-aligned rolling windows of winter values.
+# x variable: al$AL.sd  (rolling SD of winter AL SLP anomaly, z-scored)
+# y variable: cellwise 15-yr rolling AR(1) of winter-mean detrended
+#             MLD anomaly. GLS with corAR1(), BH-FDR contour at q<=0.05.
+
+mld.ar1.reg.cache <- "./Output/mld_ar1_al_slp_sd_regression.csv"
+
+if (file.exists(mld.ar1.reg.cache)) {
+  message("Loading cached MLD AR(1) ~ AL SLP SD regression from: ",
+          mld.ar1.reg.cache)
+  mld.ar1.reg.df <- read.csv(mld.ar1.reg.cache)
+} else {
+  message("Loading detrended winter-month MLD anomalies (full NP domain)...")
+  nc.m    <- nc_open(mld.winmon.file)
+  mld.w   <- ncvar_get(nc.m, "somxl030")
+  lons.m  <- ncvar_get(nc.m, "nav_lon")
+  lats.m  <- ncvar_get(nc.m, "nav_lat")
+  time.m  <- ncvar_get(nc.m, "time_counter")
+  tun.m   <- ncatt_get(nc.m, "time_counter", "units")$value
+  nc_close(nc.m)
+
+  mld.w[mld.w > 1e10] <- NA
+  origin.m  <- sub(".*since ", "", tun.m)
+  dates.m   <- as.Date(as.POSIXct(time.m, origin = origin.m, tz = "UTC"))
+  years.m   <- as.integer(format(dates.m, "%Y"))
+  months.m  <- as.integer(format(dates.m, "%m"))
+  winyrs.m  <- ifelse(months.m %in% c(11, 12), years.m + 1L, years.m)
+  lons.m360 <- ifelse(lons.m < 0, lons.m + 360, lons.m)
+
+  nx <- dim(mld.w)[1]; ny <- dim(mld.w)[2]; nt <- dim(mld.w)[3]
+  mat <- matrix(mld.w, nrow = nx * ny, ncol = nt)
+  rm(mld.w); gc()
+
+  uy <- sort(unique(winyrs.m))
+  win.mld <- matrix(NA_real_, nrow = nx * ny, ncol = length(uy))
+  for (k in seq_along(uy)) {
+    ti <- which(winyrs.m == uy[k])
+    win.mld[, k] <- rowMeans(mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(mat); gc()
+
+  safe_ar1 <- function(v) {
+    if (any(is.na(v))) return(NA_real_)
+    suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
+  }
+  roll_ar1_cell <- function(x, width = 15) {
+    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+  }
+
+  # AL SLP SD from Section 5 (already 15-yr rolling, z-scored)
+  al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
+  yr.use  <- intersect(uy, al.df$year)
+  x.vec   <- al.df$AL.sd[match(yr.use, al.df$year)]
+  col.idx <- match(yr.use, uy)
+  n.yrs   <- length(yr.use)
+  message(sprintf("Regression years: %d-%d (%d years)",
+                  min(yr.use), max(yr.use), n.yrs))
+
+  # Cells with enough winter data (need a long-enough unbroken series for rolling AR(1))
+  good.cells <- which(rowSums(!is.na(win.mld)) >= max(25, 0.5 * length(uy)))
+  message(sprintf("Computing cellwise 15-yr rolling AR(1) at %d cells...",
+                  length(good.cells)))
+
+  # Per-cell AR(1) series aligned on uy, then subset to yr.use
+  ar1.mat <- matrix(NA_real_, nrow = length(good.cells), ncol = length(yr.use))
+  for (k in seq_along(good.cells)) {
+    a <- roll_ar1_cell(win.mld[good.cells[k], ])
+    ar1.mat[k, ] <- a[col.idx]
+  }
+  rm(win.mld); gc()
+
+  message(sprintf("Fitting GLS AR(1) on %d-cell rolling AR(1) series vs AL SLP SD...",
+                  length(good.cells)))
+
+  beta.vec <- rep(NA_real_, length(good.cells))
+  pval.vec <- rep(NA_real_, length(good.cells))
+  df.reg   <- data.frame(y = NA_real_, x = x.vec)
+
+  for (k in seq_along(good.cells)) {
+    y <- ar1.mat[k, ]
+    if (sum(!is.na(y)) < 10) next
+    df.reg$y <- y
+    fit <- tryCatch(
+      gls(y ~ x, data = df.reg,
+          correlation = corAR1(form = ~ 1),
+          method = "ML", na.action = na.omit),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    s <- summary(fit)$tTable
+    if (nrow(s) < 2) next
+    beta.vec[k] <- s[2, 1]
+    pval.vec[k] <- s[2, 4]
+  }
+
+  beta.full <- rep(NA_real_, nx * ny)
+  pval.full <- rep(NA_real_, nx * ny)
+  beta.full[good.cells] <- beta.vec
+  pval.full[good.cells] <- pval.vec
+
+  mld.ar1.reg.df <- data.frame(
+    lon  = as.vector(lons.m360),
+    lat  = as.vector(lats.m),
+    beta = beta.full,
+    pval = pval.full
+  ) %>% filter(!is.na(beta))
+
+  write.csv(mld.ar1.reg.df, mld.ar1.reg.cache, row.names = FALSE)
+  message("Saved: ", mld.ar1.reg.cache)
+}
+
+mld.ar1.reg.df <- mld.ar1.reg.df %>%
+  filter(lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+
+mld.ar1.reg.df$qval <- p.adjust(mld.ar1.reg.df$pval, method = "BH")
+
+n.sig.raw <- sum(mld.ar1.reg.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr <- sum(mld.ar1.reg.df$qval <= 0.05, na.rm = TRUE)
+message(sprintf("Raw p<=0.05: %d cells | BH-FDR q<=0.05: %d cells (of %d)",
+                n.sig.raw, n.sig.fdr, nrow(mld.ar1.reg.df)))
+
+mld.ar1.reg.grid <- mld.ar1.reg.df %>%
+  mutate(lon = round(lon / 0.5) * 0.5,
+         lat = round(lat / 0.5) * 0.5) %>%
+  group_by(lon, lat) %>%
+  summarise(beta = mean(beta, na.rm = TRUE),
+            qval = mean(qval, na.rm = TRUE),
+            .groups = "drop") %>%
+  complete(lon = seq(110, 250, by = 0.5),
+           lat = seq(20,  66,  by = 0.5))
+
+col.lim.ar1 <- max(abs(mld.ar1.reg.df$beta), na.rm = TRUE)
+
+p.mld.ar1.reg <- ggplot() +
+  geom_raster(data = filter(mld.ar1.reg.grid, !is.na(beta)),
+              aes(x = lon, y = lat, fill = beta)) +
+  geom_contour(data = filter(mld.ar1.reg.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.05, color = "black", linewidth = 0.4) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-col.lim.ar1, col.lim.ar1),
+                       name = "\u03b2 (AR(1) / z)") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(110, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "\u00b0N")) +
+  labs(title    = "Winter MLD AR(1) regressed on AL SLP SD (15-yr rolling windows)",
+       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.05 (Wilks 2016)",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
+
+ggsave("./Figures/MLD_AR1_AL_SLP_SD_regression.png",
+       plot = p.mld.ar1.reg, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/MLD_AR1_AL_SLP_SD_regression.png")
+
+# ============================================================
+# SECTION 10: 1-DEG AGGREGATED MLD AR(1) regressed on AL SLP SD
+# ============================================================
+# Same workflow as Section 9, but raw MLD is first averaged into
+# 1 deg x 1 deg spatial blocks BEFORE computing climatology,
+# anomaly, detrending, winter means, rolling AR(1), and GLS fit.
+
+mld.1deg.reg.cache <- "./Output/mld_ar1_al_slp_sd_regression_1deg.csv"
+raw.mld.file       <- "./Data/oras5_mld_NP_1958_2026.nc"
+
+if (file.exists(mld.1deg.reg.cache)) {
+  message("Loading cached 1-deg MLD AR(1) ~ AL SLP SD regression from: ",
+          mld.1deg.reg.cache)
+  mld.1deg.reg.df <- read.csv(mld.1deg.reg.cache)
+} else {
+  message("Loading raw MLD NC (streaming, aggregating to 1-deg) ...")
+  nc.r   <- nc_open(raw.mld.file)
+  lons.r <- ncvar_get(nc.r, "nav_lon")
+  lats.r <- ncvar_get(nc.r, "nav_lat")
+  time.r <- ncvar_get(nc.r, "time_counter")
+  tun.r  <- ncatt_get(nc.r, "time_counter", "units")$value
+  origin.r <- sub(".*since ", "", tun.r)
+  dates.r  <- as.Date(as.POSIXct(time.r, origin = origin.r, tz = "UTC"))
+  years.r  <- as.integer(format(dates.r, "%Y"))
+  months.r <- as.integer(format(dates.r, "%m"))
+
+  lons.r360 <- ifelse(as.vector(lons.r) < 0, as.vector(lons.r) + 360,
+                      as.vector(lons.r))
+  lats.v    <- as.vector(lats.r)
+
+  # Restrict to NP domain (20-66N, 110-250E) and build 1-deg bin IDs
+  in.domain <- lons.r360 >= 110 & lons.r360 <= 250 &
+               lats.v    >= 20  & lats.v    <= 66
+  bin.lon <- floor(lons.r360) + 0.5
+  bin.lat <- floor(lats.v)    + 0.5
+  bin.key <- ifelse(in.domain, paste(bin.lon, bin.lat, sep = "_"), NA)
+
+  uniq.keys <- sort(unique(stats::na.omit(bin.key)))
+  bin.idx   <- match(bin.key, uniq.keys)   # NA for out-of-domain cells
+  nbin      <- length(uniq.keys)
+
+  nx <- dim(lons.r)[1]; ny <- dim(lons.r)[2]; nt <- length(time.r)
+  bin.coords <- do.call(rbind, strsplit(uniq.keys, "_"))
+  bin.lon.v  <- as.numeric(bin.coords[, 1])
+  bin.lat.v  <- as.numeric(bin.coords[, 2])
+
+  # Stream in chunks to limit memory; accumulate 1-deg means (unweighted)
+  chunk.size <- 120
+  starts     <- seq(1, nt, by = chunk.size)
+  mat.bin    <- matrix(NA_real_, nrow = nbin, ncol = nt)
+
+  for (s in starts) {
+    n.read <- min(chunk.size, nt - s + 1)
+    cat(sprintf("  chunk %d-%d / %d\n", s, s + n.read - 1, nt))
+    chunk <- ncvar_get(nc.r, "somxl030",
+                       start = c(1, 1, s), count = c(-1, -1, n.read))
+    chunk[chunk > 1e10] <- NA
+    chunk.mat <- matrix(chunk, nrow = nx * ny, ncol = n.read)
+    rm(chunk)
+    # Aggregate each timestep by 1-deg bin
+    valid <- !is.na(bin.idx)
+    for (tt in seq_len(n.read)) {
+      v  <- chunk.mat[, tt]
+      ok <- valid & !is.na(v)
+      if (!any(ok)) next
+      sums   <- tapply(v[ok], bin.idx[ok], sum)
+      counts <- tapply(v[ok], bin.idx[ok], length)
+      keys.t <- as.integer(names(sums))
+      mat.bin[keys.t, s + tt - 1] <- sums / counts
+    }
+    rm(chunk.mat); gc()
+  }
+  nc_close(nc.r)
+
+  # Climatology + monthly anomaly + detrend per 1-deg cell
+  message("Computing climatology, anomalies, detrending, winter means per 1-deg cell...")
+  clim.mat <- matrix(NA_real_, nrow = nbin, ncol = 12)
+  for (m in 1:12) {
+    ti <- which(months.r == m)
+    clim.mat[, m] <- rowMeans(mat.bin[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  anom.mat <- mat.bin - clim.mat[, months.r]
+  rm(mat.bin); gc()
+
+  # Detrend each row (NA-safe)
+  tvec <- seq_len(nt)
+  for (k in seq_len(nbin)) {
+    y <- anom.mat[k, ]
+    ok <- !is.na(y)
+    if (sum(ok) < 24) { anom.mat[k, ] <- NA_real_; next }
+    f  <- lm(y ~ tvec, subset = ok)
+    anom.mat[k, ok] <- residuals(f)
+  }
+
+  # Winter annual means per 1-deg cell
+  winyrs.r <- ifelse(months.r %in% c(11, 12), years.r + 1L, years.r)
+  in.win   <- months.r %in% c(11, 12, 1, 2, 3)
+  uy       <- sort(unique(winyrs.r[in.win]))
+  win.mld.1 <- matrix(NA_real_, nrow = nbin, ncol = length(uy))
+  for (k in seq_along(uy)) {
+    ti <- which(winyrs.r == uy[k] & in.win)
+    if (length(ti) == 0) next
+    win.mld.1[, k] <- rowMeans(anom.mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(anom.mat); gc()
+
+  safe_ar1 <- function(v) {
+    if (any(is.na(v))) return(NA_real_)
+    suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
+  }
+  roll_ar1_cell <- function(x, width = 15) {
+    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+  }
+
+  al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
+  yr.use  <- intersect(uy, al.df$year)
+  x.vec   <- al.df$AL.sd[match(yr.use, al.df$year)]
+  col.idx <- match(yr.use, uy)
+
+  good.cells <- which(rowSums(!is.na(win.mld.1)) >= max(25, 0.5 * length(uy)))
+  message(sprintf("Computing 15-yr rolling AR(1) + GLS at %d one-degree bins...",
+                  length(good.cells)))
+
+  ar1.mat <- matrix(NA_real_, nrow = length(good.cells), ncol = length(yr.use))
+  for (k in seq_along(good.cells)) {
+    a <- roll_ar1_cell(win.mld.1[good.cells[k], ])
+    ar1.mat[k, ] <- a[col.idx]
+  }
+  rm(win.mld.1); gc()
+
+  beta.vec <- rep(NA_real_, length(good.cells))
+  pval.vec <- rep(NA_real_, length(good.cells))
+  df.reg   <- data.frame(y = NA_real_, x = x.vec)
+  for (k in seq_along(good.cells)) {
+    y <- ar1.mat[k, ]
+    if (sum(!is.na(y)) < 10) next
+    df.reg$y <- y
+    fit <- tryCatch(
+      gls(y ~ x, data = df.reg, correlation = corAR1(form = ~ 1),
+          method = "ML", na.action = na.omit),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    s <- summary(fit)$tTable
+    if (nrow(s) < 2) next
+    beta.vec[k] <- s[2, 1]
+    pval.vec[k] <- s[2, 4]
+  }
+
+  beta.full <- rep(NA_real_, nbin); pval.full <- rep(NA_real_, nbin)
+  beta.full[good.cells] <- beta.vec
+  pval.full[good.cells] <- pval.vec
+
+  mld.1deg.reg.df <- data.frame(
+    lon  = bin.lon.v,
+    lat  = bin.lat.v,
+    beta = beta.full,
+    pval = pval.full
+  ) %>% filter(!is.na(beta))
+
+  write.csv(mld.1deg.reg.df, mld.1deg.reg.cache, row.names = FALSE)
+  message("Saved: ", mld.1deg.reg.cache)
+}
+
+mld.1deg.reg.df <- mld.1deg.reg.df %>%
+  filter(lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+mld.1deg.reg.df$qval <- p.adjust(mld.1deg.reg.df$pval, method = "BH")
+
+n.sig.raw <- sum(mld.1deg.reg.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr <- sum(mld.1deg.reg.df$qval <= 0.10, na.rm = TRUE)
+message(sprintf("1-deg regression: raw p<=0.05: %d | BH-FDR q<=0.10: %d (of %d)",
+                n.sig.raw, n.sig.fdr, nrow(mld.1deg.reg.df)))
+
+mld.1deg.grid <- mld.1deg.reg.df %>%
+  complete(lon = seq(110.5, 249.5, by = 1),
+           lat = seq(20.5,  65.5,  by = 1))
+
+col.lim.1deg <- max(abs(mld.1deg.reg.df$beta), na.rm = TRUE)
+
+p.mld.1deg <- ggplot() +
+  geom_raster(data = filter(mld.1deg.grid, !is.na(beta)),
+              aes(x = lon, y = lat, fill = beta)) +
+  geom_contour(data = filter(mld.1deg.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.10, color = "black", linewidth = 0.4) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-col.lim.1deg, col.lim.1deg),
+                       name = "\u03b2 (AR(1) / z)") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(110, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "\u00b0N")) +
+  labs(title    = "1\u00b0-aggregated winter MLD AR(1) regressed on AL SLP SD (15-yr rolling)",
+       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.10",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
+
+ggsave("./Figures/MLD_AR1_AL_SLP_SD_regression_1deg.png",
+       plot = p.mld.1deg, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/MLD_AR1_AL_SLP_SD_regression_1deg.png")
+
+# ============================================================
+# SECTION 10b: 2-DEG AGGREGATED MLD AR(1) regressed on AL SLP SD
+# ============================================================
+# Identical pipeline to Section 10 but with MLD averaged into
+# 2 deg x 2 deg spatial blocks before anomaly/detrend/AR(1)/GLS.
+
+mld.2deg.reg.cache <- "./Output/mld_ar1_al_slp_sd_regression_2deg.csv"
+
+if (file.exists(mld.2deg.reg.cache)) {
+  message("Loading cached 2-deg MLD AR(1) ~ AL SLP SD regression from: ",
+          mld.2deg.reg.cache)
+  mld.2deg.reg.df <- read.csv(mld.2deg.reg.cache)
+} else {
+  message("Loading raw MLD NC (streaming, aggregating to 2-deg) ...")
+  nc.r   <- nc_open(raw.mld.file)
+  lons.r <- ncvar_get(nc.r, "nav_lon")
+  lats.r <- ncvar_get(nc.r, "nav_lat")
+  time.r <- ncvar_get(nc.r, "time_counter")
+  tun.r  <- ncatt_get(nc.r, "time_counter", "units")$value
+  origin.r <- sub(".*since ", "", tun.r)
+  dates.r  <- as.Date(as.POSIXct(time.r, origin = origin.r, tz = "UTC"))
+  years.r  <- as.integer(format(dates.r, "%Y"))
+  months.r <- as.integer(format(dates.r, "%m"))
+
+  lons.r360 <- ifelse(as.vector(lons.r) < 0, as.vector(lons.r) + 360,
+                      as.vector(lons.r))
+  lats.v    <- as.vector(lats.r)
+
+  in.domain <- lons.r360 >= 110 & lons.r360 <= 250 &
+               lats.v    >= 20  & lats.v    <= 66
+  # 2-deg bin centers: 111, 113, ..., 249 (lon) and 21, 23, ..., 65 (lat)
+  bin.lon <- floor(lons.r360 / 2) * 2 + 1
+  bin.lat <- floor(lats.v    / 2) * 2 + 1
+  bin.key <- ifelse(in.domain, paste(bin.lon, bin.lat, sep = "_"), NA)
+
+  uniq.keys <- sort(unique(stats::na.omit(bin.key)))
+  bin.idx   <- match(bin.key, uniq.keys)
+  nbin      <- length(uniq.keys)
+
+  nx <- dim(lons.r)[1]; ny <- dim(lons.r)[2]; nt <- length(time.r)
+  bin.coords <- do.call(rbind, strsplit(uniq.keys, "_"))
+  bin.lon.v  <- as.numeric(bin.coords[, 1])
+  bin.lat.v  <- as.numeric(bin.coords[, 2])
+
+  chunk.size <- 120
+  starts     <- seq(1, nt, by = chunk.size)
+  mat.bin    <- matrix(NA_real_, nrow = nbin, ncol = nt)
+
+  for (s in starts) {
+    n.read <- min(chunk.size, nt - s + 1)
+    cat(sprintf("  chunk %d-%d / %d\n", s, s + n.read - 1, nt))
+    chunk <- ncvar_get(nc.r, "somxl030",
+                       start = c(1, 1, s), count = c(-1, -1, n.read))
+    chunk[chunk > 1e10] <- NA
+    chunk.mat <- matrix(chunk, nrow = nx * ny, ncol = n.read)
+    rm(chunk)
+    valid <- !is.na(bin.idx)
+    for (tt in seq_len(n.read)) {
+      v  <- chunk.mat[, tt]
+      ok <- valid & !is.na(v)
+      if (!any(ok)) next
+      sums   <- tapply(v[ok], bin.idx[ok], sum)
+      counts <- tapply(v[ok], bin.idx[ok], length)
+      keys.t <- as.integer(names(sums))
+      mat.bin[keys.t, s + tt - 1] <- sums / counts
+    }
+    rm(chunk.mat); gc()
+  }
+  nc_close(nc.r)
+
+  message("Computing climatology, anomalies, detrending, winter means per 2-deg cell...")
+  clim.mat <- matrix(NA_real_, nrow = nbin, ncol = 12)
+  for (m in 1:12) {
+    ti <- which(months.r == m)
+    clim.mat[, m] <- rowMeans(mat.bin[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  anom.mat <- mat.bin - clim.mat[, months.r]
+  rm(mat.bin); gc()
+
+  tvec <- seq_len(nt)
+  for (k in seq_len(nbin)) {
+    y <- anom.mat[k, ]
+    ok <- !is.na(y)
+    if (sum(ok) < 24) { anom.mat[k, ] <- NA_real_; next }
+    f  <- lm(y ~ tvec, subset = ok)
+    anom.mat[k, ok] <- residuals(f)
+  }
+
+  winyrs.r <- ifelse(months.r %in% c(11, 12), years.r + 1L, years.r)
+  in.win   <- months.r %in% c(11, 12, 1, 2, 3)
+  uy       <- sort(unique(winyrs.r[in.win]))
+  win.mld.2 <- matrix(NA_real_, nrow = nbin, ncol = length(uy))
+  for (k in seq_along(uy)) {
+    ti <- which(winyrs.r == uy[k] & in.win)
+    if (length(ti) == 0) next
+    win.mld.2[, k] <- rowMeans(anom.mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(anom.mat); gc()
+
+  safe_ar1 <- function(v) {
+    if (any(is.na(v))) return(NA_real_)
+    suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
+  }
+  roll_ar1_cell <- function(x, width = 15) {
+    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+  }
+
+  al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
+  yr.use  <- intersect(uy, al.df$year)
+  x.vec   <- al.df$AL.sd[match(yr.use, al.df$year)]
+  col.idx <- match(yr.use, uy)
+
+  good.cells <- which(rowSums(!is.na(win.mld.2)) >= max(25, 0.5 * length(uy)))
+  message(sprintf("Computing 15-yr rolling AR(1) + GLS at %d two-degree bins...",
+                  length(good.cells)))
+
+  ar1.mat <- matrix(NA_real_, nrow = length(good.cells), ncol = length(yr.use))
+  for (k in seq_along(good.cells)) {
+    a <- roll_ar1_cell(win.mld.2[good.cells[k], ])
+    ar1.mat[k, ] <- a[col.idx]
+  }
+  rm(win.mld.2); gc()
+
+  beta.vec <- rep(NA_real_, length(good.cells))
+  pval.vec <- rep(NA_real_, length(good.cells))
+  df.reg   <- data.frame(y = NA_real_, x = x.vec)
+  for (k in seq_along(good.cells)) {
+    y <- ar1.mat[k, ]
+    if (sum(!is.na(y)) < 10) next
+    df.reg$y <- y
+    fit <- tryCatch(
+      gls(y ~ x, data = df.reg, correlation = corAR1(form = ~ 1),
+          method = "ML", na.action = na.omit),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    s <- summary(fit)$tTable
+    if (nrow(s) < 2) next
+    beta.vec[k] <- s[2, 1]
+    pval.vec[k] <- s[2, 4]
+  }
+
+  beta.full <- rep(NA_real_, nbin); pval.full <- rep(NA_real_, nbin)
+  beta.full[good.cells] <- beta.vec
+  pval.full[good.cells] <- pval.vec
+
+  mld.2deg.reg.df <- data.frame(
+    lon  = bin.lon.v,
+    lat  = bin.lat.v,
+    beta = beta.full,
+    pval = pval.full
+  ) %>% filter(!is.na(beta))
+
+  write.csv(mld.2deg.reg.df, mld.2deg.reg.cache, row.names = FALSE)
+  message("Saved: ", mld.2deg.reg.cache)
+}
+
+mld.2deg.reg.df <- mld.2deg.reg.df %>%
+  filter(lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+mld.2deg.reg.df$qval <- p.adjust(mld.2deg.reg.df$pval, method = "BH")
+
+n.sig.raw <- sum(mld.2deg.reg.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr <- sum(mld.2deg.reg.df$qval <= 0.10, na.rm = TRUE)
+message(sprintf("2-deg regression: raw p<=0.05: %d | BH-FDR q<=0.10: %d (of %d)",
+                n.sig.raw, n.sig.fdr, nrow(mld.2deg.reg.df)))
+
+mld.2deg.grid <- mld.2deg.reg.df %>%
+  complete(lon = seq(111, 249, by = 2),
+           lat = seq(21,  65,  by = 2))
+
+col.lim.2deg <- max(abs(mld.2deg.reg.df$beta), na.rm = TRUE)
+
+p.mld.2deg <- ggplot() +
+  geom_raster(data = filter(mld.2deg.grid, !is.na(beta)),
+              aes(x = lon, y = lat, fill = beta)) +
+  geom_contour(data = filter(mld.2deg.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.10, color = "black", linewidth = 0.4) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-col.lim.2deg, col.lim.2deg),
+                       name = "\u03b2 (AR(1) / z)") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(110, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "\u00b0N")) +
+  labs(title    = "2\u00b0-aggregated winter MLD AR(1) regressed on AL SLP SD (15-yr rolling)",
+       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.10",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
+
+ggsave("./Figures/MLD_AR1_AL_SLP_SD_regression_2deg.png",
+       plot = p.mld.2deg, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/MLD_AR1_AL_SLP_SD_regression_2deg.png")
+
+# ============================================================
+# SECTION 11: Cellwise CORRELATION of MLD AR(1) with AL SLP SD
+# ============================================================
+# Same inputs as Section 9 (native-resolution winter detrended MLD
+# anomaly; AL SLP SD 15-yr rolling z-scored) but stores Pearson r and
+# per-cell p-values from the Modified Chelton (Pyper & Peterman 1998)
+# effective-sample-size adjustment, then BH-FDR control.
+
+mld.ar1.cor.cache <- "./Output/mld_ar1_al_slp_sd_correlation_chelton.csv"
+
+if (file.exists(mld.ar1.cor.cache)) {
+  message("Loading cached MLD AR(1) ~ AL SLP SD correlation from: ",
+          mld.ar1.cor.cache)
+  mld.ar1.cor.df <- read.csv(mld.ar1.cor.cache)
+} else {
+  message("Loading detrended winter-month MLD anomalies for correlation map...")
+  nc.m    <- nc_open(mld.winmon.file)
+  mld.w   <- ncvar_get(nc.m, "somxl030")
+  lons.m  <- ncvar_get(nc.m, "nav_lon")
+  lats.m  <- ncvar_get(nc.m, "nav_lat")
+  time.m  <- ncvar_get(nc.m, "time_counter")
+  tun.m   <- ncatt_get(nc.m, "time_counter", "units")$value
+  nc_close(nc.m)
+
+  mld.w[mld.w > 1e10] <- NA
+  origin.m  <- sub(".*since ", "", tun.m)
+  dates.m   <- as.Date(as.POSIXct(time.m, origin = origin.m, tz = "UTC"))
+  years.m   <- as.integer(format(dates.m, "%Y"))
+  months.m  <- as.integer(format(dates.m, "%m"))
+  winyrs.m  <- ifelse(months.m %in% c(11, 12), years.m + 1L, years.m)
+  lons.m360 <- ifelse(lons.m < 0, lons.m + 360, lons.m)
+
+  nx <- dim(mld.w)[1]; ny <- dim(mld.w)[2]; nt <- dim(mld.w)[3]
+  mat <- matrix(mld.w, nrow = nx * ny, ncol = nt)
+  rm(mld.w); gc()
+
+  uy <- sort(unique(winyrs.m))
+  win.mld <- matrix(NA_real_, nrow = nx * ny, ncol = length(uy))
+  for (k in seq_along(uy)) {
+    ti <- which(winyrs.m == uy[k])
+    win.mld[, k] <- rowMeans(mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(mat); gc()
+
+  safe_ar1 <- function(v) {
+    if (any(is.na(v))) return(NA_real_)
+    suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
+  }
+  roll_ar1_cell <- function(x, width = 15) {
+    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+  }
+
+  al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
+  yr.use  <- intersect(uy, al.df$year)
+  x.vec   <- al.df$AL.sd[match(yr.use, al.df$year)]
+  col.idx <- match(yr.use, uy)
+
+  # Two-sided Modified Chelton test: uses existing chelton_test() helper
+  # (Section 5) for n.eff and t-stat, then converts upper-tail one-sided
+  # pval to two-sided so negative correlations are scored symmetrically.
+  chelton_pval_two_sided <- function(x, y) {
+    ct <- tryCatch(chelton_test(x, y), error = function(e) NULL)
+    if (is.null(ct) || !is.finite(ct$t.obs) || !is.finite(ct$df)) {
+      return(c(r = NA_real_, p = NA_real_))
+    }
+    p2 <- 2 * pt(-abs(ct$t.obs), df = ct$df)
+    c(r = ct$r.obs, p = p2)
+  }
+
+  good.cells <- which(rowSums(!is.na(win.mld)) >= max(25, 0.5 * length(uy)))
+  message(sprintf("Computing cellwise r (Modified Chelton) at %d cells...",
+                  length(good.cells)))
+
+  r.vec   <- rep(NA_real_, length(good.cells))
+  p.vec   <- rep(NA_real_, length(good.cells))
+  for (k in seq_along(good.cells)) {
+    a <- roll_ar1_cell(win.mld[good.cells[k], ])
+    y <- a[col.idx]
+    ok <- !is.na(y) & !is.na(x.vec)
+    if (sum(ok) < 10) next
+    rp <- chelton_pval_two_sided(x.vec[ok], y[ok])
+    r.vec[k] <- rp["r"]
+    p.vec[k] <- rp["p"]
+  }
+  rm(win.mld); gc()
+
+  r.full <- rep(NA_real_, nx * ny); p.full <- rep(NA_real_, nx * ny)
+  r.full[good.cells] <- r.vec
+  p.full[good.cells] <- p.vec
+
+  mld.ar1.cor.df <- data.frame(
+    lon  = as.vector(lons.m360),
+    lat  = as.vector(lats.m),
+    r    = r.full,
+    pval = p.full
+  ) %>% filter(!is.na(r))
+
+  write.csv(mld.ar1.cor.df, mld.ar1.cor.cache, row.names = FALSE)
+  message("Saved: ", mld.ar1.cor.cache)
+}
+
+mld.ar1.cor.df <- mld.ar1.cor.df %>%
+  filter(lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+mld.ar1.cor.df$qval <- p.adjust(mld.ar1.cor.df$pval, method = "BH")
+
+n.sig.raw <- sum(mld.ar1.cor.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr <- sum(mld.ar1.cor.df$qval <= 0.05, na.rm = TRUE)
+message(sprintf("Correlation (Modified Chelton): raw p<=0.05: %d | BH-FDR q<=0.05: %d (of %d)",
+                n.sig.raw, n.sig.fdr, nrow(mld.ar1.cor.df)))
+
+mld.ar1.cor.grid <- mld.ar1.cor.df %>%
+  mutate(lon = round(lon / 0.5) * 0.5,
+         lat = round(lat / 0.5) * 0.5) %>%
+  group_by(lon, lat) %>%
+  summarise(r = mean(r, na.rm = TRUE),
+            qval = mean(qval, na.rm = TRUE),
+            .groups = "drop") %>%
+  complete(lon = seq(110, 250, by = 0.5),
+           lat = seq(20,  66,  by = 0.5))
+
+p.mld.ar1.cor <- ggplot() +
+  geom_raster(data = filter(mld.ar1.cor.grid, !is.na(r)),
+              aes(x = lon, y = lat, fill = r)) +
+  geom_contour(data = filter(mld.ar1.cor.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.05, color = "black", linewidth = 0.4) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-1, 1), name = "r") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(110, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "\u00b0N")) +
+  labs(title    = "Cellwise correlation: winter MLD AR(1) vs AL SLP SD (15-yr rolling)",
+       subtitle = "Pearson r; Modified Chelton p-values with BH-FDR contour at q \u2264 0.05",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
+
+ggsave("./Figures/MLD_AR1_AL_SLP_SD_correlation.png",
+       plot = p.mld.ar1.cor, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/MLD_AR1_AL_SLP_SD_correlation.png")
+
+# ============================================================
+# SECTION 12: ERA-DIFFERENCE MAPS — SST AR(1), MLD AR(1), MLD mean
+# ============================================================
+# Three-panel cellwise map of era 2 minus era 1 for:
+#   1. SST AR(1)   (winter Nov-Mar detrended anomalies)
+#   2. MLD AR(1)   (winter Nov-Mar detrended anomalies)
+#   3. MLD mean    (era mean of winter detrended MLD anomalies, m)
+# Era 1: 1989-2006 (18 winters); Era 2: 2007-2024 (18 winters).
+# Ported from ORAS5_MLD_summary.R.
+
+era1.yrs <- 1989:2006
+era2.yrs <- 2007:2024
+stopifnot(length(era1.yrs) == 18, length(era2.yrs) == 18)
+
+sst.src         <- "./Data/era5_sst_NP_1950_2026.nc"
+sst.winmon.file <- "./Data/era5_sst_NP_detr_anom_winmon.nc"
+cdo             <- "cdo"
+
+if (!file.exists(sst.winmon.file)) {
+  message("CDO: building ERA5 SST detrended winter-month anomalies...")
+  system(paste(
+    cdo, "selmon,11,12,1,2,3 -detrend -ymonsub", sst.src,
+    paste0("-ymonmean ", sst.src),
+    sst.winmon.file
+  ))
+}
+
+compute_era_ar1 <- function(win.mat, all.yrs, era.yrs, min.n = 10) {
+  idx <- which(all.yrs %in% era.yrs)
+  apply(win.mat[, idx, drop = FALSE], 1, function(v) {
+    v <- v[!is.na(v)]
+    if (length(v) < min.n) return(NA_real_)
+    tryCatch(acf(v, lag.max = 1, plot = FALSE)$acf[2],
+             error = function(e) NA_real_)
+  })
+}
+compute_era_mean <- function(win.mat, all.yrs, era.yrs, min.n = 10) {
+  idx <- which(all.yrs %in% era.yrs)
+  apply(win.mat[, idx, drop = FALSE], 1, function(v) {
+    v <- v[!is.na(v)]
+    if (length(v) < min.n) return(NA_real_)
+    mean(v)
+  })
+}
+
+era.diff.cache <- "./Output/era_diff_sst_ar1_mld_ar1_mld_mean.csv"
+
+if (file.exists(era.diff.cache)) {
+  message("Loading cached era-difference maps: ", era.diff.cache)
+  era.diff <- read.csv(era.diff.cache)
+} else {
+  # --- SST ---
+  message("Loading ERA5 SST detrended winter anomalies...")
+  nc.s      <- nc_open(sst.winmon.file)
+  sst.w     <- ncvar_get(nc.s, "sst")
+  lons.s    <- ncvar_get(nc.s, "longitude")
+  lats.s    <- ncvar_get(nc.s, "latitude")
+  all.names <- c(names(nc.s$var), names(nc.s$dim))
+  time.var  <- intersect(c("valid_time", "time"), all.names)[1]
+  time.s    <- ncvar_get(nc.s, time.var)
+  tun.s     <- ncatt_get(nc.s, time.var, "units")$value
+  nc_close(nc.s)
+
+  origin.s   <- sub(".*since ", "", tun.s)
+  dates.s    <- as.Date(as.POSIXct(time.s, origin = origin.s, tz = "UTC"))
+  years.s    <- as.integer(format(dates.s, "%Y"))
+  months.s   <- as.integer(format(dates.s, "%m"))
+  winyears.s <- ifelse(months.s %in% c(11, 12), years.s + 1L, years.s)
+  lons.s360  <- ifelse(lons.s < 0, lons.s + 360, lons.s)
+
+  lon.idx.s <- which(lons.s360 >= 110 & lons.s360 <= 250)
+  lat.idx.s <- which(lats.s   >= 20  & lats.s   <= 66)
+  sst.w     <- sst.w[lon.idx.s, lat.idx.s, ]
+  lons.s360 <- lons.s360[lon.idx.s]
+  lats.s    <- lats.s[lat.idx.s]
+
+  stopifnot(all(era1.yrs %in% winyears.s), all(era2.yrs %in% winyears.s))
+
+  nlon.s <- length(lons.s360); nlat.s <- length(lats.s)
+  sst.mat <- matrix(sst.w, nrow = nlon.s * nlat.s, ncol = dim(sst.w)[3])
+  rm(sst.w); gc()
+
+  all.wyrs.s <- sort(unique(winyears.s))
+  sst.win    <- matrix(NA_real_, nrow = nlon.s * nlat.s,
+                       ncol = length(all.wyrs.s))
+  for (k in seq_along(all.wyrs.s)) {
+    ti <- which(winyears.s == all.wyrs.s[k])
+    sst.win[, k] <- rowMeans(sst.mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(sst.mat); gc()
+
+  sst.ar1.diff <- compute_era_ar1(sst.win, all.wyrs.s, era2.yrs) -
+                  compute_era_ar1(sst.win, all.wyrs.s, era1.yrs)
+  rm(sst.win); gc()
+
+  sst.df <- expand.grid(lon = lons.s360, lat = lats.s) %>%
+    mutate(diff = sst.ar1.diff, variable = "SST_AR1") %>%
+    filter(!is.na(diff))
+
+  # --- MLD (AR(1) and mean) ---
+  message("Loading ORAS5 MLD detrended winter anomalies...")
+  nc.m   <- nc_open(mld.winmon.file)
+  mld.w  <- ncvar_get(nc.m, "somxl030")
+  lons.m <- ncvar_get(nc.m, "nav_lon")
+  lats.m <- ncvar_get(nc.m, "nav_lat")
+  time.m <- ncvar_get(nc.m, "time_counter")
+  tun.m  <- ncatt_get(nc.m, "time_counter", "units")$value
+  nc_close(nc.m)
+
+  mld.w[mld.w > 1e10] <- NA
+  origin.m   <- sub(".*since ", "", tun.m)
+  dates.m    <- as.Date(as.POSIXct(time.m, origin = origin.m, tz = "UTC"))
+  years.m    <- as.integer(format(dates.m, "%Y"))
+  months.m   <- as.integer(format(dates.m, "%m"))
+  winyears.m <- ifelse(months.m %in% c(11, 12), years.m + 1L, years.m)
+  lons.m360  <- ifelse(lons.m < 0, lons.m + 360, lons.m)
+
+  nx.m <- dim(mld.w)[1]; ny.m <- dim(mld.w)[2]; nt.m <- dim(mld.w)[3]
+  np.mask.m <- as.vector(lons.m360 >= 110 & lons.m360 <= 250 &
+                         lats.m    >= 20  & lats.m    <= 66)
+  mld.mat   <- matrix(mld.w, nrow = nx.m * ny.m, ncol = nt.m)
+  good.m    <- which(np.mask.m & rowSums(!is.na(mld.mat)) > nt.m * 0.5)
+  rm(mld.w); gc()
+
+  all.wyrs.m <- sort(unique(winyears.m))
+  mld.win    <- matrix(NA_real_, nrow = length(good.m),
+                       ncol = length(all.wyrs.m))
+  for (k in seq_along(all.wyrs.m)) {
+    ti <- which(winyears.m == all.wyrs.m[k])
+    mld.win[, k] <- rowMeans(mld.mat[good.m, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(mld.mat); gc()
+
+  mld.ar1.diff  <- compute_era_ar1(mld.win,  all.wyrs.m, era2.yrs) -
+                   compute_era_ar1(mld.win,  all.wyrs.m, era1.yrs)
+  mld.mean.diff <- compute_era_mean(mld.win, all.wyrs.m, era2.yrs) -
+                   compute_era_mean(mld.win, all.wyrs.m, era1.yrs)
+  rm(mld.win); gc()
+
+  ar1.full  <- rep(NA_real_, nx.m * ny.m)
+  mean.full <- rep(NA_real_, nx.m * ny.m)
+  ar1.full[good.m]  <- mld.ar1.diff
+  mean.full[good.m] <- mld.mean.diff
+
+  mld.ar1.df <- data.frame(
+    lon      = as.vector(lons.m360),
+    lat      = as.vector(lats.m),
+    diff     = ar1.full,
+    variable = "MLD_AR1"
+  ) %>% filter(!is.na(diff), lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+
+  mld.mean.df <- data.frame(
+    lon      = as.vector(lons.m360),
+    lat      = as.vector(lats.m),
+    diff     = mean.full,
+    variable = "MLD_MEAN"
+  ) %>% filter(!is.na(diff), lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+
+  era.diff <- bind_rows(sst.df, mld.ar1.df, mld.mean.df)
+  write.csv(era.diff, era.diff.cache, row.names = FALSE)
+  message("Saved: ", era.diff.cache)
+}
+
+# Plot domain: N. Pacific 160-250E, 20-66N (western edge trimmed)
+era.plot.sst <- era.diff %>% filter(variable == "SST_AR1", lon >= 160)
+era.plot.mar <- era.diff %>% filter(variable == "MLD_AR1", lon >= 160)
+era.plot.mme <- era.diff %>% filter(variable == "MLD_MEAN", lon >= 160)
+
+goa.line.df <- data.frame(lon = c(goa.x, goa.x[1]),
+                          lat = c(goa.y, goa.y[1]),
+                          grp = "GOA")
+ebs.line.df <- data.frame(lon = c(ebs.x, ebs.x[1]),
+                          lat = c(ebs.y, ebs.y[1]),
+                          grp = "EBS")
+message("GOA poly range: lon ", paste(range(goa.line.df$lon), collapse = "-"),
+        "  lat ", paste(range(goa.line.df$lat), collapse = "-"))
+message("EBS poly range: lon ", paste(range(ebs.line.df$lon), collapse = "-"),
+        "  lat ", paste(range(ebs.line.df$lat), collapse = "-"))
+
+col.sst <- max(abs(era.plot.sst$diff), na.rm = TRUE)
+col.mar <- max(abs(era.plot.mar$diff), na.rm = TRUE)
+col.mme <- max(abs(era.plot.mme$diff), na.rm = TRUE)
+
+make_era_panel <- function(df, col.lim, title.label, legend.label) {
+  ggplot() +
+    geom_point(data = df, aes(x = lon, y = lat, color = diff),
+               shape = 15, size = 0.3) +
+    geom_polygon(data = mapWorld.clean,
+                 aes(x = long, y = lat, group = group),
+                 fill = "gray85", color = "gray30", linewidth = 0.25) +
+    scale_color_gradient2(low = "steelblue4", mid = "white",
+                          high = "darkorange4", midpoint = 0,
+                          limits = c(-col.lim, col.lim),
+                          name = legend.label) +
+    geom_path(data = goa.line.df,
+              aes(x = lon, y = lat),
+              color = "black", linewidth = 1.0,
+              inherit.aes = FALSE) +
+    geom_path(data = ebs.line.df,
+              aes(x = lon, y = lat),
+              color = "black", linewidth = 1.0,
+              inherit.aes = FALSE) +
+    coord_cartesian(xlim = c(160, 250), ylim = c(20, 66)) +
+    scale_x_continuous(breaks = seq(160, 250, 20), labels = lon_label) +
+    scale_y_continuous(breaks = seq(20, 60, 10),
+                       labels = function(y) paste0(y, "\u00b0N")) +
+    labs(title = title.label, x = NULL, y = NULL) +
+    theme_bw(base_size = 10) +
+    theme(plot.title      = element_text(hjust = 0.5, size = 10),
+          legend.position = "right",
+          panel.grid.minor = element_blank())
+}
+
+p.era.sst <- make_era_panel(era.plot.sst, col.sst,
+                            "\u0394 SST AR(1)",  "\u0394AR(1)")
+p.era.mar <- make_era_panel(era.plot.mar, col.mar,
+                            "\u0394 MLD AR(1)",  "\u0394AR(1)")
+p.era.mme <- make_era_panel(era.plot.mme, col.mme,
+                            "\u0394 MLD mean",   "\u0394MLD (m)")
+
+p.era3 <- (p.era.sst | p.era.mar | p.era.mme) +
+  plot_annotation(
+    title    = "Era differences (era 2 \u2212 era 1)",
+    subtitle = paste0("Era 1: 1989\u20132006 (n = 18)  |  ",
+                      "Era 2: 2007\u20132024 (n = 18)  |  ",
+                      "winter (Nov\u2013Mar) annual means"),
+    theme = theme(plot.title    = element_text(hjust = 0.5),
+                  plot.subtitle = element_text(hjust = 0.5, size = 9))
+  )
+
+ggsave("./Figures/ERA_diff_SST_AR1_MLD_AR1_MLD_mean.png",
+       plot = p.era3, width = 16, height = 5, dpi = 150)
+message("Saved: Figures/ERA_diff_SST_AR1_MLD_AR1_MLD_mean.png")
+
+# ============================================================
+# SECTION 13: Cellwise regression of SST AR(1) on AL SLP SD
+# ============================================================
+# Same workflow as Section 9 but with SST AR(1) as the response.
+# x: al$AL.sd (15-yr rolling SD of winter AL SLP anomaly, z-scored)
+# y: per-cell 15-yr right-aligned rolling AR(1) of winter-mean
+#    detrended SST anomaly (from sst.winmon.file).
+# No significance overlay.
+
+sst.ar1.reg.cache <- "./Output/sst_ar1_al_slp_sd_regression.csv"
+
+if (file.exists(sst.ar1.reg.cache)) {
+  message("Loading cached SST AR(1) ~ AL SLP SD regression: ",
+          sst.ar1.reg.cache)
+  sst.ar1.reg.df <- read.csv(sst.ar1.reg.cache)
+} else {
+  message("Loading ERA5 detrended winter-month SST anomalies...")
+  nc.s      <- nc_open(sst.winmon.file)
+  sst.w     <- ncvar_get(nc.s, "sst")
+  lons.s    <- ncvar_get(nc.s, "longitude")
+  lats.s    <- ncvar_get(nc.s, "latitude")
+  all.names <- c(names(nc.s$var), names(nc.s$dim))
+  time.var  <- intersect(c("valid_time", "time"), all.names)[1]
+  time.s    <- ncvar_get(nc.s, time.var)
+  tun.s     <- ncatt_get(nc.s, time.var, "units")$value
+  nc_close(nc.s)
+
+  origin.s   <- sub(".*since ", "", tun.s)
+  dates.s    <- as.Date(as.POSIXct(time.s, origin = origin.s, tz = "UTC"))
+  years.s    <- as.integer(format(dates.s, "%Y"))
+  months.s   <- as.integer(format(dates.s, "%m"))
+  winyears.s <- ifelse(months.s %in% c(11, 12), years.s + 1L, years.s)
+  lons.s360  <- ifelse(lons.s < 0, lons.s + 360, lons.s)
+
+  lon.idx.s <- which(lons.s360 >= 160 & lons.s360 <= 250)
+  lat.idx.s <- which(lats.s   >= 20  & lats.s   <= 66)
+  sst.w     <- sst.w[lon.idx.s, lat.idx.s, ]
+  lons.s360 <- lons.s360[lon.idx.s]
+  lats.s    <- lats.s[lat.idx.s]
+
+  nlon.s <- length(lons.s360); nlat.s <- length(lats.s)
+  sst.mat <- matrix(sst.w, nrow = nlon.s * nlat.s, ncol = dim(sst.w)[3])
+  rm(sst.w); gc()
+
+  all.wyrs.s <- sort(unique(winyears.s))
+  sst.win    <- matrix(NA_real_, nrow = nlon.s * nlat.s,
+                       ncol = length(all.wyrs.s))
+  for (k in seq_along(all.wyrs.s)) {
+    ti <- which(winyears.s == all.wyrs.s[k])
+    sst.win[, k] <- rowMeans(sst.mat[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(sst.mat); gc()
+
+  safe_ar1 <- function(v) {
+    if (any(is.na(v))) return(NA_real_)
+    suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
+  }
+  roll_ar1_cell <- function(x, width = 15) {
+    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+  }
+
+  al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
+  yr.use  <- intersect(all.wyrs.s, al.df$year)
+  x.vec   <- al.df$AL.sd[match(yr.use, al.df$year)]
+  col.idx <- match(yr.use, all.wyrs.s)
+  message(sprintf("SST regression years: %d-%d (%d years)",
+                  min(yr.use), max(yr.use), length(yr.use)))
+
+  good.cells <- which(rowSums(!is.na(sst.win)) >= max(25, 0.5 * length(all.wyrs.s)))
+  message(sprintf("Computing cellwise 15-yr rolling AR(1) at %d cells...",
+                  length(good.cells)))
+
+  ar1.mat <- matrix(NA_real_, nrow = length(good.cells), ncol = length(yr.use))
+  for (k in seq_along(good.cells)) {
+    a <- roll_ar1_cell(sst.win[good.cells[k], ])
+    ar1.mat[k, ] <- a[col.idx]
+  }
+  rm(sst.win); gc()
+
+  message(sprintf("Fitting GLS AR(1) at %d cells...", length(good.cells)))
+  beta.vec <- rep(NA_real_, length(good.cells))
+  df.reg   <- data.frame(y = NA_real_, x = x.vec)
+  for (k in seq_along(good.cells)) {
+    y <- ar1.mat[k, ]
+    if (sum(!is.na(y)) < 10) next
+    df.reg$y <- y
+    fit <- tryCatch(
+      gls(y ~ x, data = df.reg,
+          correlation = corAR1(form = ~ 1),
+          method = "ML", na.action = na.omit),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    s <- summary(fit)$tTable
+    if (nrow(s) < 2) next
+    beta.vec[k] <- s[2, 1]
+  }
+
+  beta.full <- rep(NA_real_, nlon.s * nlat.s)
+  beta.full[good.cells] <- beta.vec
+
+  lonlat <- expand.grid(lon = lons.s360, lat = lats.s)
+  sst.ar1.reg.df <- data.frame(lon  = lonlat$lon,
+                               lat  = lonlat$lat,
+                               beta = beta.full) %>%
+    filter(!is.na(beta))
+
+  write.csv(sst.ar1.reg.df, sst.ar1.reg.cache, row.names = FALSE)
+  message("Saved: ", sst.ar1.reg.cache)
+}
+
+sst.ar1.reg.df <- sst.ar1.reg.df %>% filter(lon >= 160, lon <= 250)
+
+col.lim.sst <- max(abs(sst.ar1.reg.df$beta), na.rm = TRUE)
+
+p.sst.ar1.reg <- ggplot() +
+  geom_raster(data = sst.ar1.reg.df,
+              aes(x = lon, y = lat, fill = beta)) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-col.lim.sst, col.lim.sst),
+                       name = "\u03b2 (AR(1) / z)") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(160, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(160, 250, 20), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "\u00b0N")) +
+  labs(title = "Winter SST AR(1) regressed on AL SLP SD (15-yr rolling windows)",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3))
+
+ggsave("./Figures/SST_AR1_AL_SLP_SD_regression.png",
+       plot = p.sst.ar1.reg, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/SST_AR1_AL_SLP_SD_regression.png")
