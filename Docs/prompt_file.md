@@ -498,7 +498,71 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
     Test 2 — AL SLP SD sanity check: per-member 15-yr rolling SD of winter AL-box SLP for both ensembles. FCM should track ERA5; MDM should be ~flat by design. Saved to Figures/CESM_ensemble_AL_SLP_SD_trajectories.png.
 
     Test 3 — Trend distribution test: per-member slope of rolling AR(1) vs. year over 1964–2014, histogrammed by ensemble × region. ERA5's slope is overlaid as a dashed line. Writes an empirical one-sided p-value (fraction of members with slope ≥ ERA5) to Output/CESM_ensemble_AR1_trend_pvals.csv. The key attribution statement: if ERA5's reddening sits in the tail of MDM but inside FCM, wind variability is required.
+- Add these in a new CESM_ensemble_tests.R script.
 
 # Revise CESM ensemble analysis
 - Test 1 and Test 2 are repeats or expansions on earlier analysis, and do not seem to track what we expect - I'm not sure how different members are initialized and how closely MDM and FCM runs should track each other and/or observations.
 - Drop Test 1 and Test 2 from the script.
+- Test 3 is executed inappropriately - it evaluates linear trends in SST AR(1), but that is not the pattern that we see in observations - we see a temporal pattern that would be better evaluated by a high-EDF GAM.
+- Revise Test 3 to test for the EDF in a GAMM following the form SST AR(1) ~ s(year), where SST AR(1) refers to the time series of values for right-aligned 15-year rolling window.
+- Replace the comparison of ensemble member and observation linear trends with the effective degrees of freedom (EDF) value for the smooth on year. 
+- Ensure that the same EBS / GOA boxes are being used for ERA5, FCM, and MDM.
+- Plot in the same style as the previous linear trend plot, but use a free scale on the y axis; save as a png with a new name referring to EDF, not trend. 
+# Seems to be no difference in FCM/MDM yet again!
+
+# CESM individual member analysis
+- First, confirm that SST and SLP runs from the same individual members can be identified from the file name information on hand. THIS IS A CRITICAL STEP, AS GETTING THIS WRONG WILL PROVIDE SPURIOUS RESULTS FROM THE DOWNSTREAM ANALYSIS. Think hard, evaluate multiple authoritative sources, and suggest tests for evaluating that the SST/SLP information can be linked to shared member IDs.
+- Start a new script called "CESM_member_regression.
+
+# Proceed with correlation
+- T1-3 all pass, confirming we have matched SLP-SST pairs from individual members.
+- Now institute correlation tests for all FCM and all MDM model runs and compare the distribution of r values for each.
+- The correlation is for AL SLP SD vs SST AR(1) on right-aligned 15-year windows for both the EBS and GOA, exactly as was done for the observations.
+- Plot the r distributions for each system, FCM vs MDM in a four-panel plot and save as a .png.
+- Free scale the y axis.
+# CESM2 FCM-MDM comparison appears to be a dead end, return to observations.
+
+# Return to observations
+- Resume work on analysis.R
+- Add 2-axis plots comparing AL SLP SD and EBS/GOA MLD AR(1) in the same style previously used for SLP SD - SST AR(1).
+- Again use winter values on 15-year right-aligned rolling windows.
+
+# Compare AL SLP SD with MLD anomaly 
+- Make a plot in the same style and with the same data handling, but replace MLD AR(1) with MLD anomaly.
+- Again, 15-year rolling windows, right-aligned, with winter values. 
+- MLD anomalies should be winter means of detrended monthly anomalies.
+
+# Regression map - MLD AR(1) on AL SLP SD
+- Make a map in the same style as the SLP - MLD regression map.
+- The data for these cellwise regressions should be 15-year rolling window SD of detrended AL SLP anomalies for annual winter values (x variable) and cell values of 15-year rolling window AR(1) for detrended MLD anomalies. 
+
+# Correlation map / spatially aggregated regression map
+- That pattern of regression coefficients is not spatially coherent, though there seems to be some indication of the NE Pacific - central N Pacific PDO dipole.
+- Make two new maps to investigate further.
+- First map is the same regression workflow, but with MLD aggregate into 1 degree x 1 degree blocks at the first step. That is, MLD values are averaged over 1 degree blocks, then anomalies are calculated, and the rest of the regression workflow is followed. Save this as a new .png plot with a clarifying name.
+- Second map is a for AL SLP SD - cellwise MLD AR(1) correlation coeffients rather than regression coefficients. Otherwise this is the same as the initial regression map. Save as a .png. 
+- Include the Modified Chelton adjustment for the significance test in the correlation map, in addition to the FDR control.
+
+# Revisions
+- For the 1 degree spatially aggregated regression map, change q for FDR to 0.1 
+- Try an additional plot with MLD aggregated at 2 degree blocks.
+# Summary - there appears to be a weak PDO-like dipole in the MLD AR(1) - SLP Sd regression, but never significant at the cell level and spatially patchier than the PDO or SST regression on SLP SD
+
+# Era maps
+- Read the previous scripts to find an era map in either MLD anomaly or MLD AR(1). Tell me the exact quantities being mapped and the eras used.
+- Bring the script to create three maps into analysis.R.
+- Use Era 1: 1989-2006 and Era 2: 2007-2024
+- Make cellwise maps of delta SST AR(1), delta MLD AR(1), and delta MLD mean.
+- Save as three panel plot with era difference for the three variables.
+- Each panel should have its own scale bar.
+- Indicate the EBS and GOA polygons with thin black lines, no need to identify with legend. 
+
+- Increase map area to the full N. Pacific domain. 
+- Add the EBS and GOA legends as thin black lines ON TOP OF the plotted values!
+- Make the western edge of the plots at 160E to block out large-magnitude areas in the western Pacific.
+
+# SST AR(1) regressed on AL SLP SD
+- Make a map of cellwise SST AR(1) (y variable) regressed on AL SLP SD (x variable).
+- Use 15 year rolling windows of winter mean values.
+- Do not add significance.
+- Save as .png.
