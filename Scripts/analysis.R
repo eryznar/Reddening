@@ -2026,6 +2026,7 @@ if (file.exists(sst.ar1.reg.cache)) {
 
   message(sprintf("Fitting GLS AR(1) at %d cells...", length(good.cells)))
   beta.vec <- rep(NA_real_, length(good.cells))
+  pval.vec <- rep(NA_real_, length(good.cells))
   df.reg   <- data.frame(y = NA_real_, x = x.vec)
   for (k in seq_along(good.cells)) {
     y <- ar1.mat[k, ]
@@ -2041,15 +2042,19 @@ if (file.exists(sst.ar1.reg.cache)) {
     s <- summary(fit)$tTable
     if (nrow(s) < 2) next
     beta.vec[k] <- s[2, 1]
+    pval.vec[k] <- s[2, 4]
   }
 
   beta.full <- rep(NA_real_, nlon.s * nlat.s)
+  pval.full <- rep(NA_real_, nlon.s * nlat.s)
   beta.full[good.cells] <- beta.vec
+  pval.full[good.cells] <- pval.vec
 
   lonlat <- expand.grid(lon = lons.s360, lat = lats.s)
   sst.ar1.reg.df <- data.frame(lon  = lonlat$lon,
                                lat  = lonlat$lat,
-                               beta = beta.full) %>%
+                               beta = beta.full,
+                               pval = pval.full) %>%
     filter(!is.na(beta))
 
   write.csv(sst.ar1.reg.df, sst.ar1.reg.cache, row.names = FALSE)
@@ -2057,12 +2062,31 @@ if (file.exists(sst.ar1.reg.cache)) {
 }
 
 sst.ar1.reg.df <- sst.ar1.reg.df %>% filter(lon >= 160, lon <= 250)
+sst.ar1.reg.df$qval <- p.adjust(sst.ar1.reg.df$pval, method = "BH")
+
+n.sig.raw.sst <- sum(sst.ar1.reg.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr.sst <- sum(sst.ar1.reg.df$qval <= 0.05, na.rm = TRUE)
+message(sprintf("SST AR(1) ~ AL SLP SD: raw p<=0.05: %d | BH-FDR q<=0.05: %d (of %d)",
+                n.sig.raw.sst, n.sig.fdr.sst, nrow(sst.ar1.reg.df)))
+
+sst.ar1.reg.grid <- sst.ar1.reg.df %>%
+  mutate(lon = round(lon / 0.5) * 0.5,
+         lat = round(lat / 0.5) * 0.5) %>%
+  group_by(lon, lat) %>%
+  summarise(beta = mean(beta, na.rm = TRUE),
+            qval = mean(qval, na.rm = TRUE),
+            .groups = "drop") %>%
+  complete(lon = seq(160, 250, by = 0.5),
+           lat = seq(20,  66,  by = 0.5))
 
 col.lim.sst <- max(abs(sst.ar1.reg.df$beta), na.rm = TRUE)
 
 p.sst.ar1.reg <- ggplot() +
-  geom_raster(data = sst.ar1.reg.df,
+  geom_raster(data = filter(sst.ar1.reg.grid, !is.na(beta)),
               aes(x = lon, y = lat, fill = beta)) +
+  geom_contour(data = filter(sst.ar1.reg.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.05, color = "black", linewidth = 0.4) +
   geom_polygon(data = mapWorld.clean,
                aes(x = long, y = lat, group = group),
                fill = "gray85", color = "gray30", linewidth = 0.25) +
@@ -2072,16 +2096,17 @@ p.sst.ar1.reg <- ggplot() +
                        high = "darkorange4", midpoint = 0,
                        limits = c(-col.lim.sst, col.lim.sst),
                        name = "\u03b2 (AR(1) / z)") +
-  coord_map(projection = "rectangular", parameters = 55,
-            xlim = c(160, 250), ylim = c(20, 66)) +
+  coord_cartesian(xlim = c(160, 250), ylim = c(20, 66)) +
   scale_x_continuous(breaks = seq(160, 250, 20), labels = lon_label) +
   scale_y_continuous(breaks = seq(20, 60, 10),
                      labels = function(y) paste0(y, "\u00b0N")) +
-  labs(title = "Winter SST AR(1) regressed on AL SLP SD (15-yr rolling windows)",
+  labs(title    = "Winter SST AR(1) regressed on AL SLP SD (15-yr rolling windows)",
+       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.05 (Wilks 2016)",
        x = NULL, y = NULL) +
   theme_bw(base_size = 11) +
   theme(panel.grid.minor = element_blank(),
-        panel.grid.major = element_line(color = "gray90", linewidth = 0.3))
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
 
 ggsave("./Figures/SST_AR1_AL_SLP_SD_regression.png",
        plot = p.sst.ar1.reg, width = 9, height = 6, dpi = 300)
