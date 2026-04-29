@@ -2111,3 +2111,306 @@ p.sst.ar1.reg <- ggplot() +
 ggsave("./Figures/SST_AR1_AL_SLP_SD_regression.png",
        plot = p.sst.ar1.reg, width = 9, height = 6, dpi = 300)
 message("Saved: Figures/SST_AR1_AL_SLP_SD_regression.png")
+
+# ============================================================
+# SECTION 14: SEASONAL LAG SENSITIVITY (Newman et al. 2016, J. Climate)
+# ============================================================
+# Same dual-axis plots as Section 5 (15-yr AL SLP SD vs SST AR(1) for
+# GOA and EBS), but with a seasonal lag between AL forcing and ocean
+# response: AL SLP SD uses Nov-Dec-Jan means; SST AR(1) uses Feb-Mar-Apr
+# means. Year = January year for both, so they refer to the same winter.
+
+# --- AL SLP SD with N-D-J season ---
+al.ndj <- al.monthly %>%
+  filter(month %in% c(11, 12, 1)) %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  group_by(win.year) %>%
+  summarise(SLP = mean(SLP, na.rm = TRUE), .groups = "drop") %>%
+  rename(year = win.year) %>%
+  arrange(year) %>%
+  mutate(AL.sd = roll_sd(SLP),
+         AL.sd = as.numeric(scale(AL.sd)))
+
+# --- SST AR(1) with F-M-A season (year = calendar year = January year) ---
+fma.anom <- monthly.anom %>%
+  filter(month %in% c(2, 3, 4)) %>%
+  group_by(year) %>%
+  summarise(GOA = mean(GOA.anom, na.rm = TRUE),
+            EBS = mean(EBS.anom, na.rm = TRUE),
+            .groups = "drop") %>%
+  arrange(year)
+
+fma.detr <- fma.anom %>%
+  mutate(GOA = detrend(GOA),
+         EBS = detrend(EBS))
+
+fma.roll <- fma.detr %>%
+  mutate(GOA.ar1 = roll_ar1(GOA),
+         EBS.ar1 = roll_ar1(EBS))
+
+al.sst.lag <- fma.roll %>%
+  select(year, GOA.ar1, EBS.ar1) %>%
+  left_join(al.ndj %>% select(year, AL.sd), by = "year") %>%
+  filter(!is.na(AL.sd))
+
+al.sd.range.lag   <- range(al.sst.lag$AL.sd,   na.rm = TRUE)
+goa.ar1.range.lag <- range(al.sst.lag$GOA.ar1, na.rm = TRUE)
+ebs.ar1.range.lag <- range(al.sst.lag$EBS.ar1, na.rm = TRUE)
+
+dat.goa.lag <- al.sst.lag %>% filter(!is.na(GOA.ar1), !is.na(AL.sd))
+dat.ebs.lag <- al.sst.lag %>% filter(!is.na(EBS.ar1), !is.na(AL.sd))
+
+chel.goa.lag <- chelton_test(dat.goa.lag$GOA.ar1, dat.goa.lag$AL.sd)
+chel.ebs.lag <- chelton_test(dat.ebs.lag$EBS.ar1, dat.ebs.lag$AL.sd)
+
+message(sprintf("GOA NDJ-FMA Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+                chel.goa.lag$r.obs, chel.goa.lag$n.eff, chel.goa.lag$t.obs, chel.goa.lag$pval))
+message(sprintf("EBS NDJ-FMA Chelton: r = %.2f, N* = %.1f, t = %.2f, p = %.4f",
+                chel.ebs.lag$r.obs, chel.ebs.lag$n.eff, chel.ebs.lag$t.obs, chel.ebs.lag$pval))
+
+make_dual_axis_plot_lag <- function(dat, ar1.col, ar1.color, region.label, ar1.range, chel) {
+  k <- diff(ar1.range) / diff(al.sd.range.lag)
+  b <- ar1.range[1] - k * al.sd.range.lag[1]
+
+  dat <- dat %>% filter(!is.na(.data[[ar1.col]]), !is.na(AL.sd))
+
+  lbl <- sprintf("r = %.2f, N* = %.1f\nt = %.2f, p = %.3f",
+                 chel$r.obs, chel$n.eff, chel$t.obs, chel$pval)
+
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[ar1.col]], color = "SST AR(1) [FMA]"), linewidth = 0.7) +
+    geom_point(aes(y = .data[[ar1.col]], color = "SST AR(1) [FMA]"), size = 1.5) +
+    geom_line(aes(y = k * AL.sd + b, color = "AL SLP SD [NDJ]"),
+              linewidth = 0.7, linetype = "dashed") +
+    geom_point(aes(y = k * AL.sd + b, color = "AL SLP SD [NDJ]"), size = 1.5, shape = 1) +
+    annotate("text", x = Inf, y = -Inf, label = lbl,
+             hjust = 1.1, vjust = -0.4, size = 3.5, lineheight = 1.3) +
+    scale_y_continuous(
+      name     = "SST AR(1)  [FMA]",
+      sec.axis = sec_axis(~ (. - b) / k, name = "AL SLP SD (z-scored)  [NDJ]")
+    ) +
+    scale_color_manual(values = c("SST AR(1) [FMA]" = ar1.color,
+                                  "AL SLP SD [NDJ]" = "gray30")) +
+    labs(title = region.label, x = "Year", color = NULL) +
+    theme_bw(base_size = 11) +
+    theme(legend.position    = "bottom",
+          axis.title.y.left  = element_text(color = ar1.color),
+          axis.text.y.left   = element_text(color = ar1.color),
+          axis.title.y.right = element_text(color = "gray30"),
+          axis.text.y.right  = element_text(color = "gray30"))
+}
+
+p.goa.dual.lag <- make_dual_axis_plot_lag(al.sst.lag, "GOA.ar1", "darkorange4",
+                                           "GOA", goa.ar1.range.lag, chel.goa.lag)
+p.ebs.dual.lag <- make_dual_axis_plot_lag(al.sst.lag, "EBS.ar1", "steelblue4",
+                                           "EBS", ebs.ar1.range.lag, chel.ebs.lag)
+
+p.dual.lag <- p.goa.dual.lag / p.ebs.dual.lag +
+  plot_annotation(
+    title = "15-yr Rolling AL SLP SD (NDJ) vs. SST AR(1) (FMA) \u2014 Newman et al. 2016 lag",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 12))
+  )
+
+ggsave("./Figures/AL_SD_NDJ_SST_AR1_FMA_15yr_dual_axis.png",
+       plot = p.dual.lag, width = 7, height = 7, dpi = 300)
+message("Saved: Figures/AL_SD_NDJ_SST_AR1_FMA_15yr_dual_axis.png")
+
+# ------------------------------------------------------------
+# Section 14 INDEPENDENT CHECKS
+# ------------------------------------------------------------
+# Verify: (1) month filtering & year-alignment; (2) recompute one
+# NDJ mean from monthly table; (3) recompute one rolling SD value
+# by hand; (4) compare NDJ vs NDJFM AL series; (5) overlay plot.
+
+message("\n========== Section 14: Independent checks ==========")
+
+# --- Check 1: month counts per year for NDJ and FMA ---
+ndj.counts <- al.monthly %>%
+  filter(month %in% c(11, 12, 1)) %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  count(win.year, name = "n.months")
+
+fma.counts <- monthly.anom %>%
+  filter(month %in% c(2, 3, 4)) %>%
+  count(year, name = "n.months")
+
+message(sprintf("NDJ month counts: years with 3 months = %d; <3 months = %d (edge years: %s)",
+                sum(ndj.counts$n.months == 3),
+                sum(ndj.counts$n.months <  3),
+                paste(ndj.counts$win.year[ndj.counts$n.months < 3], collapse = ", ")))
+message(sprintf("FMA month counts: years with 3 months = %d; <3 months = %d (edge years: %s)",
+                sum(fma.counts$n.months == 3),
+                sum(fma.counts$n.months <  3),
+                paste(fma.counts$year[fma.counts$n.months < 3], collapse = ", ")))
+
+# --- Check 2: hand-recompute one NDJ mean (target year = 2000 if available) ---
+target.yr <- 2000
+ndj.hand <- mean(al.monthly$SLP[
+  (al.monthly$year == target.yr - 1L & al.monthly$month %in% c(11, 12)) |
+  (al.monthly$year == target.yr      & al.monthly$month == 1)
+], na.rm = TRUE)
+ndj.code <- al.ndj$SLP[al.ndj$year == target.yr]
+message(sprintf("NDJ %d hand=%.6f | code=%.6f | diff=%.2e",
+                target.yr, ndj.hand, ndj.code, ndj.hand - ndj.code))
+
+# --- Check 3: hand-recompute one rolling-SD value (right-aligned 15-yr) ---
+# For year y, roll_sd uses years (y-14) through y of the SLP series (pre-scale).
+y.test <- 2010
+slp.window <- al.ndj %>% filter(year >= y.test - 14, year <= y.test) %>% pull(SLP)
+sd.hand <- if (length(slp.window) == 15) sd(slp.window) else NA_real_
+sd.code.raw <- roll_sd(al.ndj$SLP)[al.ndj$year == y.test]
+message(sprintf("Rolling SD %d window length=%d | hand=%.6f | code=%.6f | diff=%.2e",
+                y.test, length(slp.window), sd.hand, sd.code.raw, sd.hand - sd.code.raw))
+
+# --- Check 4: compare NDJ (3-mo) annual SLP vs NDJFM (5-mo) annual SLP ---
+slp.compare <- al %>%
+  select(year, SLP.ndjfm = SLP) %>%
+  left_join(al.ndj %>% select(year, SLP.ndj = SLP), by = "year") %>%
+  filter(!is.na(SLP.ndj), !is.na(SLP.ndjfm))
+
+cor.slp <- cor(slp.compare$SLP.ndj, slp.compare$SLP.ndjfm)
+message(sprintf("Correlation of annual mean SLP, NDJ vs NDJFM: r = %.3f (n=%d) -- expect high (~0.85-0.95)",
+                cor.slp, nrow(slp.compare)))
+
+sd.compare <- al %>%
+  select(year, sd.ndjfm = AL.sd) %>%
+  left_join(al.ndj %>% select(year, sd.ndj = AL.sd), by = "year") %>%
+  filter(!is.na(sd.ndj), !is.na(sd.ndjfm))
+
+cor.sd <- cor(sd.compare$sd.ndj, sd.compare$sd.ndjfm)
+message(sprintf("Correlation of 15-yr rolling AL SD (z-scored), NDJ vs NDJFM: r = %.3f (n=%d)",
+                cor.sd, nrow(sd.compare)))
+
+# --- Check 4b: same correlation on RAW (pre-scale) rolling SDs, in case
+#     scale() amplified noise, plus side-by-side preview every 5 yrs ---
+raw.sd.compare <- data.frame(
+  year         = al$year,
+  raw.sd.ndjfm = roll_sd(al$SLP)
+) %>%
+  left_join(data.frame(year = al.ndj$year,
+                       raw.sd.ndj = roll_sd(al.ndj$SLP)),
+            by = "year") %>%
+  filter(!is.na(raw.sd.ndjfm), !is.na(raw.sd.ndj))
+
+cor.sd.raw <- cor(raw.sd.compare$raw.sd.ndj, raw.sd.compare$raw.sd.ndjfm)
+message(sprintf("Correlation of 15-yr rolling AL SD on RAW (pre-scale) SLP: r = %.3f (n=%d)",
+                cor.sd.raw, nrow(raw.sd.compare)))
+
+# Lag check: does shifting NDJ by +/-1 yr improve agreement?
+y.both <- raw.sd.compare %>% arrange(year)
+cor.lag.m1 <- cor(y.both$raw.sd.ndj[-1], y.both$raw.sd.ndjfm[-nrow(y.both)])
+cor.lag.p1 <- cor(y.both$raw.sd.ndj[-nrow(y.both)], y.both$raw.sd.ndjfm[-1])
+message(sprintf("  NDJ shifted -1 yr: r = %.3f | NDJ shifted +1 yr: r = %.3f (large diff => alignment bug)",
+                cor.lag.m1, cor.lag.p1))
+
+message("Rolling SD preview (every 5 yr) -- year | raw.NDJFM | raw.NDJ:")
+preview <- raw.sd.compare[seq(1, nrow(raw.sd.compare), by = 5), ]
+for (i in seq_len(nrow(preview))) {
+  message(sprintf("  %4d  %7.4f   %7.4f",
+                  preview$year[i], preview$raw.sd.ndjfm[i], preview$raw.sd.ndj[i]))
+}
+
+# --- Check 5: post-scale AL.sd should have mean ~0, sd ~1 (NaNs ignored) ---
+sd.vals <- al.ndj$AL.sd[!is.na(al.ndj$AL.sd)]
+message(sprintf("NDJ AL.sd post-scale: mean = %.4f, sd = %.4f (target: 0, 1)",
+                mean(sd.vals), sd(sd.vals)))
+
+# --- Diagnostic overlay plot: NDJ vs NDJFM AL SD ---
+sd.long <- bind_rows(
+  al     %>% select(year, AL.sd) %>% mutate(season = "NDJFM (5-mo)"),
+  al.ndj %>% select(year, AL.sd) %>% mutate(season = "NDJ (3-mo)")
+) %>% filter(!is.na(AL.sd))
+
+p.sd.overlay <- ggplot(sd.long, aes(x = year, y = AL.sd, color = season)) +
+  geom_hline(yintercept = 0, linewidth = 0.3, color = "gray60") +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 1.3) +
+  scale_color_manual(values = c("NDJFM (5-mo)" = "gray30",
+                                "NDJ (3-mo)"   = "firebrick")) +
+  labs(title = "AL SLP SD: NDJ vs NDJFM (15-yr rolling, z-scored)",
+       subtitle = sprintf("r = %.3f over overlapping years", cor.sd),
+       x = "Year", y = "AL SLP SD (z-scored)", color = NULL) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom")
+
+ggsave("./Figures/AL_SD_NDJ_vs_NDJFM_check.png",
+       plot = p.sd.overlay, width = 7, height = 4, dpi = 300)
+message("Saved: Figures/AL_SD_NDJ_vs_NDJFM_check.png")
+
+# --- Check 6: drop partial-coverage years from NDJ before rolling SD ---
+# Edge year 1950 has only Jan; recomputing rolling SD on full-3-month
+# years only should remove any 1964-window inflation.
+ndj.full.years <- ndj.counts$win.year[ndj.counts$n.months == 3]
+al.ndj.full <- al.ndj %>%
+  filter(year %in% ndj.full.years) %>%
+  arrange(year) %>%
+  mutate(AL.sd.full = roll_sd(SLP))
+
+cmp.full <- al %>%
+  select(year, sd.ndjfm = AL.sd) %>%
+  left_join(al.ndj.full %>%
+              mutate(sd.ndj.full = as.numeric(scale(AL.sd.full))) %>%
+              select(year, sd.ndj.full),
+            by = "year") %>%
+  filter(!is.na(sd.ndjfm), !is.na(sd.ndj.full))
+
+cor.sd.full <- cor(cmp.full$sd.ndj.full, cmp.full$sd.ndjfm)
+message(sprintf("NDJ rolling SD (full-coverage years only) vs NDJFM: r = %.3f (n=%d)",
+                cor.sd.full, nrow(cmp.full)))
+ndj.1964 <- al.ndj.full$AL.sd.full[al.ndj.full$year == 1964]
+message(sprintf("  1964 NDJ rolling SD (full-coverage): %.4f (was 7.74 with partial 1950)",
+                ifelse(length(ndj.1964) == 0, NA_real_, ndj.1964)))
+
+# --- Check 7: FMA (Feb-Mar-Apr) AL SLP SD vs NDJFM ---
+# If NDJFM's decadal signal is dominated by late winter, FMA should track it.
+al.fma <- al.monthly %>%
+  filter(month %in% c(2, 3, 4)) %>%
+  group_by(year) %>%
+  summarise(SLP = mean(SLP, na.rm = TRUE), .groups = "drop") %>%
+  arrange(year) %>%
+  mutate(AL.sd = roll_sd(SLP),
+         AL.sd = as.numeric(scale(AL.sd)))
+
+cmp.fma <- al %>%
+  select(year, sd.ndjfm = AL.sd) %>%
+  left_join(al.fma %>% select(year, sd.fma = AL.sd), by = "year") %>%
+  filter(!is.na(sd.ndjfm), !is.na(sd.fma))
+
+cor.sd.fma <- cor(cmp.fma$sd.fma, cmp.fma$sd.ndjfm)
+message(sprintf("FMA AL SLP SD vs NDJFM: r = %.3f (n=%d) -- if high, NDJFM signal is driven by late winter",
+                cor.sd.fma, nrow(cmp.fma)))
+
+cmp.ndj.fma <- al.ndj %>%
+  select(year, sd.ndj = AL.sd) %>%
+  left_join(al.fma %>% select(year, sd.fma = AL.sd), by = "year") %>%
+  filter(!is.na(sd.ndj), !is.na(sd.fma))
+
+cor.ndj.fma <- cor(cmp.ndj.fma$sd.ndj, cmp.ndj.fma$sd.fma)
+message(sprintf("NDJ AL SLP SD vs FMA: r = %.3f (n=%d) -- if low, early/late winter volatility decouples",
+                cor.ndj.fma, nrow(cmp.ndj.fma)))
+
+# Three-season overlay plot
+sd.three <- bind_rows(
+  al     %>% select(year, AL.sd) %>% mutate(season = "NDJFM (5-mo)"),
+  al.ndj %>% select(year, AL.sd) %>% mutate(season = "NDJ (3-mo)"),
+  al.fma %>% select(year, AL.sd) %>% mutate(season = "FMA (3-mo)")
+) %>% filter(!is.na(AL.sd))
+
+p.sd.three <- ggplot(sd.three, aes(x = year, y = AL.sd, color = season)) +
+  geom_hline(yintercept = 0, linewidth = 0.3, color = "gray60") +
+  geom_line(linewidth = 0.7) +
+  geom_point(size = 1.3) +
+  scale_color_manual(values = c("NDJFM (5-mo)" = "gray30",
+                                "NDJ (3-mo)"   = "firebrick",
+                                "FMA (3-mo)"   = "steelblue4")) +
+  labs(title = "AL SLP SD by season (15-yr rolling, z-scored)",
+       subtitle = sprintf("NDJFM~NDJ r=%.2f | NDJFM~FMA r=%.2f | NDJ~FMA r=%.2f",
+                          cor.sd, cor.sd.fma, cor.ndj.fma),
+       x = "Year", y = "AL SLP SD (z-scored)", color = NULL) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom")
+
+ggsave("./Figures/AL_SD_three_seasons_check.png",
+       plot = p.sd.three, width = 8, height = 4, dpi = 300)
+message("Saved: Figures/AL_SD_three_seasons_check.png")
+message("===================================================\n")
