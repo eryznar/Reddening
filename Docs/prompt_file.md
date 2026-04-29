@@ -564,5 +564,52 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 # SST AR(1) regressed on AL SLP SD
 - Make a map of cellwise SST AR(1) (y variable) regressed on AL SLP SD (x variable).
 - Use 15 year rolling windows of winter mean values.
+- Only include the area east of 160E.
 - Do not add significance.
 - Save as .png.
+- Add significance lines to the plot as for the MLD - SLP regression map; use the p-values from GLS with AR(1) residuals and FDR.
+
+# Seasonal sensitivity test
+- This test is motivated by Newman et al. 2016, Journal of Climate.
+- Add a new section to analysis.R.
+- Redraw the dual-axis plots of AL SLP SD and SST AR(1) for the EBS and GOA, but instead of using November-March means for each, use November-January for the AL SLP SD and February-April for SST AR(1).
+- This is to capture the lag of ocean response to AL forcing documented by Newman et al.
+- Everything else in the analysis should stay the same - 15-year rolling windows, year corresponding to January, etc.
+- Save the new plot with a distinguishing name as a .png.
+
+# Confirm
+- The results appear to be highly sensitive to seasonality.
+- In particular, the pattern of SLP SD changes dramatically when calculated for NDJ.
+- Double-check this new code is correct. Design and implement independent checks, and report back.
+
+## Note: seasonal sensitivity verified (2026-04-28)
+- Independent checks added in Scripts/analysis.R Section 14 (Checks 1-7) confirm code is correct.
+- Annual mean SLP NDJ vs NDJFM: r = 0.80 (n = 77). Matches i.i.d. theoretical bound √(3/5) ≈ 0.775; not a bug.
+- 15-yr rolling SD correlations (post-scale, full overlap):
+    - NDJFM ~ NDJ: r = 0.012 (raw), r = 0.053 (after dropping partial 1950 year). Robust to edge effects.
+    - NDJFM ~ FMA: r = 0.698. Canonical NDJFM AL-SD signal is driven by late winter (FMA).
+    - NDJ ~ FMA: r = -0.568. Early- and late-winter AL volatility are anti-correlated decadally.
+- Implication: the NDJ AL SD series captures a mode essentially orthogonal to the NDJFM signal used elsewhere. The Newman-lag dual-axis plot (NDJ AL SD vs FMA SST AR(1)) tests independent information, not a minor seasonal tweak.
+- Diagnostic figures: Figures/AL_SD_NDJ_vs_NDJFM_check.png, Figures/AL_SD_three_seasons_check.png
+
+# Additional seasonal sensitivity check
+- This follows the finding of strongest decadal signal for AL SD in FMA, and Newman et al. (2016) finding of ~ 1-3 mo correlations with PDO ocean variability.
+- Fit an additional dual-axis plot using JFM AL SLP SD and FMA for SST AR(1).
+- Save the resulting plot as a .png with a distinguishing name.
+
+# Map for additional CESM2 FCM / MDM model comparison
+- Revisit the cellwise regression of SST AR(1) on AL SLP SD (using observations).
+- Replicate the same analysis for coupled SLP-SST outputs for FCM and MDM.
+- Continue to use GLS with AR(1) residuals.
+- Run the cellwise regression for the full time domain for each ensemble member.
+- Use 15-year rolling means for NDJFM values. 
+- Exclude cases with incomplete data (years corresponding to January for which we do not have a full set of NDJFM observations).
+- Plot the maps of mean cellwise regression values for MDM and FCM.
+- Retain the ensemble SD for each cell to allow significance testing later. 
+- Final plot should be three-panel, comparing observartions with FCM with MDM.
+- Do not attempt to match temporal domain (years available) for observations and CESM2; instead just use the full range of years available for each, while following the directions about excluding incomplete observations (winters) above.
+- Save as a .png.
+
+# Revisions
+- Put the FCM and MDM results on the same scale bar, different from the observation scale bar.
+- This is because the relationships are much stronger for observations than for CESM2.
