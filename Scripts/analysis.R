@@ -3014,7 +3014,8 @@ message("===================================================\n")
 # (irlba), sign flipped to match conventional PDO (negative
 # loading in central N. Pacific, positive along NA coast).
 #
-# Spatial coherence is evaluated on a common 1-deg grid via
+# Spatial coherence is evaluated on the native MLD-regression grid
+# (nearest-neighbor join of EOF cells, no spatial aggregation) via
 # THREE robust methods:
 #   (1) Pearson r of paired cellwise (beta, EOF1) values, with
 #       p-value from spatial-block bootstrap (1000 reps, 5x5-deg
@@ -3038,7 +3039,7 @@ library(irlba)
 mld.ar1.reg.cache <- "./Output/mld_ar1_al_slp_sd_regression.csv"
 stopifnot(file.exists(mld.ar1.reg.cache))
 mld.beta <- read.csv(mld.ar1.reg.cache) %>%
-  filter(lon >= 160, lon <= 250, lat >= 20, lat <= 66, !is.na(beta))
+  filter(lon >= 180, lon <= 250, lat >= 30, lat <= 66, !is.na(beta))
 
 # Time domain that underlies Section 9 (winter years used as the
 # regression series; we re-derive from the cached MLD winter file
@@ -3076,9 +3077,9 @@ mons.s   <- as.integer(format(dates.s, "%m"))
 winyrs.s <- ifelse(mons.s %in% c(11, 12), years.s + 1L, years.s)
 lons.s360 <- ifelse(lons.s < 0, lons.s + 360, lons.s)
 
-# Restrict to plotting domain (matches MLD AR(1) map: 160-250E, 20-66N)
-lon.idx <- which(lons.s360 >= 160 & lons.s360 <= 250)
-lat.idx <- which(lats.s   >= 20  & lats.s   <= 66)
+# Restrict to plotting domain (matches MLD AR(1) map: 180-250E, 30-66N)
+lon.idx <- which(lons.s360 >= 180 & lons.s360 <= 250)
+lat.idx <- which(lats.s   >= 30  & lats.s   <= 66)
 sst.w   <- sst.w[lon.idx, lat.idx, ]
 lons.s360 <- lons.s360[lon.idx]
 lats.s    <- lats.s[lat.idx]
@@ -3111,9 +3112,9 @@ message(sprintf("Section 19: EOF1 explains ~%.1f%% of total winter SST variance"
                 100 * var.frac[1]))
 
 # Sign convention: PDO has negative loading in the central N. Pacific
-# (around 160E-200E, 35-50N) and positive along the North American coast.
+# (around 180E-200E, 35-50N) and positive along the North American coast.
 # Flip if mean loading in central box is positive.
-cen.mask <- grid.sst$lon[ok.cells] >= 160 & grid.sst$lon[ok.cells] <= 200 &
+cen.mask <- grid.sst$lon[ok.cells] >= 180 & grid.sst$lon[ok.cells] <= 200 &
             grid.sst$lat[ok.cells] >=  35 & grid.sst$lat[ok.cells] <=  50
 if (mean(eof1.sst[cen.mask], na.rm = TRUE) > 0) eof1.sst <- -eof1.sst
 
@@ -3137,9 +3138,9 @@ p.sst.eof1 <- ggplot() +
                        high = "darkorange4", midpoint = 0,
                        limits = c(-col.lim.eof, col.lim.eof),
                        name = "EOF1 loading") +
-  coord_cartesian(xlim = c(160, 250), ylim = c(20, 66)) +
-  scale_x_continuous(breaks = seq(160, 250, 20), labels = lon_label) +
-  scale_y_continuous(breaks = seq(20, 60, 10),
+  coord_cartesian(xlim = c(180, 250), ylim = c(30, 66)) +
+  scale_x_continuous(breaks = seq(180, 250, 20), labels = lon_label) +
+  scale_y_continuous(breaks = seq(30, 60, 10),
                      labels = function(y) paste0(y, "\u00b0N")) +
   labs(title    = sprintf("ERA5 SST EOF1 (PDO-like): winter NDJFM, %d-%d",
                           sec19.win.range[1], sec19.win.range[2]),
@@ -3155,21 +3156,49 @@ ggsave("./Figures/SST_EOF1_PDO_pattern.png",
        plot = p.sst.eof1, width = 9, height = 6, dpi = 300)
 message("Saved: Figures/SST_EOF1_PDO_pattern.png")
 
-# --- (e) Match patterns on a common 1-deg grid for coherence stats ---
-agg1 <- function(df, val.col) {
-  df %>%
-    mutate(lon1 = round(lon), lat1 = round(lat)) %>%
-    group_by(lon1, lat1) %>%
-    summarise(val = mean(.data[[val.col]], na.rm = TRUE), .groups = "drop") %>%
-    rename(lon = lon1, lat = lat1)
-}
-mld.agg <- agg1(mld.beta, "beta")     %>% rename(beta = val)
-eof.agg <- agg1(eof.df,   "EOF1")     %>% rename(EOF1 = val)
+# --- (e) Match patterns on the original spatial grid (no aggregation) -
+# Pair each native MLD-regression cell with its nearest SST-EOF cell
+# (the two reanalyses live on slightly different native grids of
+# similar resolution, so we use a nearest-neighbor join with a small
+# tolerance rather than averaging into coarse blocks).
+mld.native <- mld.beta %>%
+  filter(is.finite(beta)) %>%
+  select(lon, lat, beta)
+eof.native <- eof.df %>%
+  filter(is.finite(EOF1)) %>%
+  select(lon, lat, EOF1)
 
-paired <- inner_join(mld.agg, eof.agg, by = c("lon", "lat")) %>%
+# For each MLD cell, find nearest EOF cell.
+eof.lons <- sort(unique(eof.native$lon))
+eof.lats <- sort(unique(eof.native$lat))
+nn.lon <- eof.lons[ pmax(1, pmin(length(eof.lons),
+                                 findInterval(mld.native$lon, eof.lons,
+                                              all.inside = TRUE))) ]
+nn.lat <- eof.lats[ pmax(1, pmin(length(eof.lats),
+                                 findInterval(mld.native$lat, eof.lats,
+                                              all.inside = TRUE))) ]
+# findInterval gives the floor; pick whichever neighbor is closer
+nn.lon.up  <- eof.lons[ pmin(length(eof.lons),
+                             findInterval(mld.native$lon, eof.lons,
+                                          all.inside = TRUE) + 1) ]
+nn.lat.up  <- eof.lats[ pmin(length(eof.lats),
+                             findInterval(mld.native$lat, eof.lats,
+                                          all.inside = TRUE) + 1) ]
+nn.lon <- ifelse(abs(mld.native$lon - nn.lon.up) <
+                 abs(mld.native$lon - nn.lon),  nn.lon.up, nn.lon)
+nn.lat <- ifelse(abs(mld.native$lat - nn.lat.up) <
+                 abs(mld.native$lat - nn.lat),  nn.lat.up, nn.lat)
+match.tol <- 0.30   # degrees; native grids are ~0.25 deg
+keep <- abs(mld.native$lon - nn.lon) <= match.tol &
+        abs(mld.native$lat - nn.lat) <= match.tol
+paired <- mld.native[keep, ] %>%
+  mutate(eof.lon = nn.lon[keep], eof.lat = nn.lat[keep]) %>%
+  inner_join(eof.native,
+             by = c("eof.lon" = "lon", "eof.lat" = "lat")) %>%
   filter(is.finite(beta), is.finite(EOF1))
 n.cells <- nrow(paired)
-message(sprintf("Section 19: %d paired 1-deg cells for coherence stats", n.cells))
+message(sprintf("Section 19: %d paired native-grid cells for coherence stats",
+                n.cells))
 
 # (1) Pearson r with spatial-block bootstrap p-value
 r.obs <- cor(paired$beta, paired$EOF1)
@@ -3224,7 +3253,7 @@ coh.summary <- data.frame(
   metric    = c("pearson_r", "block_bootstrap_p", "tucker_phi",
                 "sign_agreement_frac", "binomial_p_Neff"),
   value     = c(r.obs, p.boot, tucker.phi, sign.agree, p.sign),
-  notes     = c(sprintf("n=%d cells (1-deg)", n.cells),
+  notes     = c(sprintf("n=%d cells (native grid, nearest-neighbor join)", n.cells),
                 sprintf("%d block-shuffles, %d-deg blocks", n.boot, block.size),
                 phi.label,
                 sprintf("%d agree of %d cells", sum(sign(paired$beta) == sign(paired$EOF1)), n.cells),
@@ -3235,13 +3264,13 @@ message("Saved: Output/mld_ar1_vs_pdo_coherence.csv")
 
 # --- (f) Side-by-side composite figure ---
 mld.ar1.for.plot <- read.csv(mld.ar1.reg.cache) %>%
-  filter(lon >= 160, lon <= 250, lat >= 20, lat <= 66) %>%
+  filter(lon >= 180, lon <= 250, lat >= 30, lat <= 66) %>%
   mutate(lon = round(lon / 0.5) * 0.5,
          lat = round(lat / 0.5) * 0.5) %>%
   group_by(lon, lat) %>%
   summarise(beta = mean(beta, na.rm = TRUE), .groups = "drop") %>%
-  complete(lon = seq(160, 250, by = 0.5),
-           lat = seq(20,  66,  by = 0.5))
+  complete(lon = seq(180, 250, by = 0.5),
+           lat = seq(30,  66,  by = 0.5))
 col.lim.ar1.r <- max(abs(mld.ar1.for.plot$beta), na.rm = TRUE)
 
 p.mld.ar1.bare <- ggplot() +
@@ -3256,9 +3285,9 @@ p.mld.ar1.bare <- ggplot() +
                        high = "darkorange4", midpoint = 0,
                        limits = c(-col.lim.ar1.r, col.lim.ar1.r),
                        name = "\u03b2 (AR(1)/z)") +
-  coord_cartesian(xlim = c(160, 250), ylim = c(20, 66)) +
-  scale_x_continuous(breaks = seq(160, 250, 20), labels = lon_label) +
-  scale_y_continuous(breaks = seq(20, 60, 10),
+  coord_cartesian(xlim = c(180, 250), ylim = c(30, 66)) +
+  scale_x_continuous(breaks = seq(180, 250, 20), labels = lon_label) +
+  scale_y_continuous(breaks = seq(30, 60, 10),
                      labels = function(y) paste0(y, "\u00b0N")) +
   labs(title = "MLD AR(1) ~ AL SLP SD (Section 9)", x = NULL, y = NULL) +
   theme_bw(base_size = 11) +
