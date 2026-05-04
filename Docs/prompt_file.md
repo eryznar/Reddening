@@ -613,3 +613,49 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 # Revisions
 - Put the FCM and MDM results on the same scale bar, different from the observation scale bar.
 - This is because the relationships are much stronger for observations than for CESM2.
+
+# FCM vs. MDM significance test
+- Make a new plot that shows the FCM and MDM ensemble means, and a third panel that shows the difference with areas of p <= 0.05 outlined.
+- FCM/MDM ensemble mean plots should be the same as in previous plot (no observations for comparison).
+- Use FDR, but no correction for autotocorrelation - just simple statistical comparison based on the mean, n, and SD at each cell.
+- Save as a .png.
+
+# Comparison by system
+- Compare mean regression coefficients (area-weighted) for the GOA and EBS polygon in each ensemble member.
+- Conduct a t-test comparison of the area means between FCM and MDM.
+
+# Plot revision
+- Find the section of analysis.R that plots the regression of winter MLD AR(1) on AL SLP SD (15-yr rolling windows).
+- Replot with 160E as the western boundary - all three of the plots at different spatial resolution (cell size).
+- Add this as a revision to the relevant section. Do not change the names of the saved figures.
+
+# MLD anomaly - AL SLP SD regression
+- Add a new section after the MLD AR(1) - AL SLP SD regression map sections.
+- Fit the exact same regression maps, but replace MLD AR(1) values with MLD mean anomaly values.
+- All other data handling is the same - e.g., 15-year rolling windows of November-March values, GLS with AR(1) residuals, three different levels of spatial aggregation, etc.
+- Save the plots as .png files.
+- Renumber the subsequent sections accordingly. 
+
+# MLD AR(1) regression on AL SLP SD compared with the PDO spatial pattern.
+- Create a new section in analysis.R to compare these spatial patterns.
+- Use the regression map from section 12 - original spatial resolution for ERA5.
+- Also calculate and map the leading mode for winter (Nov-Mar) detrended monthly SST anomalies, using the full time domain that was used in section 12 (but no rolling windows for the EOF analysis).
+- Make the EOF loadings map in the same format as the regression map.
+- Suggest two-three robust statistical methods for evaluating spatial coherence between the two patterns.
+
+# N Pacific SST plot
+- Go back to the section that plots monthly anomaly SST time series for EBS, GOA, and N. Pacific and make a version that only plot N. Pacific.
+- Save as a .png
+- Add a dashed vertical line at the midpoint of 2014.
+
+# Effect of variable AR(1) values on extreme event risk
+- Add another section to analysis.R.
+- Replot the EBS and GOA annual winter mean monthly SST anomaly time series with lowess trends fit. 
+- Plot and save as a .png. 
+- Lowess is over-fit. Try a GAM with k = 5.
+- That shrinks to a linear fit. Change the script to fit a linear trend and save the trend for further analysis.
+- Now calculate and save the SD for each time series.
+- Now simulate each time series using the observed trend and SD. Vary the simulations under three conditions: AR(1) = minimum AR(1) value calculated for each system, AR(1) = 0, and AR(1) = the maximum value observed for each time series. Run 1000 simulations under each AR(1) condition for each system.
+- Also calculate the climatology for 1950-1979 values (mean and SD).
+- For each system under each AR(1) condition, calculate the % of the 1000 simulations > 2 SD above 1950-1979 climatological mean (heatwaves), and the % more than 2 SD below the climatological mean (cold spells).
+- Plot the results in a four-panel plot - 2 systems, with the time series of % heatwaves and % cold spells in different panels. Color-code the three AR(1) conditions.
