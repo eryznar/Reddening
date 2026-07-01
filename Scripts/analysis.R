@@ -346,6 +346,64 @@ ggsave("./Figures/ERA5_SST_AR1_SD_15yr_rolling.png",
 message("Saved: Figures/ERA5_SST_AR1_SD_15yr_rolling.png")
 
 # ============================================================
+# SECTION 3B: 15-YEAR ROLLING WINTER SST CV (SD / mean)
+# ============================================================
+# Revisits the Section 3 SD series as a coefficient of variation.
+# CV requires a meaningful (non-zero) mean, so it is computed on the
+# RAW winter-mean SST (deg C) -- NOT the detrended anomaly used in
+# Section 3 (whose mean is ~0 and would make SD/mean undefined).
+# Per right-aligned 15-yr window: mean and SD of the raw winter SST,
+# CV = SD / mean. Two-panel plot, one ecosystem per panel.
+#
+# NOTE: SST in deg C is an interval (not ratio) scale, so the absolute
+# CV magnitude depends on the deg-C zero point; read each panel as
+# relative change through time within a system, not as a cross-system
+# absolute ratio. The EBS winter mean can run cold (near 0 deg C), which
+# can inflate/destabilise its CV -- inspect before over-interpreting.
+
+# Raw winter (Nov-Mar, year = Jan) mean SST from monthly.sst (deg C)
+winter.raw <- monthly.sst %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  group_by(win.year) %>%
+  summarise(GOA = mean(GOA, na.rm = TRUE),
+            EBS = mean(EBS, na.rm = TRUE),
+            .groups = "drop") %>%
+  rename(year = win.year) %>%
+  arrange(year)
+
+roll_mean <- function(x, width = 15) {
+  rollapply(x, width = width, fill = NA, align = "right", FUN = mean)
+}
+# roll_sd() is defined in Section 3 and reused here.
+
+winter.cv <- winter.raw %>%
+  mutate(GOA.cv = roll_sd(GOA) / roll_mean(GOA),
+         EBS.cv = roll_sd(EBS) / roll_mean(EBS))
+
+p.goa.cv <- ggplot(winter.cv, aes(x = year, y = GOA.cv)) +
+  geom_line(color = "darkorange4") +
+  geom_point(color = "darkorange4", size = 1.4) +
+  labs(title = "Gulf of Alaska", x = "Year", y = "Winter SST CV (SD / mean)") +
+  theme_bw(base_size = 11)
+
+p.ebs.cv <- ggplot(winter.cv, aes(x = year, y = EBS.cv)) +
+  geom_line(color = "steelblue4") +
+  geom_point(color = "steelblue4", size = 1.4) +
+  labs(title = "Eastern Bering Sea", x = "Year", y = "Winter SST CV (SD / mean)") +
+  theme_bw(base_size = 11)
+
+p.cv <- (p.goa.cv / p.ebs.cv) +
+  plot_annotation(
+    title = "15-yr Rolling Winter SST CV (right-aligned)",
+    theme = theme(plot.title = element_text(size = 12, hjust = 0.5))
+  )
+
+ggsave("./Figures/ERA5_SST_CV_15yr_rolling.png",
+       plot = p.cv, width = 7, height = 6.5, dpi = 300)
+message("Saved: Figures/ERA5_SST_CV_15yr_rolling.png")
+
+# ============================================================
 # SECTION 4: SLP EOF1 LOADINGS MAP — MERCATOR PROJECTION
 # ============================================================
 # Reproduces the EOF1 analysis from ERA5_SLP_download.R and plots
@@ -585,6 +643,190 @@ ggsave("./Figures/AL_SD_SST_AR1_chelton_dist.png",
 message("Saved: Figures/AL_SD_SST_AR1_chelton_dist.png")
 
 # ============================================================
+# SECTION 5B: MLD EOF MODES 1-2 — WINTER (NDJFM)
+# ============================================================
+# Leading two EOF modes of winter (NDJFM) mixed-layer depth over the
+# N. Pacific basin domain used elsewhere (110-250E, 20-66N; the SLP
+# EOF1 / MLD-regression domain). Built from the same detrended cellwise
+# winter-month MLD anomalies used in the regression sections
+# (oras5_mld_NP_detr_anom_winmon.nc, already detrended per cell), here
+# averaged to NDJFM winter-year means (year = January year). Cells are
+# area-weighted by sqrt(cos(lat)); only the first five modes are
+# extracted (truncated SVD, irlba). Outputs:
+#   - North et al. (1982) eigenvalue error-bar plot, modes 1-5
+#   - 4-panel figure: EOF1/EOF2 loadings + PC1/PC2 time series
+# NOTE: domain matches Section 6 (includes the western Pacific). If
+# EOF1 is dominated by the high-variance NW Pacific, trim to >=160E.
+
+mld.winmon.file    <- "./Data/oras5_mld_NP_detr_anom_winmon.nc"
+mld.eof.domain     <- list(lon = c(110, 250), lat = c(20, 66))
+mld.eof.eig.cache  <- "./Output/mld_eof_eigenvalues.csv"
+mld.eof.load.cache <- "./Output/mld_eof_loadings.csv"
+mld.eof.pc.cache   <- "./Output/mld_eof_PCs.csv"
+
+if (all(file.exists(c(mld.eof.eig.cache, mld.eof.load.cache, mld.eof.pc.cache)))) {
+  message("Loading cached MLD EOF results...")
+  north.df <- read.csv(mld.eof.eig.cache)
+  load.df  <- read.csv(mld.eof.load.cache)
+  pc.df    <- read.csv(mld.eof.pc.cache)
+} else {
+  message("Loading detrended winter-month MLD anomalies for EOF...")
+  nc.e   <- nc_open(mld.winmon.file)
+  mld.e  <- ncvar_get(nc.e, "somxl030")
+  lons.e <- ncvar_get(nc.e, "nav_lon")
+  lats.e <- ncvar_get(nc.e, "nav_lat")
+  time.e <- ncvar_get(nc.e, "time_counter")
+  tun.e  <- ncatt_get(nc.e, "time_counter", "units")$value
+  nc_close(nc.e)
+
+  mld.e[mld.e > 1e10] <- NA
+  origin.e <- sub(".*since ", "", tun.e)
+  dates.e  <- as.Date(as.POSIXct(time.e, origin = origin.e, tz = "UTC"))
+  years.e  <- as.integer(format(dates.e, "%Y"))
+  months.e <- as.integer(format(dates.e, "%m"))
+  winyr.e  <- ifelse(months.e %in% c(11, 12), years.e + 1L, years.e)
+  lon.e360 <- ifelse(lons.e < 0, lons.e + 360, lons.e)
+
+  nx.e <- dim(mld.e)[1]; ny.e <- dim(mld.e)[2]; nt.e <- dim(mld.e)[3]
+  mat.e <- matrix(mld.e, nrow = nx.e * ny.e, ncol = nt.e)
+  rm(mld.e); gc()
+
+  # --- NDJFM winter-year means (year = January year) ---
+  uwy   <- sort(unique(winyr.e))
+  win.e <- matrix(NA_real_, nrow = nx.e * ny.e, ncol = length(uwy))
+  for (k in seq_along(uwy)) {
+    ti <- which(winyr.e == uwy[k])
+    win.e[, k] <- rowMeans(mat.e[, ti, drop = FALSE], na.rm = TRUE)
+  }
+  rm(mat.e); gc()
+
+  # Keep only winters with full Nov-Mar coverage so the time axis is balanced
+  mo.per.wy <- tapply(months.e, winyr.e, function(m) length(unique(m)))
+  full.wy   <- as.integer(names(mo.per.wy)[mo.per.wy >= 5])
+  keep.t    <- which(uwy %in% full.wy)
+  win.e     <- win.e[, keep.t, drop = FALSE]
+  eof.years <- uwy[keep.t]
+  n.time.e  <- length(eof.years)
+
+  # --- Restrict to basin domain and fully-observed ocean cells (SVD needs no NA) ---
+  coord.lon <- as.vector(lon.e360)
+  coord.lat <- as.vector(lats.e)
+  in.dom    <- coord.lon >= mld.eof.domain$lon[1] & coord.lon <= mld.eof.domain$lon[2] &
+               coord.lat >= mld.eof.domain$lat[1] & coord.lat <= mld.eof.domain$lat[2]
+  ocean     <- rowSums(is.na(win.e)) == 0
+  use.cell  <- which(in.dom & ocean)
+  message(sprintf("MLD EOF: %d ocean cells x %d winters (%d-%d)",
+                  length(use.cell), n.time.e, min(eof.years), max(eof.years)))
+
+  # --- Center each cell in time, area-weight, truncated SVD (5 modes) ---
+  A    <- win.e[use.cell, , drop = FALSE]
+  A    <- A - rowMeans(A)                          # covariance EOF (center in time)
+  w.e  <- sqrt(cos(coord.lat[use.cell] * pi / 180))
+  Aw   <- sweep(A, 1, w.e, "*")
+  sv.e <- irlba(Aw, nv = 5, nu = 5)
+
+  # Eigenvalues, % variance, North et al. (1982) sampling error
+  lambda  <- sv.e$d^2 / (n.time.e - 1)
+  tot.var <- sum(Aw^2) / (n.time.e - 1)            # trace of weighted covariance
+  pct.var <- 100 * lambda / tot.var
+  N.eff   <- n.time.e                              # # winters (independent realizations)
+  pct.err <- pct.var * sqrt(2 / N.eff)             # dlambda ~ lambda * sqrt(2/N)
+
+  north.df <- data.frame(mode = 1:5, pct = pct.var, err = pct.err, N = N.eff)
+
+  # --- De-weighted loadings + PC time series for modes 1-2 (fix arbitrary sign) ---
+  flip <- function(load, pc) {
+    i <- which.max(abs(load))
+    if (load[i] < 0) list(load = -load, pc = -pc) else list(load = load, pc = pc)
+  }
+  m1 <- flip(sv.e$u[, 1] / w.e, sv.e$d[1] * sv.e$v[, 1])
+  m2 <- flip(sv.e$u[, 2] / w.e, sv.e$d[2] * sv.e$v[, 2])
+
+  # Loadings to 0.5-deg grid for raster (ORAS5 grid is irregular)
+  load.df <- data.frame(lon = coord.lon[use.cell], lat = coord.lat[use.cell],
+                        EOF1 = m1$load, EOF2 = m2$load) %>%
+    mutate(lon = round(lon / 0.5) * 0.5, lat = round(lat / 0.5) * 0.5) %>%
+    group_by(lon, lat) %>%
+    summarise(EOF1 = mean(EOF1, na.rm = TRUE),
+              EOF2 = mean(EOF2, na.rm = TRUE), .groups = "drop")
+
+  pc.df <- data.frame(year = eof.years, PC1 = m1$pc, PC2 = m2$pc)
+
+  write.csv(north.df, mld.eof.eig.cache,  row.names = FALSE)
+  write.csv(load.df,  mld.eof.load.cache, row.names = FALSE)
+  write.csv(pc.df,    mld.eof.pc.cache,   row.names = FALSE)
+  message("Saved: Output/mld_eof_{eigenvalues,loadings,PCs}.csv")
+}
+
+# Common plotting variables
+pct.var   <- north.df$pct
+eof.years <- pc.df$year
+N.eff     <- north.df$N[1]
+
+# --- North et al. (1982) eigenvalue error-bar plot (modes 1-5) ---
+p.north <- ggplot(north.df, aes(x = factor(mode), y = pct)) +
+  geom_point(size = 2.4, color = "steelblue4") +
+  geom_errorbar(aes(ymin = pct - err, ymax = pct + err),
+                width = 0.18, color = "steelblue4") +
+  labs(title = "MLD EOF eigenvalue spectrum — North et al. (1982) error bars",
+       subtitle = sprintf("Winter (NDJFM) %d–%d, N = %d winters",
+                          min(eof.years), max(eof.years), N.eff),
+       x = "EOF mode", y = "Variance explained (%)") +
+  theme_bw(base_size = 11)
+
+ggsave("./Figures/MLD_EOF_North_errorbars.png",
+       plot = p.north, width = 6, height = 4.5, dpi = 300)
+message("Saved: Figures/MLD_EOF_North_errorbars.png")
+
+# --- 4-panel: EOF1/EOF2 loadings + PC1/PC2 time series ---
+goa.path   <- data.frame(x = c(goa.x, goa.x[1]), y = c(goa.y, goa.y[1]))
+ebs.path   <- data.frame(x = c(ebs.x, ebs.x[1]), y = c(ebs.y, ebs.y[1]))
+mapWorld.e <- map_data("world2")
+
+loadings_map <- function(col, ttl, pctv) {
+  lim <- max(abs(load.df[[col]]), na.rm = TRUE)
+  ggplot() +
+    geom_raster(data = load.df, aes(x = lon, y = lat, fill = .data[[col]])) +
+    geom_polygon(data = mapWorld.e, aes(x = long, y = lat, group = group),
+                 fill = "gray85", color = "gray40", linewidth = 0.2) +
+    geom_path(data = goa.path, aes(x = x, y = y), color = "black", linewidth = 0.4) +
+    geom_path(data = ebs.path, aes(x = x, y = y), color = "black", linewidth = 0.4) +
+    scale_fill_gradient2(low = "steelblue4", mid = "white", high = "darkorange4",
+                         midpoint = 0, limits = c(-lim, lim), name = "Loading") +
+    coord_map(projection = "rectangular", parameters = 55,
+              xlim = mld.eof.domain$lon, ylim = mld.eof.domain$lat) +
+    scale_x_continuous(breaks = seq(120, 240, 30), labels = lon_label) +
+    scale_y_continuous(breaks = seq(20, 60, 10),
+                       labels = function(y) paste0(y, "°N")) +
+    labs(title = sprintf("%s (%.1f%% var)", ttl, pctv), x = NULL, y = NULL) +
+    theme_bw(base_size = 10) +
+    theme(panel.grid.minor = element_blank())
+}
+
+pc_ts_plot <- function(col, ttl, color) {
+  ggplot(pc.df, aes(x = year, y = .data[[col]])) +
+    geom_hline(yintercept = 0, color = "gray60", linewidth = 0.3) +
+    geom_line(color = color, linewidth = 0.6) +
+    geom_point(color = color, size = 1.2) +
+    labs(title = ttl, x = "Year", y = "PC (std. units)") +
+    theme_bw(base_size = 10)
+}
+
+p.mld.eof <- (loadings_map("EOF1", "MLD EOF1", pct.var[1]) |
+              loadings_map("EOF2", "MLD EOF2", pct.var[2])) /
+             (pc_ts_plot("PC1", "MLD PC1", "darkorange4") |
+              pc_ts_plot("PC2", "MLD PC2", "steelblue4")) +
+  plot_annotation(
+    title = sprintf("Winter (NDJFM) MLD EOF modes 1–2, %d–%d",
+                    min(eof.years), max(eof.years)),
+    theme = theme(plot.title = element_text(size = 12, hjust = 0.5))
+  )
+
+ggsave("./Figures/MLD_EOF1-2_loadings_PCs.png",
+       plot = p.mld.eof, width = 11, height = 7.5, dpi = 300)
+message("Saved: Figures/MLD_EOF1-2_loadings_PCs.png")
+
+# ============================================================
 # SECTION 6: WINTER MLD REGRESSED ON WINTER AL SLP (full EOF domain)
 # ============================================================
 # Cellwise regression of detrended winter-mean MLD anomaly (y) on the
@@ -741,6 +983,224 @@ p.mld.reg <- ggplot() +
 ggsave("./Figures/MLD_AL_SLP_regression.png",
        plot = p.mld.reg, width = 9, height = 6, dpi = 300)
 message("Saved: Figures/MLD_AL_SLP_regression.png")
+
+# ============================================================
+# SECTION 6B: WINTER SST REGRESSED ON WINTER AL SLP (full EOF domain)
+# ============================================================
+# Mirror of Section 6 with cellwise winter-mean SST anomaly (y) as the
+# response instead of MLD. x is the same annual Nov-Mar mean AL-box SLP
+# anomaly (al$SLP from Section 5). SST cells: monthly anomalies vs the
+# 1950-1979 climatology, averaged to NDJFM winter-year means (year =
+# January), then detrended per cell (matching the MLD pre-detrending and
+# the Section 3 SST convention). GLS with AR(1) residuals; BH-FDR contour
+# (Wilks 2016). Reuses the in-memory ERA5 `sst` array from Section 2.
+
+sst.reg.cache <- "./Output/sst_al_slp_regression.csv"
+
+if (file.exists(sst.reg.cache)) {
+  message("Loading cached SST ~ AL SLP regression from: ", sst.reg.cache)
+  sst.reg.df <- read.csv(sst.reg.cache)
+} else {
+  message("Computing cellwise winter-mean SST anomalies...")
+  nx.s <- dim(sst)[1]; ny.s <- dim(sst)[2]
+  base.s  <- years >= 1950 & years <= 1979
+  winyr.s <- ifelse(months %in% c(11, 12), years + 1L, years)
+
+  # Monthly climatology (1950-1979) per cell
+  clim.s <- vector("list", 12)
+  for (m in 1:12) {
+    tb <- which(base.s & months == m)
+    clim.s[[m]] <- apply(sst[, , tb, drop = FALSE], c(1, 2), mean, na.rm = TRUE)
+  }
+
+  # NDJFM winter-year mean anomaly per cell (built slice-wise to limit memory)
+  uy.s    <- sort(unique(winyr.s))
+  win.sst <- matrix(NA_real_, nrow = nx.s * ny.s, ncol = length(uy.s))
+  for (k in seq_along(uy.s)) {
+    ti <- which(winyr.s == uy.s[k] & months %in% c(11, 12, 1, 2, 3))
+    if (!length(ti)) next
+    acc <- matrix(0, nx.s, ny.s); cnt <- matrix(0, nx.s, ny.s)
+    for (t in ti) {
+      a    <- sst[, , t] - clim.s[[months[t]]]
+      good <- is.finite(a)
+      acc[good] <- acc[good] + a[good]
+      cnt[good] <- cnt[good] + 1
+    }
+    wm <- acc / cnt; wm[cnt == 0] <- NA
+    win.sst[, k] <- as.vector(wm)
+  }
+
+  # Align years with al$SLP (annual Nov-Mar mean AL-box SLP anomaly)
+  al.df   <- al %>% select(year, SLP) %>% filter(!is.na(SLP))
+  yr.use  <- intersect(uy.s, al.df$year)
+  x.vec   <- al.df$SLP[match(yr.use, al.df$year)]
+  win.sst <- win.sst[, match(yr.use, uy.s), drop = FALSE]
+  n.yrs   <- length(yr.use)
+  message(sprintf("Regression years: %d-%d (%d years)",
+                  min(yr.use), max(yr.use), n.yrs))
+
+  good.cells <- which(rowSums(!is.na(win.sst)) >= max(10, 0.5 * n.yrs))
+  message(sprintf("Fitting GLS AR(1) at %d cells over %d years (slow)...",
+                  length(good.cells), n.yrs))
+
+  beta.vec <- rep(NA_real_, length(good.cells))
+  pval.vec <- rep(NA_real_, length(good.cells))
+  df.reg   <- data.frame(y = NA_real_, x = x.vec)
+  tt       <- seq_len(n.yrs)
+
+  for (k in seq_along(good.cells)) {
+    y  <- win.sst[good.cells[k], ]
+    ok <- is.finite(y)
+    if (sum(ok) < 10) next
+    yd     <- rep(NA_real_, n.yrs)            # detrend the winter series per cell
+    yd[ok] <- residuals(lm(y[ok] ~ tt[ok]))
+    df.reg$y <- yd
+    fit <- tryCatch(
+      gls(y ~ x, data = df.reg,
+          correlation = corAR1(form = ~ 1),
+          method = "ML", na.action = na.omit),
+      error = function(e) NULL
+    )
+    if (is.null(fit)) next
+    s <- summary(fit)$tTable
+    if (nrow(s) < 2) next
+    beta.vec[k] <- s[2, 1]
+    pval.vec[k] <- s[2, 4]
+  }
+
+  beta.full <- rep(NA_real_, nx.s * ny.s)
+  pval.full <- rep(NA_real_, nx.s * ny.s)
+  beta.full[good.cells] <- beta.vec
+  pval.full[good.cells] <- pval.vec
+
+  grid.s   <- expand.grid(lon = lons, lat = lats)
+  lon.s360 <- ifelse(grid.s$lon < 0, grid.s$lon + 360, grid.s$lon)
+
+  sst.reg.df <- data.frame(
+    lon  = lon.s360,
+    lat  = grid.s$lat,
+    beta = beta.full,
+    pval = pval.full
+  ) %>% filter(!is.na(beta))
+
+  write.csv(sst.reg.df, sst.reg.cache, row.names = FALSE)
+  message("Saved: ", sst.reg.cache)
+}
+
+# Restrict to SLP EOF1 domain
+sst.reg.df <- sst.reg.df %>%
+  filter(lon >= 110, lon <= 250, lat >= 20, lat <= 66)
+
+# --- Benjamini-Hochberg FDR (Wilks 2016, BAMS) ---
+sst.reg.df$qval <- p.adjust(sst.reg.df$pval, method = "BH")
+
+n.sig.raw.s <- sum(sst.reg.df$pval <= 0.05, na.rm = TRUE)
+n.sig.fdr.s <- sum(sst.reg.df$qval <= 0.05, na.rm = TRUE)
+message(sprintf("Raw p<=0.05: %d cells | BH-FDR q<=0.05: %d cells (of %d)",
+                n.sig.raw.s, n.sig.fdr.s, nrow(sst.reg.df)))
+
+# Regular 0.5-deg grid for continuous raster + FDR contouring
+sst.reg.grid <- sst.reg.df %>%
+  mutate(lon = round(lon / 0.5) * 0.5,
+         lat = round(lat / 0.5) * 0.5) %>%
+  group_by(lon, lat) %>%
+  summarise(beta = mean(beta, na.rm = TRUE),
+            qval = mean(qval, na.rm = TRUE),
+            .groups = "drop") %>%
+  complete(lon = seq(110, 250, by = 0.5),
+           lat = seq(20,  66,  by = 0.5))
+
+col.lim.sst <- max(abs(sst.reg.df$beta), na.rm = TRUE)
+
+p.sst.reg <- ggplot() +
+  geom_raster(data = filter(sst.reg.grid, !is.na(beta)),
+              aes(x = lon, y = lat, fill = beta)) +
+  geom_contour(data = filter(sst.reg.grid, !is.na(qval)),
+               aes(x = lon, y = lat, z = qval),
+               breaks = 0.05, color = "black", linewidth = 0.4) +
+  geom_polygon(data = mapWorld.clean,
+               aes(x = long, y = lat, group = group),
+               fill = "gray85", color = "gray30", linewidth = 0.25) +
+  geom_path(data = al.box.df, aes(x = x, y = y),
+            color = "black", linewidth = 0.7, linetype = "dashed") +
+  scale_fill_gradient2(low = "steelblue4", mid = "white",
+                       high = "darkorange4", midpoint = 0,
+                       limits = c(-col.lim.sst, col.lim.sst),
+                       name = "β (°C / hPa)") +
+  coord_map(projection = "rectangular", parameters = 55,
+            xlim = c(110, 250), ylim = c(20, 66)) +
+  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
+  scale_y_continuous(breaks = seq(20, 60, 10),
+                     labels = function(y) paste0(y, "°N")) +
+  labs(title    = "Winter SST regressed on winter AL SLP (annual Nov–Mar means)",
+       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q ≤ 0.05 (Wilks 2016)",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 11) +
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
+        plot.subtitle    = element_text(size = 9))
+
+ggsave("./Figures/SST_AL_SLP_regression.png",
+       plot = p.sst.reg, width = 9, height = 6, dpi = 300)
+message("Saved: Figures/SST_AL_SLP_regression.png")
+
+# ============================================================
+# SECTION 6C: COMBINED SST + MLD ~ AL SLP REGRESSION (NE Pacific)
+# ============================================================
+# Stacks the Section 6B SST regression (top) and Section 6 MLD regression
+# (bottom) into one figure, restricted to the NE Pacific (east of 150E).
+# Each panel keeps its own diverging scale (units differ: °C/hPa vs m/hPa)
+# and colour limits computed from the shown (east-of-150E) cells only.
+# Reuses sst.reg.df (Section 6B) and mld.reg.df (Section 6); both carry
+# cellwise beta + BH-FDR qval. Same GLS AR(1) / FDR workflow throughout.
+
+nep_reg_panel <- function(df, fill.lab, ttl) {
+  d <- df %>% filter(lon >= 150, lon <= 250, lat >= 20, lat <= 66)
+  g <- d %>%
+    mutate(lon = round(lon / 0.5) * 0.5, lat = round(lat / 0.5) * 0.5) %>%
+    group_by(lon, lat) %>%
+    summarise(beta = mean(beta, na.rm = TRUE),
+              qval = mean(qval, na.rm = TRUE), .groups = "drop") %>%
+    complete(lon = seq(150, 250, by = 0.5), lat = seq(20, 66, by = 0.5))
+  lim <- max(abs(d$beta), na.rm = TRUE)
+
+  ggplot() +
+    geom_raster(data = filter(g, !is.na(beta)), aes(x = lon, y = lat, fill = beta)) +
+    geom_contour(data = filter(g, !is.na(qval)), aes(x = lon, y = lat, z = qval),
+                 breaks = 0.05, color = "black", linewidth = 0.4) +
+    geom_polygon(data = mapWorld.clean, aes(x = long, y = lat, group = group),
+                 fill = "gray85", color = "gray30", linewidth = 0.25) +
+    geom_path(data = al.box.df, aes(x = x, y = y),
+              color = "black", linewidth = 0.7, linetype = "dashed") +
+    scale_fill_gradient2(low = "steelblue4", mid = "white", high = "darkorange4",
+                         midpoint = 0, limits = c(-lim, lim), name = fill.lab) +
+    coord_map(projection = "rectangular", parameters = 55,
+              xlim = c(150, 250), ylim = c(20, 66)) +
+    scale_x_continuous(breaks = seq(150, 250, 20), labels = lon_label) +
+    scale_y_continuous(breaks = seq(20, 60, 10),
+                       labels = function(y) paste0(y, "°N")) +
+    labs(title = ttl, x = NULL, y = NULL) +
+    theme_bw(base_size = 11) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.3))
+}
+
+p.sst.nep <- nep_reg_panel(sst.reg.df, "β (°C / hPa)",
+                           "Winter SST regressed on winter AL SLP")
+p.mld.nep <- nep_reg_panel(mld.reg.df, "β (m / hPa)",
+                           "Winter MLD regressed on winter AL SLP")
+
+p.sst.mld.nep <- (p.sst.nep / p.mld.nep) +
+  plot_annotation(
+    title    = "NE Pacific (east of 150°E): SST (top) and MLD (bottom) ~ winter AL SLP",
+    subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q ≤ 0.05 (Wilks 2016)",
+    theme    = theme(plot.title    = element_text(size = 12, hjust = 0.5),
+                     plot.subtitle = element_text(size = 9,  hjust = 0.5))
+  )
+
+ggsave("./Figures/SST_MLD_AL_SLP_regression_NEP.png",
+       plot = p.sst.mld.nep, width = 8, height = 9, dpi = 300)
+message("Saved: Figures/SST_MLD_AL_SLP_regression_NEP.png")
 
 # ============================================================
 # SECTION 7: 15-YR ROLLING AL SLP SD vs. MLD AR(1) — dual axis
