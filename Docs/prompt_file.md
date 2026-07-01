@@ -659,3 +659,24 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Also calculate the climatology for 1950-1979 values (mean and SD).
 - For each system under each AR(1) condition, calculate the % of the 1000 simulations > 2 SD above 1950-1979 climatological mean (heatwaves), and the % more than 2 SD below the climatological mean (cold spells).
 - Plot the results in a four-panel plot - 2 systems, with the time series of % heatwaves and % cold spells in different panels. Color-code the three AR(1) conditions.
+
+# SST variability
+- Revisit the SST SSD time series analysis in Fig. 3 of the results summary. 
+- Recalculate as rolling-window winter CV (SD/mean) and plot as a two-panel figure (one panel per ecosystem).
+- Append to the analysis.R file at the correct place, save figure.
+
+# MLD variabiity
+- Calculate the first and second EOF modes and corresponding PCs for MLD in the area of the N. Pacific basin used elsewhere in analysis. 
+- Include winter (NDJFM) only, calculate EOFs using detrended cellwise anomalies, and correct for cell area based on latitude.
+- Add this section to a logical place in analysis.R, at the start of the MLD analysis.
+- Plot the North et al. (1982) error bars for the first 5 eigenvalues (only calculate the first five modes).
+- Plot the loadings and corresponding PC time series for modes 1-2 in a four-panel figure.
+
+# SST regressed on AL SLP anomalies.
+- Find the section of analysis that produces the map in MLD_AL_SLP_regression.png.
+- This is a regression of MLD anomalies onto SLP anomalies in the AL box.
+- Follow the same workflow to produce a map of SST anomaly regression onto AL SLP anomalies, using winter values.
+- Plot as a .png.
+- Add this to analysis on an adjoining section next to the section producing the original MLD regression map.
+- Combine the two panels into a single figure - SST on top, MLD on bottom.
+- Plot only the NE Pacific (East of 150E) for both panels.
