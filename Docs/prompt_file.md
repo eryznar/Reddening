@@ -680,3 +680,29 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Add this to analysis on an adjoining section next to the section producing the original MLD regression map.
 - Combine the two panels into a single figure - SST on top, MLD on bottom.
 - Plot only the NE Pacific (East of 150E) for both panels.
+
+# Check: is the SD signal just AR(1) in disguise?
+- Concern is that the SD-driven results have an alternate reading - that the AL SD signal is really the AL forcing itself reddening (SD confounded with AR(1)), and likewise that MLD SD just tracks MLD AR(1).
+- Add a new section to analysis.R after the AL SLP SD - MLD anomaly section.
+- Plot the 15-year right-aligned rolling SD against AR(1) on dual y-axes, SD dashed with open points on the left axis, AR(1) solid on the right axis.
+- First figure is a standalone Aleutian Low panel. Use the unscaled SLP series so SD is in hPa, not the z-scored version used elsewhere.
+- Second figure is two panels for MLD, GOA on top and EBS on the bottom.
+- Annotate each panel with the Pearson r between SD and AR(1).
+- Save both as .png.
+
+# AL SD vs MLD SD, and SST AR(1) on MLD SD + MLD AR(1)
+- Add a following section with two more checks.
+- First: dual-axis plot of 15-year rolling AL SLP SD against MLD SD, one panel per ecosystem. Same format as the earlier AL SD - MLD AR(1) plot, including the Modified Chelton annotation.
+- Second: multiple regression of SST AR(1) on MLD SD and MLD AR(1) for the GOA and EBS, to disentangle whether SST reddening tracks MLD reddening or MLD variability once both are in the model.
+- Use GLS with AR(1) residuals. Z-score the predictors so the coefficients are comparable.
+- Save the coefficient table to Output and plot the coefficients with 95% CIs as a forest plot.
+- Save the figures as .png.
+
+## Note: confound checks came back null (2026-07-08)
+- SST AR(1) ~ MLD SD + MLD AR(1), GLS with AR(1) residuals, standardized predictors, n = 55:
+    - GOA: MLD SD beta = -0.030 (p = 0.24), MLD AR(1) beta = 0.027 (p = 0.46)
+    - EBS: MLD SD beta = 0.011 (p = 0.76), MLD AR(1) beta = 0.008 (p = 0.81)
+- Nothing approaches significance in either system.
+- Implication: SST reddening does not track MLD variability or MLD reddening once both are included. Supports the AL SD-driven reading rather than an MLD-mediated one.
+- Figures: Figures/AL_SD_vs_AR1_check.png, Figures/MLD_SD_vs_AR1_check.png, Figures/AL_SD_MLD_SD_15yr_dual_axis.png, Figures/SST_AR1_on_MLD_SD_AR1_coefs.png
+- Table: Output/sst_ar1_on_mld_sd_ar1_regression.csv

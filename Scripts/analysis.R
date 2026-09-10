@@ -1450,6 +1450,186 @@ ggsave("./Figures/AL_SD_MLD_anom_15yr_dual_axis.png",
 message("Saved: Figures/AL_SD_MLD_anom_15yr_dual_axis.png")
 
 # ============================================================
+# SECTION 8B: CHECKS — AL & MLD ROLLING SD vs. AR(1)
+# ============================================================
+# Rules out an alternate reading of the SD-driven results: that the AL
+# SD signal is really the AL forcing itself reddening (SD confounded with
+# AR(1)), and likewise that MLD SD tracks MLD AR(1). Each panel shows the
+# 15-yr right-aligned rolling SD (dashed/open, left axis) and AR(1) (solid,
+# right axis) on dual y-axes. Produces two figures:
+#   (1) AL_SD_vs_AR1_check.png  — standalone Aleutian Low panel (al$SLP
+#       from Section 5; SD in hPa, not the z-scored series).
+#   (2) MLD_SD_vs_AR1_check.png — two panels, GOA (top) and EBS (bottom),
+#       from mld.win (Section 7).
+# The per-series Pearson r(SD, AR(1)) is annotated: |r| small => SD and
+# AR(1) carry distinct information (alternate signal ruled out).
+
+# --- Rolling series (reuse roll_ar1 / roll_sd from Section 3) ---
+al.chk <- al %>% arrange(year) %>%
+  mutate(AL.sd = roll_sd(SLP), AL.ar1 = roll_ar1(SLP))
+
+mld.chk <- mld.win %>% arrange(year) %>%
+  mutate(GOA.sd = roll_sd(GOA), GOA.ar1 = roll_ar1(GOA),
+         EBS.sd = roll_sd(EBS), EBS.ar1 = roll_ar1(EBS))
+
+# --- Dual-axis SD-vs-AR(1) panel builder (single series) ---
+sd_ar1_panel <- function(dat, sd.col, ar1.col, ttl, sd.name, ar1.name, ar1.color) {
+  sd.rng  <- range(dat[[sd.col]],  na.rm = TRUE)
+  ar1.rng <- range(dat[[ar1.col]], na.rm = TRUE)
+  k <- diff(sd.rng) / diff(ar1.rng)
+  b <- sd.rng[1] - k * ar1.rng[1]
+  rlab <- sprintf("r(SD, AR1) = %.2f",
+                  cor(dat[[sd.col]], dat[[ar1.col]], use = "complete.obs"))
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[sd.col]], color = "SD"), linetype = "dashed", linewidth = 0.7) +
+    geom_point(aes(y = .data[[sd.col]], color = "SD"), shape = 1, size = 1.5) +
+    geom_line(aes(y = k * .data[[ar1.col]] + b, color = "AR(1)"), linewidth = 0.7) +
+    geom_point(aes(y = k * .data[[ar1.col]] + b, color = "AR(1)"), size = 1.5) +
+    annotate("text", x = -Inf, y = Inf, label = rlab, hjust = -0.1, vjust = 1.4, size = 3.5) +
+    scale_y_continuous(name = sd.name, sec.axis = sec_axis(~ (. - b) / k, name = ar1.name)) +
+    scale_color_manual(values = c("SD" = "gray30", "AR(1)" = ar1.color)) +
+    labs(title = ttl, x = "Year", color = NULL) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = "bottom")
+}
+
+# --- Figure 1: Aleutian Low (standalone) ---
+p.al.chk <- sd_ar1_panel(al.chk, "AL.sd", "AL.ar1",
+                         "Aleutian Low: 15-yr rolling SD vs AR(1)",
+                         "AL SLP SD (hPa)", "AL SLP AR(1)", "firebrick")
+ggsave("./Figures/AL_SD_vs_AR1_check.png",
+       plot = p.al.chk, width = 8, height = 4.5, dpi = 300)
+message("Saved: Figures/AL_SD_vs_AR1_check.png")
+
+# --- Figure 2: MLD, one panel per ecosystem (GOA top, EBS bottom) ---
+p.goa.chk <- sd_ar1_panel(mld.chk, "GOA.sd", "GOA.ar1",
+                          "Gulf of Alaska MLD", "MLD SD (m)", "MLD AR(1)", "darkorange4")
+p.ebs.chk <- sd_ar1_panel(mld.chk, "EBS.sd", "EBS.ar1",
+                          "Eastern Bering Sea MLD", "MLD SD (m)", "MLD AR(1)", "steelblue4")
+
+p.mld.checks <- (p.goa.chk / p.ebs.chk) +
+  plot_annotation(
+    title = "MLD checks: 15-yr rolling SD vs AR(1) by ecosystem",
+    theme = theme(plot.title = element_text(size = 12, hjust = 0.5)))
+
+ggsave("./Figures/MLD_SD_vs_AR1_check.png",
+       plot = p.mld.checks, width = 8, height = 9, dpi = 300)
+message("Saved: Figures/MLD_SD_vs_AR1_check.png")
+
+# ============================================================
+# SECTION 8C: CHECKS — AL SD vs MLD SD; SST AR(1) ~ MLD SD + MLD AR(1)
+# ============================================================
+# Check 1: 15-yr rolling AL SLP SD vs MLD SD, one panel per ecosystem,
+#   same dual-axis format as Section 7 (AL SD vs MLD AR(1)). Uses al$AL.sd
+#   (Section 5) and the rolling MLD SD from mld.chk (Section 8B).
+# Check 2: multiple regression of SST AR(1) (winter.roll, Section 3) on
+#   MLD SD and MLD AR(1) for GOA and EBS, GLS with AR(1) residuals
+#   (nlme::gls + corAR1). Disentangles whether SST reddening tracks MLD
+#   reddening (AR(1)) or MLD variability (SD) once both are included.
+#   Predictors are z-scored so coefficients are comparable. Saves the
+#   coefficient table (Output) and a forest plot.
+
+# ---- Check 1: AL SD vs MLD SD dual-axis, one panel per ecosystem ----
+al.mldsd <- mld.chk %>% select(year, GOA.sd, EBS.sd) %>%
+  left_join(al %>% select(year, AL.sd), by = "year") %>%
+  filter(!is.na(AL.sd))
+
+mldsd.al.range  <- range(al.mldsd$AL.sd,  na.rm = TRUE)
+goa.mldsd.range <- range(al.mldsd$GOA.sd, na.rm = TRUE)
+ebs.mldsd.range <- range(al.mldsd$EBS.sd, na.rm = TRUE)
+
+dg.sd <- al.mldsd %>% filter(!is.na(GOA.sd), !is.na(AL.sd))
+de.sd <- al.mldsd %>% filter(!is.na(EBS.sd), !is.na(AL.sd))
+chel.goa.sd <- chelton_test(dg.sd$GOA.sd, dg.sd$AL.sd)
+chel.ebs.sd <- chelton_test(de.sd$EBS.sd, de.sd$AL.sd)
+
+make_mldsd_dual_plot <- function(dat, sd.col, sd.color, region.label, sd.range, chel) {
+  k <- diff(sd.range) / diff(mldsd.al.range)
+  b <- sd.range[1] - k * mldsd.al.range[1]
+  dat <- dat %>% filter(!is.na(.data[[sd.col]]), !is.na(AL.sd))
+  lbl <- sprintf("r = %.2f, N* = %.1f\nt = %.2f, p = %.3f",
+                 chel$r.obs, chel$n.eff, chel$t.obs, chel$pval)
+  ggplot(dat, aes(x = year)) +
+    geom_line(aes(y = .data[[sd.col]], color = "MLD SD"), linewidth = 0.7) +
+    geom_point(aes(y = .data[[sd.col]], color = "MLD SD"), size = 1.5) +
+    geom_line(aes(y = k * AL.sd + b, color = "AL SLP SD"),
+              linewidth = 0.7, linetype = "dashed") +
+    geom_point(aes(y = k * AL.sd + b, color = "AL SLP SD"), size = 1.5, shape = 1) +
+    annotate("text", x = Inf, y = -Inf, label = lbl,
+             hjust = 1.1, vjust = -0.4, size = 3.5, lineheight = 1.3) +
+    scale_y_continuous(name = "MLD SD (m)",
+                       sec.axis = sec_axis(~ (. - b) / k, name = "AL SLP SD (z-scored)")) +
+    scale_color_manual(values = c("MLD SD" = sd.color, "AL SLP SD" = "gray30")) +
+    labs(title = region.label, x = "Year", color = NULL) +
+    theme_bw(base_size = 11) +
+    theme(legend.position    = "bottom",
+          axis.title.y.left  = element_text(color = sd.color),
+          axis.text.y.left   = element_text(color = sd.color),
+          axis.title.y.right = element_text(color = "gray30"),
+          axis.text.y.right  = element_text(color = "gray30"))
+}
+
+p.goa.mldsd <- make_mldsd_dual_plot(al.mldsd, "GOA.sd", "darkorange4", "GOA",
+                                    goa.mldsd.range, chel.goa.sd)
+p.ebs.mldsd <- make_mldsd_dual_plot(al.mldsd, "EBS.sd", "steelblue4",  "EBS",
+                                    ebs.mldsd.range, chel.ebs.sd)
+
+p.mldsd.dual <- p.goa.mldsd / p.ebs.mldsd +
+  plot_annotation(
+    title = "15-yr Rolling AL SLP SD vs. MLD SD — Winter (Nov–Mar)",
+    theme = theme(plot.title = element_text(hjust = 0.5, size = 12)))
+
+ggsave("./Figures/AL_SD_MLD_SD_15yr_dual_axis.png",
+       plot = p.mldsd.dual, width = 7, height = 7, dpi = 300)
+message("Saved: Figures/AL_SD_MLD_SD_15yr_dual_axis.png")
+
+# ---- Check 2: SST AR(1) ~ MLD SD + MLD AR(1) (GLS, AR(1) residuals) ----
+chk2 <- winter.roll %>%
+  select(year, SST.GOA = GOA.ar1, SST.EBS = EBS.ar1) %>%
+  inner_join(mld.chk %>% select(year, GOA.sd, GOA.ar1, EBS.sd, EBS.ar1), by = "year")
+
+fit_mld_reg <- function(sst.col, sd.col, ar1.col, sys) {
+  d <- chk2 %>%
+    transmute(year,
+              y       = .data[[sst.col]],
+              MLD.sd  = as.numeric(scale(.data[[sd.col]])),   # z-scored
+              MLD.ar1 = as.numeric(scale(.data[[ar1.col]]))) %>%
+    filter(complete.cases(.))
+  fit <- gls(y ~ MLD.sd + MLD.ar1, data = d,
+             correlation = corAR1(form = ~ 1), method = "ML")
+  s <- summary(fit)$tTable
+  data.frame(system = sys, term = rownames(s),
+             beta = s[, 1], se = s[, 2], t = s[, 3], p = s[, 4],
+             n = nrow(d), row.names = NULL)
+}
+
+reg.mld <- bind_rows(
+  fit_mld_reg("SST.GOA", "GOA.sd", "GOA.ar1", "GOA"),
+  fit_mld_reg("SST.EBS", "EBS.sd", "EBS.ar1", "EBS"))
+
+write.csv(reg.mld, "./Output/sst_ar1_on_mld_sd_ar1_regression.csv", row.names = FALSE)
+message("Saved: Output/sst_ar1_on_mld_sd_ar1_regression.csv")
+message("SST AR(1) ~ MLD SD + MLD AR(1) (GLS AR(1); standardized predictors):")
+print(reg.mld)
+
+p.reg.mld <- reg.mld %>%
+  filter(term != "(Intercept)") %>%
+  mutate(term = recode(term, "MLD.sd" = "MLD SD", "MLD.ar1" = "MLD AR(1)")) %>%
+  ggplot(aes(x = beta, y = term, color = system)) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_pointrange(aes(xmin = beta - 1.96 * se, xmax = beta + 1.96 * se),
+                  position = position_dodge(width = 0.4), linewidth = 0.7) +
+  scale_color_manual(values = c("GOA" = "darkorange4", "EBS" = "steelblue4")) +
+  labs(title = "SST AR(1) ~ MLD SD + MLD AR(1)  (GLS, AR(1) residuals)",
+       subtitle = "Standardized predictors; bars = 95% CI",
+       x = "Standardized coefficient (per 1 SD predictor)", y = NULL, color = "System") +
+  theme_bw(base_size = 11)
+
+ggsave("./Figures/SST_AR1_on_MLD_SD_AR1_coefs.png",
+       plot = p.reg.mld, width = 7, height = 4, dpi = 300)
+message("Saved: Figures/SST_AR1_on_MLD_SD_AR1_coefs.png")
+
+# ============================================================
 # SECTION 9: Cellwise regression of MLD AR(1) on AL SLP SD
 # ============================================================
 # Same style as Section 6 MLD ~ AL SLP regression map, but both
