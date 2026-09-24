@@ -706,3 +706,55 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - Implication: SST reddening does not track MLD variability or MLD reddening once both are included. Supports the AL SD-driven reading rather than an MLD-mediated one.
 - Figures: Figures/AL_SD_vs_AR1_check.png, Figures/MLD_SD_vs_AR1_check.png, Figures/AL_SD_MLD_SD_15yr_dual_axis.png, Figures/SST_AR1_on_MLD_SD_AR1_coefs.png
 - Table: Output/sst_ar1_on_mld_sd_ar1_regression.csv
+
+# Revise figures for manuscript
+- All figs should be formatted in a style suitable for Geophysical Research Letters.
+- Replot the map from Section 17 in analysis.R (cellwise regression of SST AR(1) on AL SLP SD as a polar stereographic projection. Run the script and save the new plot with the existing file name.
+- Iterate this Fig.
+    - The land area or colored cells extend beyond the border of the plot in several places. Fix this.
+    - Try adding polygons for the EBS and GOA and label as "EBS" and "GOA".
+    - Make the dashed line for the AL polygon finer. Add a "AL" label to the lower left hand corner of this polygon.
+    - Move the legend up so the map fills more of the plot panel.
+    - Move the panel to the left so that the map is wider (full width of the panel).
+    - Make sure the legend title is on one line.
+- Now revise the plot in Section 6 (WINTER MLD REGRESSED ON WINTER AL SLP) to follow the same projection and layout as the previous Fig. 
+    - Also note that lat/long should be plotted with the same limits in both figs. 
+    - Save the revised plot. 
+    - Iterate:
+        - Stipple for significance.
+        - Consider only the number of plotted cells when computing FDR statistics.
+        - Move EBS and GOA labels to top left corners of polygons to avoid overlapping stippled area.
+        - Fix washed-out look by clipping at 98th percentile.
+    - Iterate:
+        - Stippling does not show at all, try a countour line that will contrast with GOA/EBS polygons.
+        - Move GOA/EBS labels to top right of polygons.
+        - Change AL label to "AL Index"
+    
+# Manuscript Fig. 1
+- This will be a multi-panel figure.
+- Panel (a) will be a study site figure.
+    - Plot a global projection with the study area (NE Pacific area plotted in the SST AR(1) - AL SD regression) outlined.
+    - EBS and GOA will also be outlined.
+    - Make a draft of this first; save as Fig_1.png
+- Time series plots (panels b-e).
+    - Panel (b): Gulf of Alaska SST time series.
+        - This should include winter means (Nov-Mar, year corresponding to January), and annual means for the full time series.
+    - Panel (c): GOA SST AR(1).
+        - Plot 15-year rolling window AR(1) values for both winter and annual SST.
+    - Panel (d) and (e): As for (b) and (c), but for the EBS.
+- Update/iterate.
+    - Drop the annual time series for mean SST and AR(1).
+    - Change the layout to be more landscape layout (rather than portrait).
+        - This should be a 3 column by two row fgure.
+        - Make panel (a) the left-most column (taking up both rows).
+        - Then panels (b) and (c) on the top row for columns 2 and 3.
+        - And panels (d) and (e) on the bottom row for columns 2 and 3.
+- Iterate
+    - Make the globe smaller. Allow it to shrink towards the top of the figure. 
+    - Put label (a) closer to the globe.
+    - Move the "Ecosystem" legend for the globe closer to the globe itself, and drop the "Ecosystem" legend title.
+    - Panels b-d need to be larger, but at the same aspect ratio. 
+    - Panel labels for b-d also need to be closer to the plots to reduce white space.
+    - "Gulf of Alaska" and "Eastern Bering Sea" headers need to be centered over panels b-c and d-e, respectively.
+    - Plot winter SST values, not anomalies. Remove "anomaly" from the x-axis labels.
+    - Put a thin grey line at 0 on the AR(1) plots.
