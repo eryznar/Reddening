@@ -8,10 +8,416 @@ library(ggplot2)
 library(dplyr)
 library(maps)
 library(ncdf4)
-library(zoo)
 library(tidyr)
-library(sf)
 library(patchwork)
+
+# ============================================================
+# SHARED: MANUSCRIPT FIGURE STYLE (GRL) + MAP PROJECTION HELPERS
+# ============================================================
+# Style targets Geophysical Research Letters:
+#   - Column widths: 95 mm (single) / 190 mm (full). Use grl.width.*.
+#   - Sans-serif (Helvetica/Arial), 8 pt base, 6 pt hard minimum.
+#   - No plot titles — GRL figures carry captions, not in-figure titles.
+#   - Hairline strokes (<= 0.4 pt) and no heavy panel gridlines.
+# Projection helpers implement a spherical north polar stereographic
+# transform directly (no sf/mapproj dependency) so that map panels can be
+# drawn in a projection appropriate for high-latitude North Pacific fields.
+
+grl.width.single <- 95  / 25.4   # inches
+grl.width.full   <- 190 / 25.4   # inches
+
+theme_grl <- function(base_size = 8, base_family = "sans") {
+  theme_bw(base_size = base_size, base_family = base_family) +
+    theme(
+      text             = element_text(colour = "black"),
+      axis.text        = element_text(size = base_size - 1, colour = "black"),
+      axis.ticks       = element_line(linewidth = 0.25, colour = "black"),
+      legend.title     = element_text(size = base_size),
+      legend.text      = element_text(size = base_size - 1),
+      legend.key.width = unit(3.5, "mm"),
+      legend.background = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(colour = "grey92", linewidth = 0.2),
+      panel.border     = element_rect(colour = "black", linewidth = 0.4, fill = NA),
+      plot.title       = element_text(size = base_size + 1, hjust = 0),
+      plot.subtitle    = element_text(size = base_size - 1, hjust = 0),
+      plot.margin      = margin(2, 2, 2, 2, "mm"),
+      strip.background = element_rect(fill = "grey95", colour = "black", linewidth = 0.3),
+      strip.text       = element_text(size = base_size))
+}
+
+# Map variant: graticule and labels are drawn as data, so panel axes,
+# gridlines and border are all switched off.
+theme_grl_map <- function(base_size = 8, base_family = "sans") {
+  theme_grl(base_size, base_family) +
+    theme(axis.text         = element_blank(),
+          axis.ticks        = element_blank(),
+          axis.title        = element_blank(),
+          panel.grid.major  = element_blank(),
+          panel.grid.minor  = element_blank(),
+          panel.border      = element_blank())
+}
+
+# --- North polar stereographic (spherical) --------------------------------
+# lon/lat in degrees (lon in 0-360 space); lon0 = central meridian, drawn
+# pointing straight down from the pole. Returns x/y in Earth radii, pole at
+# the origin. East of lon0 falls to the right, matching a view from above
+# the North Pole.
+ps_project <- function(lon, lat, lon0 = 205) {
+  lam <- (lon - lon0) * pi / 180
+  r   <- 2 * tan(pi / 4 - (lat * pi / 180) / 2)
+  data.frame(x = r * sin(lam), y = -r * cos(lam))
+}
+
+# Insert intermediate vertices so that straight lon/lat edges render as the
+# curves they actually are once projected.
+densify_lonlat <- function(lon, lat, max.step = 0.5) {
+  n <- length(lon)
+  if (n < 2) return(list(lon = lon, lat = lat))
+  k    <- pmax(1, ceiling(pmax(abs(diff(lon)), abs(diff(lat))) / max.step))
+  idx  <- rep(seq_len(n - 1), k)
+  frac <- unlist(lapply(k, function(m) seq(0, 1, length.out = m + 1)[-(m + 1)]))
+  list(lon = c(lon[idx] + frac * (lon[idx + 1] - lon[idx]), lon[n]),
+       lat = c(lat[idx] + frac * (lat[idx + 1] - lat[idx]), lat[n]))
+}
+
+# Sutherland-Hodgman clip of a polygon against a lon/lat rectangle. Keeps
+# coastlines from spilling outside the mapped domain once projected.
+clip_lonlat <- function(lon, lat, lon.rng, lat.rng) {
+  clip1 <- function(px, py, keep, cut) {
+    n <- length(px)
+    if (n < 3) return(list(x = numeric(0), y = numeric(0)))
+    j  <- c(n, seq_len(n - 1))
+    ci <- keep(px, py); cj <- ci[j]
+    it <- cut(px[j], py[j], px, py)
+    xs <- rbind(it$x, px); ys <- rbind(it$y, py)
+    sel <- rbind(ci != cj, ci)
+    list(x = xs[sel], y = ys[sel])
+  }
+  cut_x <- function(xc) function(x1, y1, x2, y2) {
+    t <- (xc - x1) / (x2 - x1); list(x = rep(xc, length(t)), y = y1 + t * (y2 - y1))
+  }
+  cut_y <- function(yc) function(x1, y1, x2, y2) {
+    t <- (yc - y1) / (y2 - y1); list(x = x1 + t * (x2 - x1), y = rep(yc, length(t)))
+  }
+  p <- list(x = lon, y = lat)
+  for (e in list(
+    list(k = function(x, y) x >= lon.rng[1], c = cut_x(lon.rng[1])),
+    list(k = function(x, y) x <= lon.rng[2], c = cut_x(lon.rng[2])),
+    list(k = function(x, y) y >= lat.rng[1], c = cut_y(lat.rng[1])),
+    list(k = function(x, y) y <= lat.rng[2], c = cut_y(lat.rng[2])))) {
+    p <- clip1(p$x, p$y, e$k, e$c)
+    if (!length(p$x)) break
+  }
+  p
+}
+
+# Coastline polygons clipped to a lon/lat window, densified and projected.
+# The ring is closed (first vertex repeated) BEFORE densifying: geom_polygon
+# closes a ring with a straight segment in projected space, and along the
+# northern clip edge that chord bows outside the curved boundary, spilling
+# land past the map outline. Densifying the closing edge removes it.
+ps_coast <- function(map.df, lon.rng, lat.rng, lon0 = 205) {
+  parts <- lapply(split(map.df, map.df$group), function(g) {
+    cp <- clip_lonlat(g$long, g$lat, lon.rng, lat.rng)
+    if (length(cp$x) < 3) return(NULL)
+    d <- densify_lonlat(c(cp$x, cp$x[1]), c(cp$y, cp$y[1]))
+    cbind(ps_project(d$lon, d$lat, lon0), group = g$group[1])
+  })
+  bind_rows(parts[!vapply(parts, is.null, logical(1))])
+}
+
+# Densify a lon/lat path, then project it.
+ps_path <- function(lon, lat, lon0 = 205, n = 200) {
+  i  <- seq_along(lon)
+  ii <- seq(1, length(lon), length.out = n)
+  ps_project(approx(i, lon, ii)$y, approx(i, lat, ii)$y, lon0)
+}
+
+# Expand cell centres into projected quadrilaterals. `half` is half the cell
+# size in degrees; `value` is carried through for the fill aesthetic. Cells on
+# the domain edge are centred on the boundary, so their corners are clamped to
+# lon.rng/lat.rng — without this the field overhangs the map outline by half a
+# cell. Quads are axis-aligned in lon/lat, so clamping corners clips exactly.
+ps_cells <- function(lon, lat, value, half = 0.25, lon0 = 205,
+                     lon.rng = NULL, lat.rng = NULL) {
+  n     <- length(lon)
+  dlon  <- c(-half,  half, half, -half)
+  dlat  <- c(-half, -half, half,  half)
+  lonc  <- rep(lon, each = 4) + rep(dlon, n)
+  latc  <- rep(lat, each = 4) + rep(dlat, n)
+  if (!is.null(lon.rng)) lonc <- pmin(pmax(lonc, lon.rng[1]), lon.rng[2])
+  if (!is.null(lat.rng)) latc <- pmin(pmax(latc, lat.rng[1]), lat.rng[2])
+  xy <- ps_project(lonc, latc, lon0)
+  data.frame(x = xy$x, y = xy$y,
+             id = rep(seq_len(n), each = 4),
+             value = rep(value, each = 4))
+}
+
+# Text with a white halo, so labels stay legible over a filled field without
+# an opaque label box hiding data. Returns a list of layers: `n` offset copies
+# in the halo colour, then the text itself. `r` is the halo radius in data
+# units (projected Earth radii).
+geom_text_halo <- function(data, size = 7 / .pt, colour = "black",
+                           halo = "white", r = 0.0028, n = 12,
+                           fontface = "bold") {
+  ang <- seq(0, 2 * pi, length.out = n + 1)[-(n + 1)]
+  bg  <- lapply(ang, function(a) {
+    d <- data; d$x <- d$x + r * cos(a); d$y <- d$y + r * sin(a)
+    geom_text(data = d, aes(x = x, y = y, label = lab),
+              colour = halo, size = size, fontface = fontface)
+  })
+  c(bg, list(geom_text(data = data, aes(x = x, y = y, label = lab),
+                       colour = colour, size = size, fontface = fontface)))
+}
+
+# Clean 0-360 world map used by every projected map panel.
+mapWorld.clean <- map_data("world2")
+
+# Complete manuscript map panel: a cellwise regression field drawn on the
+# north polar stereographic projection, with the FDR contour, clipped
+# coastlines, graticule, EBS/GOA polygons and the AL box. Every regression
+# map in the manuscript goes through this so the panels are guaranteed to
+# share a projection, domain and layout. `grid` is a regular lon/lat data
+# frame carrying `beta` and optionally `qval`. Study polygons and the AL box
+# are read from the global environment, as elsewhere in the script.
+ps_regression_map <- function(grid, fill.name, col.lim,
+                              lon.rng = c(160, 250), lat.rng = c(20, 66),
+                              lon0 = 205, cell.half = 0.25, q.level = 0.05,
+                              sig.colour = "#1B7837") {
+  cells <- grid %>% filter(!is.na(beta)) %>%
+    { ps_cells(.$lon, .$lat, .$beta, half = cell.half, lon0 = lon0,
+               lon.rng = lon.rng, lat.rng = lat.rng) }
+
+  # Significance is contoured, in a colour that separates it from the black
+  # study polygons and the dashed AL box — stippling at this figure scale is
+  # too fine to register. The contour is traced on the lon/lat grid and only
+  # then projected, so reprojection cannot alter the statistics shown.
+  qpath <- NULL
+  if ("qval" %in% names(grid) && any(!is.na(grid$qval))) {
+    q.lon <- sort(unique(grid$lon)); q.lat <- sort(unique(grid$lat))
+    q.mat <- matrix(NA_real_, nrow = length(q.lon), ncol = length(q.lat))
+    q.mat[cbind(match(grid$lon, q.lon), match(grid$lat, q.lat))] <- grid$qval
+    q.lines <- contourLines(x = q.lon, y = q.lat, z = q.mat, levels = q.level)
+    if (length(q.lines))
+      qpath <- bind_rows(lapply(seq_along(q.lines), function(i)
+        cbind(ps_project(q.lines[[i]]$x, q.lines[[i]]$y, lon0), seg = i)))
+  }
+
+  coast <- ps_coast(mapWorld.clean, lon.rng, lat.rng, lon0)
+  areas <- bind_rows(
+    cbind(ps_path(c(goa.poly$lon, goa.poly$lon[1]),
+                  c(goa.poly$lat, goa.poly$lat[1]), lon0, n = 500), area = "GOA"),
+    cbind(ps_path(c(ebs.poly$lon, ebs.poly$lon[1]),
+                  c(ebs.poly$lat, ebs.poly$lat[1]), lon0, n = 500), area = "EBS"))
+  # Anchored toward each polygon's top-right, at the most top-right position
+  # whose whole text extent still clears the mainland coast. Extent is wider
+  # in degrees than it looks: meridians converge poleward, so "EBS" spans
+  # about +/-4 deg of longitude at 63N. EBS cannot sit at its true top-right
+  # corner, which is mainland Alaska. "AL Index" spans ~10 deg at 47N, so its
+  # anchor is the leftmost point keeping the whole label inside the AL box.
+  area.lab <- bind_rows(
+    cbind(ps_project(217.0, 58.5, lon0), lab = "GOA"),
+    cbind(ps_project(190.5, 63.5, lon0), lab = "EBS"),
+    cbind(ps_project(198.0, 46.8, lon0), lab = "AL Index"))
+  al.box <- ps_path(al.box.df$x, al.box.df$y, lon0, n = 400)
+  domain <- ps_path(lon.rng[c(1, 2, 2, 1, 1)], lat.rng[c(1, 1, 2, 2, 1)],
+                    lon0, n = 800)
+  grat   <- ps_graticule(lon.rng, lat.rng, lon.by = 20, lat.by = 10, lon0 = lon0)
+
+  xlim <- range(domain$x) + c(-0.13, 0.03)   # room for lat labels
+  ylim <- range(domain$y) + c(-0.10, 0.02)   # room for lon labels
+
+  ggplot() +
+    geom_polygon(data = cells, aes(x = x, y = y, group = id, fill = value)) +
+    { if (!is.null(qpath))
+        geom_path(data = qpath, aes(x = x, y = y, group = seg),
+                  colour = sig.colour, linewidth = 0.45) } +
+    geom_polygon(data = coast, aes(x = x, y = y, group = group),
+                 fill = "grey85", colour = "grey30", linewidth = 0.2) +
+    geom_path(data = grat$lines, aes(x = x, y = y, group = grat),
+              colour = "grey45", linewidth = 0.15, linetype = "dotted") +
+    geom_path(data = al.box, aes(x = x, y = y),
+              colour = "black", linewidth = 0.25, linetype = "dashed") +
+    geom_path(data = areas, aes(x = x, y = y, group = area),
+              colour = "black", linewidth = 0.4) +
+    geom_path(data = domain, aes(x = x, y = y),
+              colour = "black", linewidth = 0.4) +
+    geom_text(data = grat$labels, aes(x = x, y = y, label = lab),
+              size = 7 / .pt, colour = "black") +
+    geom_text_halo(area.lab, size = 7 / .pt) +
+    scale_fill_gradient2(low = "steelblue4", mid = "white",
+                         high = "darkorange4", midpoint = 0,
+                         limits = c(-col.lim, col.lim), name = fill.name,
+                         oob = scales::squish) +
+    coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
+    guides(fill = guide_colourbar(barwidth  = unit(55, "mm"),
+                                  barheight = unit(3, "mm"),
+                                  title.position = "left",
+                                  title.vjust = 1,
+                                  frame.colour = "black",
+                                  frame.linewidth = 0.3,
+                                  ticks.colour = "black")) +
+    theme_grl_map() +
+    theme(legend.position  = "bottom",
+          legend.direction = "horizontal",
+          legend.margin    = margin(1, 0, 0, 0, "mm"),
+          legend.box.spacing = unit(1, "mm"))
+}
+
+# Graticule as projected paths. Labels are pushed a fixed distance outside
+# the domain edge in projected units — a constant offset in degrees would
+# crowd the high-latitude labels, where the meridians converge.
+ps_graticule <- function(lon.rng, lat.rng, lon.by = 20, lat.by = 10,
+                         lon0 = 205, off = 0.055) {
+  mers <- seq(ceiling(lon.rng[1] / lon.by) * lon.by, lon.rng[2], by = lon.by)
+  pars <- seq(ceiling(lat.rng[1] / lat.by) * lat.by, lat.rng[2], by = lat.by)
+  lines <- bind_rows(
+    bind_rows(lapply(mers, function(L)
+      cbind(ps_path(c(L, L), lat.rng, lon0), grat = paste0("m", L)))),
+    bind_rows(lapply(pars, function(P)
+      cbind(ps_path(lon.rng, c(P, P), lon0), grat = paste0("p", P)))))
+
+  # Unit vectors at each anchor: radial (outward, away from the pole) and
+  # tangential (eastward). Meridian labels step radially outward past the
+  # southern arc; parallel labels step west of the domain's western edge.
+  lam.m <- (mers - lon0) * pi / 180
+  lam.p <- (lon.rng[1] - lon0) * pi / 180
+  m.xy  <- ps_project(mers, lat.rng[1], lon0)
+  p.xy  <- ps_project(lon.rng[1], pars, lon0)
+
+  labs <- bind_rows(
+    data.frame(x = m.xy$x + off * sin(lam.m),
+               y = m.xy$y - off * cos(lam.m),
+               lab = lon_label(mers), edge = "lon"),
+    data.frame(x = p.xy$x - off * cos(lam.p),
+               y = p.xy$y - off * sin(lam.p),
+               lab = paste0(pars, "°N"), edge = "lat"))
+  list(lines = lines, labels = labs)
+}
+
+# Normalise longitude to 0-360, whichever convention a file supplies.
+to360 <- function(x) ifelse(x < 0, x + 360, x)
+
+# Generic right-aligned rolling window: the base-R equivalent of
+# zoo::rollapply(x, width, fill = NA, align = "right", FUN = FUN).
+roll_right <- function(x, width, FUN, ...) {
+  n <- length(x); out <- rep(NA_real_, n)
+  if (n < width) return(out)
+  for (i in width:n) out[i] <- FUN(x[(i - width + 1):i], ...)
+  out
+}
+
+# Leading `nv` singular triplets of a tall matrix, replacing irlba::irlba.
+# Every use here has far fewer columns (times) than rows (cells), so the
+# Gram matrix t(A) %*% A is small and its eigen-decomposition gives the
+# thin SVD directly. Returns d/u/v like irlba, so sign conventions are
+# still fixed downstream where the script flips EOFs explicitly.
+partial_svd <- function(A, nv) {
+  e <- eigen(crossprod(A), symmetric = TRUE)
+  k <- seq_len(nv)
+  d <- sqrt(pmax(e$values[k], 0))
+  v <- e$vectors[, k, drop = FALSE]
+  list(d = d, u = A %*% v %*% diag(1 / d, nv, nv), v = v)
+}
+
+# coord_map(projection = "rectangular", parameters = lat0) without mapproj:
+# that projection is just x = lon * cos(lat0), y = lat, i.e. a fixed aspect.
+coord_rect <- function(xlim, ylim, lat0 = 55) {
+  coord_fixed(ratio = 1 / cos(lat0 * pi / 180), xlim = xlim, ylim = ylim)
+}
+
+# --- Small numeric helpers (base R, so no zoo/sf dependency) --------------
+# Vectorised ray-casting point-in-polygon: mask many grid cells at once.
+inpoly_vec <- function(x, y, px, py) {
+  n <- length(px); inside <- rep(FALSE, length(x)); j <- n
+  for (i in seq_len(n)) {
+    cond <- ((py[i] > y) != (py[j] > y)) &
+            (x < (px[j] - px[i]) * (y - py[i]) / (py[j] - py[i]) + px[i])
+    inside <- xor(inside, cond %in% TRUE)
+    j <- i
+  }
+  inside
+}
+
+# Linear detrend, NA-safe.
+detrend_lin <- function(x) {
+  i <- seq_along(x); ok <- !is.na(x); out <- rep(NA_real_, length(x))
+  out[ok] <- residuals(lm(x[ok] ~ i[ok]))
+  out
+}
+
+# Right-aligned rolling lag-1 autocorrelation, matching Section 3's
+# rollapply(..., align = "right") without requiring zoo.
+roll_ar1_right <- function(x, width = 15) {
+  roll_right(x, width,
+             function(v) acf(v, lag.max = 1, plot = FALSE,
+                             na.action = na.pass)$acf[2])
+}
+
+# --- Orthographic (globe) projection --------------------------------------
+# Vertices are carried as (azimuth, angular distance) about the view centre
+# rather than lon/lat. In those coordinates the visible hemisphere is simply
+# c <= 90, so hemisphere clipping is a single half-plane pass, and the
+# Sutherland-Hodgman closing edges run along c = 90 — i.e. exactly along the
+# limb. Land running off the edge of the globe therefore closes on the limb
+# instead of chording straight across the disc.
+orth_azc <- function(lon, lat, lon0 = 205, lat0 = 42) {
+  p0 <- lat0 * pi / 180; p <- lat * pi / 180; dl <- (lon - lon0) * pi / 180
+  cosc <- pmax(-1, pmin(1, sin(p0) * sin(p) + cos(p0) * cos(p) * cos(dl)))
+  data.frame(az = atan2(cos(p) * sin(dl),
+                        cos(p0) * sin(p) - sin(p0) * cos(p) * cos(dl)) * 180 / pi,
+             c  = acos(cosc) * 180 / pi)
+}
+
+# (azimuth, angular distance) -> disc coordinates, unit sphere, north up.
+orth_xy <- function(az, c.deg) {
+  s <- sin(c.deg * pi / 180)
+  data.frame(x = s * sin(az * pi / 180), y = s * cos(az * pi / 180))
+}
+
+# Keep azimuth continuous along a ring so the half-plane clip sees real
+# crossings rather than the +/-180 wrap.
+az_unwrap <- function(a) {
+  if (length(a) < 2) return(a)
+  d <- diff(a); c(a[1], a[1] + cumsum(d - 360 * round(d / 360)))
+}
+
+# Sutherland-Hodgman against the single half-plane c <= cmax.
+clip_hemi <- function(az, cc, cmax = 90) {
+  n <- length(az)
+  if (n < 3) return(NULL)
+  j  <- c(n, seq_len(n - 1))
+  ci <- cc <= cmax; cj <- ci[j]
+  t  <- (cmax - cc[j]) / (cc - cc[j])
+  xs <- rbind(az[j] + t * (az - az[j]), az)
+  ys <- rbind(rep(cmax, n), cc)
+  sel <- rbind(ci != cj, ci)
+  if (!any(sel)) return(NULL)
+  list(az = xs[sel], c = ys[sel])
+}
+
+# Coastlines clipped to the visible hemisphere and projected to the disc.
+orth_coast <- function(map.df, lon0 = 205, lat0 = 42, max.step = 0.5) {
+  parts <- lapply(split(map.df, map.df$group), function(g) {
+    ac <- orth_azc(g$long, g$lat, lon0, lat0)
+    cp <- clip_hemi(az_unwrap(ac$az), ac$c)
+    if (is.null(cp) || length(cp$az) < 3) return(NULL)
+    d <- densify_lonlat(c(cp$az, cp$az[1]), c(cp$c, cp$c[1]), max.step)
+    cbind(orth_xy(d$lon, d$lat), group = g$group[1])
+  })
+  bind_rows(parts[!vapply(parts, is.null, logical(1))])
+}
+
+# A lon/lat path densified then projected to the disc; invisible vertices are
+# set NA so geom_path breaks rather than cutting across the globe.
+orth_path <- function(lon, lat, lon0 = 205, lat0 = 42, n = 600) {
+  i  <- seq_along(lon); ii <- seq(1, length(lon), length.out = n)
+  ac <- orth_azc(approx(i, lon, ii)$y, approx(i, lat, ii)$y, lon0, lat0)
+  xy <- orth_xy(ac$az, ac$c)
+  xy[ac$c > 90, ] <- NA
+  xy
+}
 
 # ============================================================
 # SECTION 1: REFERENCE MAP — North Pacific study areas
@@ -79,12 +485,7 @@ ref.map <- ggplot() +
   scale_color_manual(name = NULL, values = area.colors, labels = area.labels) +
   scale_linetype_manual(name = NULL, values = area.linetypes, labels = area.labels) +
   scale_linewidth_manual(name = NULL, values = area.linewidths, labels = area.labels) +
-  coord_map(
-    projection = "rectangular",
-    parameters = 55,
-    xlim = c(120, 250),
-    ylim = c(20, 66)
-  ) +
+  coord_rect(xlim = c(120, 250), ylim = c(20, 66)) +
   scale_x_continuous(
     breaks = seq(120, 250, 30),
     labels = lon_label
@@ -144,23 +545,15 @@ goa.y <- c(50,  53,  57.5, 59,  61,  61,  50)
 ebs.x <- c(183, 183, 203, 203, 191)
 ebs.y <- c(53,  65,  65,  57.5, 53)
 
-# Convert 0-360 → -180/180 for sf
-to180 <- function(x) ifelse(x > 180, x - 360, x)
+# Grid and polygons are both held in 0-360 space. A previous version
+# converted the polygons to -180/180 while the grid kept the file's own
+# longitudes -- which the 2026 ERA5 file supplies as 110-250 -- so polygons
+# and grid never overlapped and both masks came back empty. to360() now
+# normalises the grid, so either file convention works.
+grid <- expand.grid(lon = to360(as.vector(lons)), lat = as.vector(lats))
 
-make_sf_poly <- function(lon360, lat) {
-  coords <- rbind(cbind(to180(lon360), lat), c(to180(lon360[1]), lat[1]))
-  st_sf(geometry = st_sfc(st_polygon(list(coords)), crs = 4326))
-}
-
-goa.sf <- make_sf_poly(goa.x, goa.y)
-ebs.sf <- make_sf_poly(ebs.x, ebs.y)
-
-# ERA5 lons are already in -180/180 space
-grid    <- expand.grid(lon = lons, lat = lats)
-grid.sf <- st_as_sf(grid, coords = c("lon", "lat"), crs = 4326)
-
-in.goa <- lengths(st_within(grid.sf, goa.sf)) > 0
-in.ebs <- lengths(st_within(grid.sf, ebs.sf)) > 0
+in.goa <- inpoly_vec(grid$lon, grid$lat, goa.x, goa.y)
+in.ebs <- inpoly_vec(grid$lon, grid$lat, ebs.x, ebs.y)
 in.np  <- !is.na(as.vector(sst[,,1]))   # all non-land ocean cells
 
 weights <- cos(grid$lat * pi / 180)
@@ -209,7 +602,7 @@ end.mo <- max(monthly.anom$date, na.rm = TRUE)
 
 p.monthly.anom <- monthly.anom %>%
   pivot_longer(cols = c(GOA.anom, EBS.anom, NP.anom),
-               names_to = "region", values_to = "anom") %>%
+               names_to = "region", values_to = "sst") %>%
   mutate(region = recode(region,
                          "GOA.anom" = "GOA",
                          "EBS.anom" = "EBS",
@@ -261,7 +654,7 @@ winter.anom <- monthly.anom %>%
 end.yr <- max(winter.anom$year, na.rm = TRUE)
 
 p.win.anom <- winter.anom %>%
-  pivot_longer(-year, names_to = "region", values_to = "anom") %>%
+  pivot_longer(-year, names_to = "region", values_to = "sst") %>%
   mutate(region = factor(region, levels = c("GOA", "EBS", "NP"))) %>%
   ggplot(aes(x = year, y = anom, color = region)) +
   geom_hline(yintercept = 0, linewidth = 0.3, color = "gray60") +
@@ -292,11 +685,10 @@ message("Saved: Figures/ERA5_SST_winter_anom_ts.png")
 detrend <- function(x) residuals(lm(x ~ seq_along(x)))
 
 roll_ar1 <- function(x, width = 15) {
-  rollapply(x, width = width, fill = NA, align = "right",
-            FUN = function(v) acf(v, lag.max = 1, plot = FALSE, na.action = na.pass)$acf[2])
+  roll_right(x, width, FUN = function(v) acf(v, lag.max = 1, plot = FALSE, na.action = na.pass)$acf[2])
 }
 roll_sd <- function(x, width = 15) {
-  rollapply(x, width = width, fill = NA, align = "right", FUN = sd)
+  roll_right(x, width, FUN = sd)
 }
 
 winter.detr <- winter.anom %>%
@@ -373,7 +765,7 @@ winter.raw <- monthly.sst %>%
   arrange(year)
 
 roll_mean <- function(x, width = 15) {
-  rollapply(x, width = width, fill = NA, align = "right", FUN = mean)
+  roll_right(x, width, FUN = mean)
 }
 # roll_sd() is defined in Section 3 and reused here.
 
@@ -411,7 +803,6 @@ message("Saved: Figures/ERA5_SST_CV_15yr_rolling.png")
 # Low box (192.5-207.5E, 45-55N; Litzow et al. 2020 PNAS) overlaid.
 # Sign is flipped if needed so the AL box region holds positive loadings.
 
-library(irlba)
 
 slp.file <- if (file.exists("./Data/era5_slp_NP_1950_2026.nc")) {
   "./Data/era5_slp_NP_1950_2026.nc"
@@ -455,7 +846,7 @@ detrend.slp <- anom.mat.slp %*% t(IH.slp)
 # --- Step 3: area-weight and truncated SVD for EOF1 only ---
 grid.slp <- expand.grid(lon = lons.slp, lat = lats.slp)
 w.slp    <- sqrt(cos(grid.slp$lat * pi / 180))
-sv.slp   <- irlba(sweep(detrend.slp, 1, w.slp, "*"), nv = 1)
+sv.slp   <- partial_svd(sweep(detrend.slp, 1, w.slp, "*"), nv = 1)
 eof1.slp <- sv.slp$u[, 1] / w.slp
 
 # Flip sign so AL box (192.5-207.5E, 45-55N; Litzow et al. 2020 PNAS)
@@ -487,9 +878,7 @@ eof1.map <- ggplot() +
   geom_path(data = al.box.df, aes(x = x, y = y),
             color = "black", linewidth = 0.9) +
   scale_fill_distiller(palette = "RdBu", direction = -1, name = "Loading") +
-  coord_map(projection = "rectangular",
-            parameters = 55,
-            xlim = c(120, 250), ylim = c(20, 66)) +
+  coord_rect(xlim = c(120, 250), ylim = c(20, 66)) +
   scale_x_continuous(breaks = seq(120, 250, 30),
                      labels = lon_label) +
   scale_y_continuous(breaks = seq(20, 60, 10),
@@ -723,7 +1112,7 @@ if (all(file.exists(c(mld.eof.eig.cache, mld.eof.load.cache, mld.eof.pc.cache)))
   A    <- A - rowMeans(A)                          # covariance EOF (center in time)
   w.e  <- sqrt(cos(coord.lat[use.cell] * pi / 180))
   Aw   <- sweep(A, 1, w.e, "*")
-  sv.e <- irlba(Aw, nv = 5, nu = 5)
+  sv.e <- partial_svd(Aw, nv = 5)
 
   # Eigenvalues, % variance, North et al. (1982) sampling error
   lambda  <- sv.e$d^2 / (n.time.e - 1)
@@ -793,8 +1182,7 @@ loadings_map <- function(col, ttl, pctv) {
     geom_path(data = ebs.path, aes(x = x, y = y), color = "black", linewidth = 0.4) +
     scale_fill_gradient2(low = "steelblue4", mid = "white", high = "darkorange4",
                          midpoint = 0, limits = c(-lim, lim), name = "Loading") +
-    coord_map(projection = "rectangular", parameters = 55,
-              xlim = mld.eof.domain$lon, ylim = mld.eof.domain$lat) +
+    coord_rect(xlim = mld.eof.domain$lon, ylim = mld.eof.domain$lat) +
     scale_x_continuous(breaks = seq(120, 240, 30), labels = lon_label) +
     scale_y_continuous(breaks = seq(20, 60, 10),
                        labels = function(y) paste0(y, "°N")) +
@@ -936,52 +1324,41 @@ n.sig.fdr <- sum(mld.reg.df$qval <= 0.05, na.rm = TRUE)
 message(sprintf("Raw p<=0.05: %d cells | BH-FDR q<=0.05: %d cells (of %d)",
                 n.sig.raw, n.sig.fdr, nrow(mld.reg.df)))
 
-# Regular 0.5-deg grid for continuous raster + FDR contouring (ORAS5 is irregular)
-mld.reg.grid <- mld.reg.df %>%
+# Regular 0.5-deg grid for the projected field + FDR contouring (ORAS5 is
+# irregular). Restricted to the Section 17 map domain so the two manuscript
+# maps share identical lat/lon limits. Note mld.reg.df itself keeps its full
+# 110-250E extent: Section 6C still plots that field from 150E.
+# FDR is recomputed over the plotted cells alone: correcting across the full
+# 110-250E field would penalise this map for tests it never shows. (Section
+# 6C still uses the wider-domain qval carried on mld.reg.df.)
+mld.reg.plot <- mld.reg.df %>% filter(lon >= 160, lon <= 250)
+mld.reg.plot$qval <- p.adjust(mld.reg.plot$pval, method = "BH")
+message(sprintf("Plotted domain only: BH-FDR q<=0.05: %d of %d cells",
+                sum(mld.reg.plot$qval <= 0.05, na.rm = TRUE), nrow(mld.reg.plot)))
+
+mld.reg.grid <- mld.reg.plot %>%
   mutate(lon = round(lon / 0.5) * 0.5,
          lat = round(lat / 0.5) * 0.5) %>%
   group_by(lon, lat) %>%
   summarise(beta = mean(beta, na.rm = TRUE),
             qval = mean(qval, na.rm = TRUE),
             .groups = "drop") %>%
-  complete(lon = seq(110, 250, by = 0.5),
+  complete(lon = seq(160, 250, by = 0.5),
            lat = seq(20,  66,  by = 0.5))
 
-col.lim.mld <- max(abs(mld.reg.df$beta), na.rm = TRUE)
+# Colour limit clipped at the 98th percentile of |beta| (values beyond are
+# squished to the end colours). max|beta| is set by a thin tail and leaves
+# the bulk of the field washed out.
+col.lim.mld <- as.numeric(quantile(abs(mld.reg.plot$beta), 0.98, na.rm = TRUE))
 
-# Clean 0-360 world map (avoids horizontal wrap artifacts from map_data("world", wrap=...))
-mapWorld.clean <- map_data("world2")
-
-p.mld.reg <- ggplot() +
-  geom_raster(data = filter(mld.reg.grid, !is.na(beta)),
-              aes(x = lon, y = lat, fill = beta)) +
-  geom_contour(data = filter(mld.reg.grid, !is.na(qval)),
-               aes(x = lon, y = lat, z = qval),
-               breaks = 0.05, color = "black", linewidth = 0.4) +
-  geom_polygon(data = mapWorld.clean,
-               aes(x = long, y = lat, group = group),
-               fill = "gray85", color = "gray30", linewidth = 0.25) +
-  geom_path(data = al.box.df, aes(x = x, y = y),
-            color = "black", linewidth = 0.7, linetype = "dashed") +
-  scale_fill_gradient2(low = "steelblue4", mid = "white",
-                       high = "darkorange4", midpoint = 0,
-                       limits = c(-col.lim.mld, col.lim.mld),
-                       name = "\u03b2 (m / hPa)") +
-  coord_map(projection = "rectangular", parameters = 55,
-            xlim = c(110, 250), ylim = c(20, 66)) +
-  scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
-  scale_y_continuous(breaks = seq(20, 60, 10),
-                     labels = function(y) paste0(y, "\u00b0N")) +
-  labs(title    = "Winter MLD regressed on winter AL SLP (annual Nov\u2013Mar means)",
-       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.05 (Wilks 2016)",
-       x = NULL, y = NULL) +
-  theme_bw(base_size = 11) +
-  theme(panel.grid.minor = element_blank(),
-        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
-        plot.subtitle    = element_text(size = 9))
+p.mld.reg <- ps_regression_map(
+  mld.reg.grid,
+  fill.name = expression(beta~"(m / hPa)"),
+  col.lim   = col.lim.mld)
 
 ggsave("./Figures/MLD_AL_SLP_regression.png",
-       plot = p.mld.reg, width = 9, height = 6, dpi = 300)
+       plot = p.mld.reg, width = grl.width.full, height = 4.8,
+       dpi = 400, bg = "white")
 message("Saved: Figures/MLD_AL_SLP_regression.png")
 
 # ============================================================
@@ -1127,8 +1504,7 @@ p.sst.reg <- ggplot() +
                        high = "darkorange4", midpoint = 0,
                        limits = c(-col.lim.sst, col.lim.sst),
                        name = "β (°C / hPa)") +
-  coord_map(projection = "rectangular", parameters = 55,
-            xlim = c(110, 250), ylim = c(20, 66)) +
+  coord_rect(xlim = c(110, 250), ylim = c(20, 66)) +
   scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
   scale_y_continuous(breaks = seq(20, 60, 10),
                      labels = function(y) paste0(y, "°N")) +
@@ -1174,8 +1550,7 @@ nep_reg_panel <- function(df, fill.lab, ttl) {
               color = "black", linewidth = 0.7, linetype = "dashed") +
     scale_fill_gradient2(low = "steelblue4", mid = "white", high = "darkorange4",
                          midpoint = 0, limits = c(-lim, lim), name = fill.lab) +
-    coord_map(projection = "rectangular", parameters = 55,
-              xlim = c(150, 250), ylim = c(20, 66)) +
+    coord_rect(xlim = c(150, 250), ylim = c(20, 66)) +
     scale_x_continuous(breaks = seq(150, 250, 20), labels = lon_label) +
     scale_y_continuous(breaks = seq(20, 60, 10),
                        labels = function(y) paste0(y, "°N")) +
@@ -1207,7 +1582,7 @@ message("Saved: Figures/SST_MLD_AL_SLP_regression_NEP.png")
 # ============================================================
 # Mirrors Section 5 (SST AR(1) dual-axis) but uses winter-mean MLD
 # anomaly (detrended) for GOA and EBS. Loads pre-extracted ORAS5
-# MLD box NetCDFs, masks to the GOA/EBS polygons (goa.sf / ebs.sf
+# MLD box NetCDFs, masks to the GOA/EBS polygons (goa.poly / ebs.poly
 # from Section 2), computes area-weighted monthly series, detrends
 # monthly anomalies, then rolls 15-yr right-aligned AR(1). AL SLP
 # SD is the same 15-yr rolling z-scored series from Section 5.
@@ -1232,11 +1607,9 @@ if (file.exists(mld.ts.cache)) {
     list(mld = m, lons = lons, lats = lats, dates = dates)
   }
 
-  region_ts_mld <- function(d, poly.sf) {
+  region_ts_mld <- function(d, poly.lon, poly.lat) {
     lons.v <- as.vector(d$lons); lats.v <- as.vector(d$lats)
-    pts <- st_as_sf(data.frame(lon = lons.v, lat = lats.v),
-                    coords = c("lon", "lat"), crs = 4326)
-    in.poly <- lengths(st_within(pts, poly.sf)) > 0
+    in.poly <- inpoly_vec(to360(lons.v), lats.v, poly.lon, poly.lat)
     if (!any(in.poly)) stop("no MLD cells inside polygon")
     w  <- cos(lats.v[in.poly] * pi / 180)
     nt <- dim(d$mld)[3]
@@ -1251,8 +1624,8 @@ if (file.exists(mld.ts.cache)) {
   goa.d <- load_mld_box("./Data/oras5_mld_GOA_box.nc")
   ebs.d <- load_mld_box("./Data/oras5_mld_EBS_box.nc")
 
-  goa.mld.ts <- region_ts_mld(goa.d, goa.sf)
-  ebs.mld.ts <- region_ts_mld(ebs.d, ebs.sf)
+  goa.mld.ts <- region_ts_mld(goa.d, goa.poly$lon, goa.poly$lat)
+  ebs.mld.ts <- region_ts_mld(ebs.d, ebs.poly$lon, ebs.poly$lat)
 
   dates.mld  <- goa.d$dates
   years.mld  <- as.integer(format(dates.mld, "%Y"))
@@ -1370,8 +1743,7 @@ message("Saved: Figures/AL_SD_MLD_AR1_15yr_dual_axis.png")
 # Inputs reuse mld.win (winter detrended MLD anomaly) built above.
 
 roll_mean_15 <- function(x, width = 15) {
-  rollapply(x, width = width, fill = NA, align = "right",
-            FUN = mean, na.rm = TRUE)
+  roll_right(x, width, FUN = mean, na.rm = TRUE)
 }
 
 mld.anom.roll <- mld.win %>%
@@ -1679,7 +2051,7 @@ if (file.exists(mld.ar1.reg.cache)) {
     suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
   }
   roll_ar1_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+    roll_right(x, width, FUN = safe_ar1)
   }
 
   # AL SLP SD from Section 5 (already 15-yr rolling, z-scored)
@@ -1911,7 +2283,7 @@ if (file.exists(mld.1deg.reg.cache)) {
     suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
   }
   roll_ar1_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+    roll_right(x, width, FUN = safe_ar1)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -2117,7 +2489,7 @@ if (file.exists(mld.2deg.reg.cache)) {
     suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
   }
   roll_ar1_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+    roll_right(x, width, FUN = safe_ar1)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -2267,7 +2639,7 @@ if (file.exists(mld.anom.reg.cache)) {
     mean(v)
   }
   roll_mean_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_mean)
+    roll_right(x, width, FUN = safe_mean)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -2484,7 +2856,7 @@ if (file.exists(mld.anom.1deg.cache)) {
     mean(v)
   }
   roll_mean_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_mean)
+    roll_right(x, width, FUN = safe_mean)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -2686,7 +3058,7 @@ if (file.exists(mld.anom.2deg.cache)) {
     mean(v)
   }
   roll_mean_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_mean)
+    roll_right(x, width, FUN = safe_mean)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -2834,7 +3206,7 @@ if (file.exists(mld.ar1.cor.cache)) {
     suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
   }
   roll_ar1_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+    roll_right(x, width, FUN = safe_ar1)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -2919,8 +3291,7 @@ p.mld.ar1.cor <- ggplot() +
   scale_fill_gradient2(low = "steelblue4", mid = "white",
                        high = "darkorange4", midpoint = 0,
                        limits = c(-1, 1), name = "r") +
-  coord_map(projection = "rectangular", parameters = 55,
-            xlim = c(110, 250), ylim = c(20, 66)) +
+  coord_rect(xlim = c(110, 250), ylim = c(20, 66)) +
   scale_x_continuous(breaks = seq(120, 250, 30), labels = lon_label) +
   scale_y_continuous(breaks = seq(20, 60, 10),
                      labels = function(y) paste0(y, "\u00b0N")) +
@@ -3228,7 +3599,7 @@ if (file.exists(sst.ar1.reg.cache)) {
     suppressWarnings(acf(v, lag.max = 1, plot = FALSE)$acf[2])
   }
   roll_ar1_cell <- function(x, width = 15) {
-    rollapply(x, width = width, fill = NA, align = "right", FUN = safe_ar1)
+    roll_right(x, width, FUN = safe_ar1)
   }
 
   al.df   <- al %>% select(year, AL.sd) %>% filter(!is.na(AL.sd))
@@ -3294,6 +3665,7 @@ n.sig.fdr.sst <- sum(sst.ar1.reg.df$qval <= 0.05, na.rm = TRUE)
 message(sprintf("SST AR(1) ~ AL SLP SD: raw p<=0.05: %d | BH-FDR q<=0.05: %d (of %d)",
                 n.sig.raw.sst, n.sig.fdr.sst, nrow(sst.ar1.reg.df)))
 
+# --- Regrid to 0.5 deg for plotting ---
 sst.ar1.reg.grid <- sst.ar1.reg.df %>%
   mutate(lon = round(lon / 0.5) * 0.5,
          lat = round(lat / 0.5) * 0.5) %>%
@@ -3306,35 +3678,18 @@ sst.ar1.reg.grid <- sst.ar1.reg.df %>%
 
 col.lim.sst <- max(abs(sst.ar1.reg.df$beta), na.rm = TRUE)
 
-p.sst.ar1.reg <- ggplot() +
-  geom_raster(data = filter(sst.ar1.reg.grid, !is.na(beta)),
-              aes(x = lon, y = lat, fill = beta)) +
-  geom_contour(data = filter(sst.ar1.reg.grid, !is.na(qval)),
-               aes(x = lon, y = lat, z = qval),
-               breaks = 0.05, color = "black", linewidth = 0.4) +
-  geom_polygon(data = mapWorld.clean,
-               aes(x = long, y = lat, group = group),
-               fill = "gray85", color = "gray30", linewidth = 0.25) +
-  geom_path(data = al.box.df, aes(x = x, y = y),
-            color = "black", linewidth = 0.7, linetype = "dashed") +
-  scale_fill_gradient2(low = "steelblue4", mid = "white",
-                       high = "darkorange4", midpoint = 0,
-                       limits = c(-col.lim.sst, col.lim.sst),
-                       name = "\u03b2 (AR(1) / z)") +
-  coord_cartesian(xlim = c(160, 250), ylim = c(20, 66)) +
-  scale_x_continuous(breaks = seq(160, 250, 20), labels = lon_label) +
-  scale_y_continuous(breaks = seq(20, 60, 10),
-                     labels = function(y) paste0(y, "\u00b0N")) +
-  labs(title    = "Winter SST AR(1) regressed on AL SLP SD (15-yr rolling windows)",
-       subtitle = "GLS AR(1); contour = Benjamini-Hochberg FDR q \u2264 0.05 (Wilks 2016)",
-       x = NULL, y = NULL) +
-  theme_bw(base_size = 11) +
-  theme(panel.grid.minor = element_blank(),
-        panel.grid.major = element_line(color = "gray90", linewidth = 0.3),
-        plot.subtitle    = element_text(size = 9))
+# --- Polar stereographic rendering (GRL manuscript style) ------------------
+# Layout, projection and domain all live in ps_regression_map() so this panel
+# and the other manuscript maps cannot drift apart.
+
+p.sst.ar1.reg <- ps_regression_map(
+  sst.ar1.reg.grid,
+  fill.name = expression(beta~"(AR(1) per SD)"),
+  col.lim   = col.lim.sst)
 
 ggsave("./Figures/SST_AR1_AL_SLP_SD_regression.png",
-       plot = p.sst.ar1.reg, width = 9, height = 6, dpi = 300)
+       plot = p.sst.ar1.reg, width = grl.width.full, height = 4.8,
+       dpi = 400, bg = "white")
 message("Saved: Figures/SST_AR1_AL_SLP_SD_regression.png")
 
 # ============================================================
@@ -3673,7 +4028,6 @@ message("===================================================\n")
 #       spatially effective sample size (Bretherton et al. 1999,
 #       J. Climate, eq. for spatial DOF from EOF eigenvalues).
 
-library(irlba)
 
 # --- (a) Load Section 9 MLD AR(1) regression map (native res) ---
 mld.ar1.reg.cache <- "./Output/mld_ar1_al_slp_sd_regression.csv"
@@ -3742,7 +4096,7 @@ sst.ok   <- sst.mat[ok.cells, , drop = FALSE]
 
 grid.sst <- expand.grid(lon = lons.s360, lat = lats.s)
 w.sst    <- sqrt(cos(grid.sst$lat[ok.cells] * pi / 180))
-sv.sst   <- irlba(sweep(sst.ok, 1, w.sst, "*"), nv = 3)
+sv.sst   <- partial_svd(sweep(sst.ok, 1, w.sst, "*"), nv = 3)
 
 # EOF1 spatial loadings (un-weighted), variance fraction
 eof1.sst <- sv.sst$u[, 1] / w.sst
@@ -4173,3 +4527,219 @@ ggsave("./Figures/AR1_extreme_event_simulation.png",
        plot = p.extreme, width = 10, height = 7, dpi = 300)
 message("Saved: Figures/AR1_extreme_event_simulation.png")
 message("===================================================\n")
+
+# ============================================================
+# SECTION 21: MANUSCRIPT FIGURE 1 — study site + SST time series
+# ============================================================
+# Global context panel: an orthographic globe centred on the North Pacific,
+# showing the analysis domain used for the cellwise regression maps
+# (160-250E, 20-66N) together with the EBS and GOA ecosystem polygons.
+# Drawn with the shared orth_* helpers, so land that runs past the limb
+# closes along the limb rather than chording across the disc.
+# Panels (b)-(e) add GOA and EBS SST anomaly series and their rolling AR(1).
+
+fig1.lon0 <- 205
+fig1.lat0 <- 42
+
+# Filled lon/lat polygon -> disc coordinates
+orth_poly <- function(lon, lat, lon0 = fig1.lon0, lat0 = fig1.lat0,
+                      max.step = 0.5) {
+  d  <- densify_lonlat(c(lon, lon[1]), c(lat, lat[1]), max.step)
+  ac <- orth_azc(d$lon, d$lat, lon0, lat0)
+  orth_xy(ac$az, ac$c)
+}
+
+# Globe limb / ocean disc
+fig1.limb <- data.frame(th = seq(0, 2 * pi, length.out = 721))
+fig1.limb$x <- cos(fig1.limb$th)
+fig1.limb$y <- sin(fig1.limb$th)
+
+fig1.coast <- orth_coast(mapWorld.clean, fig1.lon0, fig1.lat0)
+
+fig1.grat <- bind_rows(
+  bind_rows(lapply(seq(0, 330, by = 30), function(L)
+    cbind(orth_path(c(L, L), c(-90, 90), fig1.lon0, fig1.lat0, n = 400),
+          g = paste0("m", L)))),
+  bind_rows(lapply(seq(-60, 60, by = 30), function(P)
+    cbind(orth_path(c(0, 360), c(P, P), fig1.lon0, fig1.lat0, n = 720),
+          g = paste0("p", P)))))
+
+# Analysis domain, matching ps_regression_map()'s defaults
+fig1.domain <- orth_path(c(160, 250, 250, 160, 160),
+                         c(20,   20,  66,  66,  20),
+                         fig1.lon0, fig1.lat0, n = 800)
+
+fig1.areas <- bind_rows(
+  cbind(orth_poly(ebs.poly$lon, ebs.poly$lat), area = "EBS"),
+  cbind(orth_poly(goa.poly$lon, goa.poly$lat), area = "GOA"))
+
+p.fig1a <- ggplot() +
+  geom_polygon(data = fig1.limb, aes(x = x, y = y),
+               fill = "#EAF1F6", colour = NA) +
+  geom_path(data = fig1.grat, aes(x = x, y = y, group = g),
+            colour = "grey78", linewidth = 0.15, na.rm = TRUE) +
+  # Area fills go under the land so the marine polygons, which extend over
+  # the Alaskan coast by construction, do not paint across it.
+  geom_polygon(data = fig1.areas, aes(x = x, y = y, group = area, fill = area),
+               colour = "black", linewidth = 0.2) +
+  geom_polygon(data = fig1.coast, aes(x = x, y = y, group = group),
+               fill = "grey84", colour = "grey45", linewidth = 0.15) +
+  geom_path(data = fig1.domain, aes(x = x, y = y),
+            colour = "black", linewidth = 0.7) +
+  geom_path(data = fig1.limb, aes(x = x, y = y),
+            colour = "black", linewidth = 0.4) +
+  scale_fill_manual(values = area.colors, name = NULL) +
+  labs(tag = "(a)") +
+  coord_equal(xlim = c(-1.14, 1.14), ylim = c(-1.14, 1.14), expand = FALSE) +
+  theme_grl_map() +
+  theme(legend.position    = "bottom",
+        legend.direction   = "horizontal",
+        legend.title       = element_blank(),
+        legend.key.size    = unit(3, "mm"),
+        legend.margin      = margin(0, 0, 0, 0, "mm"),
+        legend.box.spacing = unit(0.5, "mm"),
+        plot.tag           = element_text(size = 9, face = "bold"),
+        plot.tag.position  = c(0.02, 0.99),
+        plot.margin        = margin(0.5, 1, 1, 1, "mm"))
+
+# Panel (a) is assembled with panels (b)-(e) below.
+
+# --- Panels (b)-(e): GOA and EBS SST anomaly series and rolling AR(1) -----
+# Region means are recomputed here rather than reused from Section 2, which
+# masks with sf::st_within. This uses a dependency-free ray-casting mask and
+# reads only the GOA/EBS bounding box out of the ERA5 file, so the whole
+# panel set builds from a small cache.
+
+fig1.sst.cache <- "./Output/era5_sst_goa_ebs_monthly.csv"
+
+if (file.exists(fig1.sst.cache)) {
+  message("Loading cached GOA/EBS monthly SST: ", fig1.sst.cache)
+  fig1.monthly <- read.csv(fig1.sst.cache)
+} else {
+  sst.f <- if (file.exists("./Data/era5_sst_NP_1950_2026.nc"))
+    "./Data/era5_sst_NP_1950_2026.nc" else "./Data/era5_sst_NP_1950_2025.nc"
+  message("Computing GOA/EBS monthly SST means from: ", sst.f)
+  nc.f  <- nc_open(sst.f)
+  lon.f <- ncvar_get(nc.f, "longitude"); lat.f <- ncvar_get(nc.f, "latitude")
+  tv    <- intersect(c("valid_time", "time"),
+                     c(names(nc.f$var), names(nc.f$dim)))[1]
+  t.f   <- ncvar_get(nc.f, tv)
+
+  # Read only the block covering both polygons
+  li <- which(lon.f >= 182 & lon.f <= 235)
+  ai <- which(lat.f >= 49  & lat.f <= 66)
+  sub <- ncvar_get(nc.f, "sst",
+                   start = c(min(li), min(ai), 1),
+                   count = c(length(li), length(ai), -1)) - 273.15
+  nc_close(nc.f)
+
+  # as.vector: ncvar_get returns 1-D arrays, and a dim attribute on the
+  # weights makes the matrix arithmetic below non-conformable.
+  lon.s <- as.vector(lon.f[li]); lat.s <- as.vector(lat.f[ai])
+  g   <- expand.grid(lon = lon.s, lat = lat.s)   # lon varies fastest
+  m.goa <- inpoly_vec(g$lon, g$lat, goa.poly$lon, goa.poly$lat)
+  m.ebs <- inpoly_vec(g$lon, g$lat, ebs.poly$lon, ebs.poly$lat)
+  message(sprintf("  mask cells: GOA %d, EBS %d", sum(m.goa), sum(m.ebs)))
+
+  mat <- matrix(sub, nrow = length(lon.s) * length(lat.s))
+  rm(sub); gc()
+  wt  <- as.vector(cos(g$lat * pi / 180))
+
+  # Note the parentheses around (!is.na(x)): `!` binds looser than `*` in R,
+  # so `!is.na(x) * w` would negate the product and give a wrong denominator.
+  area_mean <- function(mask) {
+    x <- mat[mask, , drop = FALSE]; w <- wt[mask]
+    colSums(x * w, na.rm = TRUE) / colSums((!is.na(x)) * w)
+  }
+  dts <- as.Date(as.POSIXct(t.f, origin = "1970-01-01", tz = "UTC"))
+  fig1.monthly <- data.frame(year  = as.integer(format(dts, "%Y")),
+                             month = as.integer(format(dts, "%m")),
+                             GOA   = area_mean(m.goa),
+                             EBS   = area_mean(m.ebs))
+  rm(mat); gc()
+  write.csv(fig1.monthly, fig1.sst.cache, row.names = FALSE)
+  message("Saved: ", fig1.sst.cache)
+}
+
+# --- Winter (Nov-Mar, year = January) mean SST, in degrees C ------------
+# Raw SST rather than anomalies: panels (b)/(d) show absolute winter means.
+# AR(1) is unaffected by the choice -- a winter anomaly differs from a raw
+# winter mean by a constant (the same five climatological months every
+# year), and detrending removes constants -- so panels (c)/(e) are identical
+# either way. Years without all five months are dropped, so the partial
+# winter of 1950 and the partial 2026 do not masquerade as full seasons.
+fig1.winter <- fig1.monthly %>%
+  mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  group_by(year = win.year) %>%
+  filter(n() == 5) %>%
+  summarise(GOA = mean(GOA), EBS = mean(EBS), .groups = "drop")
+
+# --- Rolling AR(1) on the detrended winter series (Section 3 method) -----
+fig1.ar1 <- function(d, col) {
+  x <- detrend_lin(d[[col]])
+  data.frame(year = d$year, ar1 = roll_ar1_right(x))
+}
+
+fig1.ts <- fig1.winter %>%
+  tidyr::pivot_longer(c(GOA, EBS), names_to = "region", values_to = "sst")
+
+fig1.roll <- bind_rows(
+  cbind(fig1.ar1(fig1.winter, "GOA"), region = "GOA"),
+  cbind(fig1.ar1(fig1.winter, "EBS"), region = "EBS"))
+
+# With only the winter series shown, colour is free to encode region, tying
+# each row of panels back to the corresponding polygon in panel (a). Series
+# colour is set directly rather than mapped, so panels (b)-(e) carry no
+# legend and panel (a) keeps the only key in the figure. Tags are set per
+# panel with labs(tag=) so the spanning row headers stay untagged.
+fig1.zero <- function() geom_hline(yintercept = 0, colour = "grey70",
+                                   linewidth = 0.25)
+fig1.panel.theme <- theme(plot.margin = margin(0.5, 1, 0.5, 1, "mm"),
+                          plot.tag    = element_text(size = 9, face = "bold"),
+                          plot.tag.position = c(0.015, 0.99))
+
+ts_panel <- function(reg, tag) {
+  ggplot(filter(fig1.ts, region == reg), aes(x = year, y = sst)) +
+    geom_line(linewidth = 0.4, colour = area.colors[[reg]]) +
+    geom_point(size = 0.5, colour = area.colors[[reg]]) +
+    labs(x = NULL, y = "SST (°C)", tag = tag) +
+    theme_grl() + fig1.panel.theme
+}
+
+ar1_panel <- function(reg, tag) {
+  ggplot(filter(fig1.roll, region == reg, !is.na(ar1)), aes(x = year, y = ar1)) +
+    fig1.zero() +
+    geom_line(linewidth = 0.4, colour = area.colors[[reg]]) +
+    geom_point(size = 0.5, colour = area.colors[[reg]]) +
+    labs(x = "Year", y = "AR(1), 15-yr window", tag = tag) +
+    theme_grl() + fig1.panel.theme
+}
+
+p.fig1b <- ts_panel("GOA", "(b)")
+p.fig1c <- ar1_panel("GOA", "(c)")
+p.fig1d <- ts_panel("EBS", "(d)")
+p.fig1e <- ar1_panel("EBS", "(e)")
+
+# Row headers span columns 2-3, so each ecosystem name sits centred over its
+# pair of panels rather than over the left-hand one only.
+fig1.hdr <- function(txt)
+  wrap_elements(full = grid::textGrob(txt, gp = grid::gpar(fontsize = 9)))
+
+# Landscape: (a) fills the left column across all rows; GOA on the top pair,
+# EBS on the bottom, each under its own spanning header.
+fig1.design <- "
+AFF
+ABC
+#GG
+#DE
+"
+
+p.fig1 <- p.fig1a + p.fig1b + p.fig1c + p.fig1d + p.fig1e +
+  fig1.hdr("Gulf of Alaska") + fig1.hdr("Eastern Bering Sea") +
+  plot_layout(design = fig1.design, widths = c(0.85, 1, 1),
+              heights = c(0.12, 1, 0.12, 1))
+
+ggsave("./Figures/Fig_1.png", plot = p.fig1,
+       width = grl.width.full, height = 5.0, dpi = 400, bg = "white")
+message("Saved: Figures/Fig_1.png")
