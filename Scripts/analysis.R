@@ -181,12 +181,20 @@ mapWorld.clean <- map_data("world2")
 # share a projection, domain and layout. `grid` is a regular lon/lat data
 # frame carrying `beta` and optionally `qval`. Study polygons and the AL box
 # are read from the global environment, as elsewhere in the script.
+# `land.fill = NA` leaves land unfilled so an atmospheric field shows
+# through it. `fill.scale` replaces the default diverging scale.
 ps_regression_map <- function(grid, fill.name, col.lim,
                               lon.rng = c(160, 250), lat.rng = c(20, 66),
                               lon0 = 205, cell.half = 0.25, q.level = 0.05,
-                              sig.colour = "#1B7837") {
+                              sig.colour = "#1B7837",
+                              label.size = 7 / .pt,     # EBS/GOA/AL Index labels
+                              land.fill = "grey85",
+                              fill.scale = NULL) {
+  # Cells are drawn 20% oversize so neighbours overlap: exactly abutting
+  # polygons leave hairline anti-aliasing seams in both PNG and PDF output.
+  # Colour boundaries move by a tenth of a cell, which is not visible.
   cells <- grid %>% filter(!is.na(beta)) %>%
-    { ps_cells(.$lon, .$lat, .$beta, half = cell.half, lon0 = lon0,
+    { ps_cells(.$lon, .$lat, .$beta, half = cell.half * 1.2, lon0 = lon0,
                lon.rng = lon.rng, lat.rng = lat.rng) }
 
   # Significance is contoured, in a colour that separates it from the black
@@ -234,7 +242,7 @@ ps_regression_map <- function(grid, fill.name, col.lim,
         geom_path(data = qpath, aes(x = x, y = y, group = seg),
                   colour = sig.colour, linewidth = 0.45) } +
     geom_polygon(data = coast, aes(x = x, y = y, group = group),
-                 fill = "grey85", colour = "grey30", linewidth = 0.2) +
+                 fill = land.fill, colour = "grey30", linewidth = 0.2) +
     geom_path(data = grat$lines, aes(x = x, y = y, group = grat),
               colour = "grey45", linewidth = 0.15, linetype = "dotted") +
     geom_path(data = al.box, aes(x = x, y = y),
@@ -245,11 +253,13 @@ ps_regression_map <- function(grid, fill.name, col.lim,
               colour = "black", linewidth = 0.4) +
     geom_text(data = grat$labels, aes(x = x, y = y, label = lab),
               size = 7 / .pt, colour = "black") +
-    geom_text_halo(area.lab, size = 7 / .pt) +
-    scale_fill_gradient2(low = "steelblue4", mid = "white",
-                         high = "darkorange4", midpoint = 0,
-                         limits = c(-col.lim, col.lim), name = fill.name,
-                         oob = scales::squish) +
+    geom_text_halo(area.lab, size = label.size) +
+    { if (is.null(fill.scale))
+        scale_fill_gradient2(low = "steelblue4", mid = "white",
+                             high = "darkorange4", midpoint = 0,
+                             limits = c(-col.lim, col.lim), name = fill.name,
+                             oob = scales::squish)
+      else fill.scale } +
     coord_equal(xlim = xlim, ylim = ylim, expand = FALSE) +
     guides(fill = guide_colourbar(barwidth  = unit(55, "mm"),
                                   barheight = unit(3, "mm"),
@@ -353,70 +363,6 @@ roll_ar1_right <- function(x, width = 15) {
   roll_right(x, width,
              function(v) acf(v, lag.max = 1, plot = FALSE,
                              na.action = na.pass)$acf[2])
-}
-
-# --- Orthographic (globe) projection --------------------------------------
-# Vertices are carried as (azimuth, angular distance) about the view centre
-# rather than lon/lat. In those coordinates the visible hemisphere is simply
-# c <= 90, so hemisphere clipping is a single half-plane pass, and the
-# Sutherland-Hodgman closing edges run along c = 90 — i.e. exactly along the
-# limb. Land running off the edge of the globe therefore closes on the limb
-# instead of chording straight across the disc.
-orth_azc <- function(lon, lat, lon0 = 205, lat0 = 42) {
-  p0 <- lat0 * pi / 180; p <- lat * pi / 180; dl <- (lon - lon0) * pi / 180
-  cosc <- pmax(-1, pmin(1, sin(p0) * sin(p) + cos(p0) * cos(p) * cos(dl)))
-  data.frame(az = atan2(cos(p) * sin(dl),
-                        cos(p0) * sin(p) - sin(p0) * cos(p) * cos(dl)) * 180 / pi,
-             c  = acos(cosc) * 180 / pi)
-}
-
-# (azimuth, angular distance) -> disc coordinates, unit sphere, north up.
-orth_xy <- function(az, c.deg) {
-  s <- sin(c.deg * pi / 180)
-  data.frame(x = s * sin(az * pi / 180), y = s * cos(az * pi / 180))
-}
-
-# Keep azimuth continuous along a ring so the half-plane clip sees real
-# crossings rather than the +/-180 wrap.
-az_unwrap <- function(a) {
-  if (length(a) < 2) return(a)
-  d <- diff(a); c(a[1], a[1] + cumsum(d - 360 * round(d / 360)))
-}
-
-# Sutherland-Hodgman against the single half-plane c <= cmax.
-clip_hemi <- function(az, cc, cmax = 90) {
-  n <- length(az)
-  if (n < 3) return(NULL)
-  j  <- c(n, seq_len(n - 1))
-  ci <- cc <= cmax; cj <- ci[j]
-  t  <- (cmax - cc[j]) / (cc - cc[j])
-  xs <- rbind(az[j] + t * (az - az[j]), az)
-  ys <- rbind(rep(cmax, n), cc)
-  sel <- rbind(ci != cj, ci)
-  if (!any(sel)) return(NULL)
-  list(az = xs[sel], c = ys[sel])
-}
-
-# Coastlines clipped to the visible hemisphere and projected to the disc.
-orth_coast <- function(map.df, lon0 = 205, lat0 = 42, max.step = 0.5) {
-  parts <- lapply(split(map.df, map.df$group), function(g) {
-    ac <- orth_azc(g$long, g$lat, lon0, lat0)
-    cp <- clip_hemi(az_unwrap(ac$az), ac$c)
-    if (is.null(cp) || length(cp$az) < 3) return(NULL)
-    d <- densify_lonlat(c(cp$az, cp$az[1]), c(cp$c, cp$c[1]), max.step)
-    cbind(orth_xy(d$lon, d$lat), group = g$group[1])
-  })
-  bind_rows(parts[!vapply(parts, is.null, logical(1))])
-}
-
-# A lon/lat path densified then projected to the disc; invisible vertices are
-# set NA so geom_path breaks rather than cutting across the globe.
-orth_path <- function(lon, lat, lon0 = 205, lat0 = 42, n = 600) {
-  i  <- seq_along(lon); ii <- seq(1, length(lon), length.out = n)
-  ac <- orth_azc(approx(i, lon, ii)$y, approx(i, lat, ii)$y, lon0, lat0)
-  xy <- orth_xy(ac$az, ac$c)
-  xy[ac$c > 90, ] <- NA
-  xy
 }
 
 # ============================================================
@@ -602,7 +548,7 @@ end.mo <- max(monthly.anom$date, na.rm = TRUE)
 
 p.monthly.anom <- monthly.anom %>%
   pivot_longer(cols = c(GOA.anom, EBS.anom, NP.anom),
-               names_to = "region", values_to = "sst") %>%
+               names_to = "region", values_to = "anom") %>%
   mutate(region = recode(region,
                          "GOA.anom" = "GOA",
                          "EBS.anom" = "EBS",
@@ -654,7 +600,7 @@ winter.anom <- monthly.anom %>%
 end.yr <- max(winter.anom$year, na.rm = TRUE)
 
 p.win.anom <- winter.anom %>%
-  pivot_longer(-year, names_to = "region", values_to = "sst") %>%
+  pivot_longer(-year, names_to = "region", values_to = "anom") %>%
   mutate(region = factor(region, levels = c("GOA", "EBS", "NP"))) %>%
   ggplot(aes(x = year, y = anom, color = region)) +
   geom_hline(yintercept = 0, linewidth = 0.3, color = "gray60") +
@@ -4529,92 +4475,64 @@ message("Saved: Figures/AR1_extreme_event_simulation.png")
 message("===================================================\n")
 
 # ============================================================
-# SECTION 21: MANUSCRIPT FIGURE 1 — study site + SST time series
+# SECTION 21: MANUSCRIPT FIGURES 1-2 — study site map + SST time series
 # ============================================================
-# Global context panel: an orthographic globe centred on the North Pacific,
-# showing the analysis domain used for the cellwise regression maps
-# (160-250E, 20-66N) together with the EBS and GOA ecosystem polygons.
-# Drawn with the shared orth_* helpers, so land that runs past the limb
-# closes along the limb rather than chording across the disc.
-# Panels (b)-(e) add GOA and EBS SST anomaly series and their rolling AR(1).
+# Fig. 1: a standalone study-site map, drawn through ps_regression_map() so
+# it shares the projection and domain of Figs. 4a/5a. It shows Section 4's
+# SLP EOF1 loadings with the EBS and GOA polygons and the AL Index box.
+# Fig. 2: GOA and EBS winter SST and its rolling AR(1).
 
-fig1.lon0 <- 205
-fig1.lat0 <- 42
+# --- Figure 1: study site map -----------------------------------------------
+# Section 4's EOF1 is on the 0.25-deg 120-250E grid. It is thinned to the
+# 0.5-deg cells of Figs. 4a/5a and cut to the map domain; the field is smooth,
+# so thinning loses nothing visible. SLP is an atmospheric field, so land is
+# left unfilled and the loadings show over it.
+# Colours follow Findings_summary Fig. 4: RdBu stretched over the data range
+# (about -0.001 to 0.011), so white sits near mid-range rather than at zero.
+# Blue therefore marks weak loadings, not negative ones -- the field is
+# one-signed apart from the far southwest -- which the caption should state.
+fig1.eof <- eof.df.slp %>%
+  filter(lon >= 160, lon <= 250, lat >= 20, lat <= 66,
+         lon %% 0.5 == 0, lat %% 0.5 == 0) %>%
+  rename(beta = EOF1)
 
-# Filled lon/lat polygon -> disc coordinates
-orth_poly <- function(lon, lat, lon0 = fig1.lon0, lat0 = fig1.lat0,
-                      max.step = 0.5) {
-  d  <- densify_lonlat(c(lon, lon[1]), c(lat, lat[1]), max.step)
-  ac <- orth_azc(d$lon, d$lat, lon0, lat0)
-  orth_xy(ac$az, ac$c)
-}
+# Share of the (sqrt-cos-weighted, detrended) monthly SLP variance in EOF1,
+# for the caption
+fig1.var <- sv.slp$d[1]^2 / sum(rowSums(detrend.slp^2) * w.slp^2)
+message(sprintf("Fig. 1: SLP EOF1 explains %.1f%% of variance", 100 * fig1.var))
 
-# Globe limb / ocean disc
-fig1.limb <- data.frame(th = seq(0, 2 * pi, length.out = 721))
-fig1.limb$x <- cos(fig1.limb$th)
-fig1.limb$y <- sin(fig1.limb$th)
+p.fig1 <- ps_regression_map(fig1.eof,
+                            fill.name  = "SLP EOF1 loading",
+                            col.lim    = max(abs(fig1.eof$beta)),
+                            label.size = 6 / .pt,
+                            land.fill  = NA,
+                            fill.scale = scale_fill_distiller(
+                              palette = "RdBu", direction = -1,
+                              name = "SLP EOF1 loading"))
 
-fig1.coast <- orth_coast(mapWorld.clean, fig1.lon0, fig1.lat0)
+# GRL single-column width, so it prints unscaled. Height is the map's
+# projected aspect at that width plus room for the colour bar, so the page
+# carries no slack around the map.
+fig1.map.w <- grl.width.single - 0.16   # less the 2-mm plot margins
+fig1.map.h <- fig1.map.w * diff(p.fig1$coordinates$limits$y) /
+                           diff(p.fig1$coordinates$limits$x)
+for (ext in c("png", "pdf"))
+  ggsave(paste0("./Figures/Fig_1.", ext), plot = p.fig1,
+         width = grl.width.single, height = fig1.map.h + 0.55,
+         dpi = 400, bg = "white")
+message("Saved: Figures/Fig_1.png and .pdf")
 
-fig1.grat <- bind_rows(
-  bind_rows(lapply(seq(0, 330, by = 30), function(L)
-    cbind(orth_path(c(L, L), c(-90, 90), fig1.lon0, fig1.lat0, n = 400),
-          g = paste0("m", L)))),
-  bind_rows(lapply(seq(-60, 60, by = 30), function(P)
-    cbind(orth_path(c(0, 360), c(P, P), fig1.lon0, fig1.lat0, n = 720),
-          g = paste0("p", P)))))
-
-# Analysis domain, matching ps_regression_map()'s defaults
-fig1.domain <- orth_path(c(160, 250, 250, 160, 160),
-                         c(20,   20,  66,  66,  20),
-                         fig1.lon0, fig1.lat0, n = 800)
-
-fig1.areas <- bind_rows(
-  cbind(orth_poly(ebs.poly$lon, ebs.poly$lat), area = "EBS"),
-  cbind(orth_poly(goa.poly$lon, goa.poly$lat), area = "GOA"))
-
-p.fig1a <- ggplot() +
-  geom_polygon(data = fig1.limb, aes(x = x, y = y),
-               fill = "#EAF1F6", colour = NA) +
-  geom_path(data = fig1.grat, aes(x = x, y = y, group = g),
-            colour = "grey78", linewidth = 0.15, na.rm = TRUE) +
-  # Area fills go under the land so the marine polygons, which extend over
-  # the Alaskan coast by construction, do not paint across it.
-  geom_polygon(data = fig1.areas, aes(x = x, y = y, group = area, fill = area),
-               colour = "black", linewidth = 0.2) +
-  geom_polygon(data = fig1.coast, aes(x = x, y = y, group = group),
-               fill = "grey84", colour = "grey45", linewidth = 0.15) +
-  geom_path(data = fig1.domain, aes(x = x, y = y),
-            colour = "black", linewidth = 0.7) +
-  geom_path(data = fig1.limb, aes(x = x, y = y),
-            colour = "black", linewidth = 0.4) +
-  scale_fill_manual(values = area.colors, name = NULL) +
-  labs(tag = "(a)") +
-  coord_equal(xlim = c(-1.14, 1.14), ylim = c(-1.14, 1.14), expand = FALSE) +
-  theme_grl_map() +
-  theme(legend.position    = "bottom",
-        legend.direction   = "horizontal",
-        legend.title       = element_blank(),
-        legend.key.size    = unit(3, "mm"),
-        legend.margin      = margin(0, 0, 0, 0, "mm"),
-        legend.box.spacing = unit(0.5, "mm"),
-        plot.tag           = element_text(size = 9, face = "bold"),
-        plot.tag.position  = c(0.02, 0.99),
-        plot.margin        = margin(0.5, 1, 1, 1, "mm"))
-
-# Panel (a) is assembled with panels (b)-(e) below.
-
-# --- Panels (b)-(e): GOA and EBS SST anomaly series and rolling AR(1) -----
+# --- Figure 2: GOA and EBS winter SST and rolling AR(1) --------------------
 # Region means are recomputed here rather than reused from Section 2, which
 # masks with sf::st_within. This uses a dependency-free ray-casting mask and
 # reads only the GOA/EBS bounding box out of the ERA5 file, so the whole
 # panel set builds from a small cache.
 
-fig1.sst.cache <- "./Output/era5_sst_goa_ebs_monthly.csv"
+fig2.sst.cache <- "./Output/era5_sst_goa_ebs_monthly.csv"
 
-if (file.exists(fig1.sst.cache)) {
-  message("Loading cached GOA/EBS monthly SST: ", fig1.sst.cache)
-  fig1.monthly <- read.csv(fig1.sst.cache)
+if (file.exists(fig2.sst.cache)) {
+  message("Loading cached GOA/EBS monthly SST: ", fig2.sst.cache)
+  fig2.monthly <- read.csv(fig2.sst.cache)
 } else {
   sst.f <- if (file.exists("./Data/era5_sst_NP_1950_2026.nc"))
     "./Data/era5_sst_NP_1950_2026.nc" else "./Data/era5_sst_NP_1950_2025.nc"
@@ -4652,23 +4570,23 @@ if (file.exists(fig1.sst.cache)) {
     colSums(x * w, na.rm = TRUE) / colSums((!is.na(x)) * w)
   }
   dts <- as.Date(as.POSIXct(t.f, origin = "1970-01-01", tz = "UTC"))
-  fig1.monthly <- data.frame(year  = as.integer(format(dts, "%Y")),
+  fig2.monthly <- data.frame(year  = as.integer(format(dts, "%Y")),
                              month = as.integer(format(dts, "%m")),
                              GOA   = area_mean(m.goa),
                              EBS   = area_mean(m.ebs))
   rm(mat); gc()
-  write.csv(fig1.monthly, fig1.sst.cache, row.names = FALSE)
-  message("Saved: ", fig1.sst.cache)
+  write.csv(fig2.monthly, fig2.sst.cache, row.names = FALSE)
+  message("Saved: ", fig2.sst.cache)
 }
 
 # --- Winter (Nov-Mar, year = January) mean SST, in degrees C ------------
-# Raw SST rather than anomalies: panels (b)/(d) show absolute winter means.
+# Raw SST rather than anomalies: panels (a)/(c) show absolute winter means.
 # AR(1) is unaffected by the choice -- a winter anomaly differs from a raw
 # winter mean by a constant (the same five climatological months every
-# year), and detrending removes constants -- so panels (c)/(e) are identical
+# year), and detrending removes constants -- so panels (b)/(d) are identical
 # either way. Years without all five months are dropped, so the partial
 # winter of 1950 and the partial 2026 do not masquerade as full seasons.
-fig1.winter <- fig1.monthly %>%
+fig2.winter <- fig2.monthly %>%
   mutate(win.year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
   filter(month %in% c(11, 12, 1, 2, 3)) %>%
   group_by(year = win.year) %>%
@@ -4676,70 +4594,910 @@ fig1.winter <- fig1.monthly %>%
   summarise(GOA = mean(GOA), EBS = mean(EBS), .groups = "drop")
 
 # --- Rolling AR(1) on the detrended winter series (Section 3 method) -----
-fig1.ar1 <- function(d, col) {
+fig2.ar1 <- function(d, col) {
   x <- detrend_lin(d[[col]])
   data.frame(year = d$year, ar1 = roll_ar1_right(x))
 }
 
-fig1.ts <- fig1.winter %>%
+fig2.ts <- fig2.winter %>%
   tidyr::pivot_longer(c(GOA, EBS), names_to = "region", values_to = "sst")
 
-fig1.roll <- bind_rows(
-  cbind(fig1.ar1(fig1.winter, "GOA"), region = "GOA"),
-  cbind(fig1.ar1(fig1.winter, "EBS"), region = "EBS"))
+fig2.roll <- bind_rows(
+  cbind(fig2.ar1(fig2.winter, "GOA"), region = "GOA"),
+  cbind(fig2.ar1(fig2.winter, "EBS"), region = "EBS"))
 
-# With only the winter series shown, colour is free to encode region, tying
-# each row of panels back to the corresponding polygon in panel (a). Series
-# colour is set directly rather than mapped, so panels (b)-(e) carry no
-# legend and panel (a) keeps the only key in the figure. Tags are set per
-# panel with labs(tag=) so the spanning row headers stay untagged.
-fig1.zero <- function() geom_hline(yintercept = 0, colour = "grey70",
+# Colour encodes region, matching the GOA/EBS colours used in Figs. 3-5.
+# Series colour is set directly rather than mapped, so the figure carries no
+# legend; the row headers name the ecosystems. Tags are set per panel with
+# labs(tag=) so the spanning row headers stay untagged.
+fig2.zero <- function() geom_hline(yintercept = 0, colour = "grey70",
                                    linewidth = 0.25)
-fig1.panel.theme <- theme(plot.margin = margin(0.5, 1, 0.5, 1, "mm"),
-                          plot.tag    = element_text(size = 9, face = "bold"),
-                          plot.tag.position = c(0.015, 0.99))
+# Tags take the default top-left slot above each panel, as in Figs. 4-5;
+# inside the plot area they collide with the top y tick label
+fig2.panel.theme <- theme(plot.margin = margin(0.5, 1, 0.5, 1, "mm"),
+                          plot.tag    = element_text(size = 9, face = "bold"))
 
 ts_panel <- function(reg, tag) {
-  ggplot(filter(fig1.ts, region == reg), aes(x = year, y = sst)) +
+  ggplot(filter(fig2.ts, region == reg), aes(x = year, y = sst)) +
     geom_line(linewidth = 0.4, colour = area.colors[[reg]]) +
     geom_point(size = 0.5, colour = area.colors[[reg]]) +
     labs(x = NULL, y = "SST (°C)", tag = tag) +
-    theme_grl() + fig1.panel.theme
+    theme_grl() + fig2.panel.theme
 }
 
 ar1_panel <- function(reg, tag) {
-  ggplot(filter(fig1.roll, region == reg, !is.na(ar1)), aes(x = year, y = ar1)) +
-    fig1.zero() +
+  ggplot(filter(fig2.roll, region == reg, !is.na(ar1)), aes(x = year, y = ar1)) +
+    fig2.zero() +
     geom_line(linewidth = 0.4, colour = area.colors[[reg]]) +
     geom_point(size = 0.5, colour = area.colors[[reg]]) +
     labs(x = "Year", y = "AR(1), 15-yr window", tag = tag) +
-    theme_grl() + fig1.panel.theme
+    theme_grl() + fig2.panel.theme
 }
 
-p.fig1b <- ts_panel("GOA", "(b)")
-p.fig1c <- ar1_panel("GOA", "(c)")
-p.fig1d <- ts_panel("EBS", "(d)")
-p.fig1e <- ar1_panel("EBS", "(e)")
+p.fig2a <- ts_panel("GOA", "(a)")
+p.fig2b <- ar1_panel("GOA", "(b)")
+p.fig2c <- ts_panel("EBS", "(c)")
+p.fig2d <- ar1_panel("EBS", "(d)")
 
-# Row headers span columns 2-3, so each ecosystem name sits centred over its
+# Row headers span both columns, so each ecosystem name sits centred over its
 # pair of panels rather than over the left-hand one only.
-fig1.hdr <- function(txt)
+fig2.hdr <- function(txt)
   wrap_elements(full = grid::textGrob(txt, gp = grid::gpar(fontsize = 9)))
 
-# Landscape: (a) fills the left column across all rows; GOA on the top pair,
-# EBS on the bottom, each under its own spanning header.
-fig1.design <- "
-AFF
-ABC
-#GG
-#DE
+# GOA on the top pair and EBS on the bottom, each under its own spanning
+# header. Built at GRL's full page width so it prints unscaled; the height
+# keeps the panels' earlier ~0.75 height:width.
+fig2.design <- "
+EE
+AB
+FF
+CD
 "
 
-p.fig1 <- p.fig1a + p.fig1b + p.fig1c + p.fig1d + p.fig1e +
-  fig1.hdr("Gulf of Alaska") + fig1.hdr("Eastern Bering Sea") +
-  plot_layout(design = fig1.design, widths = c(0.85, 1, 1),
-              heights = c(0.12, 1, 0.12, 1))
+p.fig2 <- p.fig2a + p.fig2b + p.fig2c + p.fig2d +
+  fig2.hdr("Gulf of Alaska") + fig2.hdr("Eastern Bering Sea") +
+  plot_layout(design = fig2.design, heights = c(0.04, 1, 0.04, 1))
 
-ggsave("./Figures/Fig_1.png", plot = p.fig1,
+for (ext in c("png", "pdf"))
+  ggsave(paste0("./Figures/Fig_2.", ext), plot = p.fig2,
+         width = grl.width.full, height = 6.1, dpi = 400, bg = "white")
+message("Saved: Figures/Fig_2.png and .pdf")
+
+# ============================================================
+# SECTION 22: BOREAL LME WINTER SST AR(1) — DYNAMIC FACTOR ANALYSIS
+# ============================================================
+# Is the reddening seen in the GOA and EBS shared across boreal LMEs?
+# Re-runs the LME DFA (Figures/lme.AR1.DFA.png) with the manuscript AR(1)
+# in place of annual means and centred windows: complete Nov-Mar winters
+# (year = January), linear detrend, then 15-yr right-aligned rolling AR(1),
+# i.e. the Section 21 (Fig. 2) method. As in that figure, the DFA is fit to
+# the LMEs alone, so comparing the GOA and EBS series with the shared trend
+# is not circular. The LMEs are those in ERA5_processing_LMEs.R: LMEs north
+# of 40N less six high-Arctic LMEs (which the original figure still had).
+#
+# Ice check: ERA5 holds SST at 271.46 K (-1.69 C) under sea ice, so winter
+# AR(1) in ice-covered LMEs partly tracks ice cover. The DFA is re-run
+# without the LMEs that extend north of the EBS polygon (65N), and each
+# series' winter ice fraction (share of ocean area at 271.46 K) is listed.
+#
+# ./Data/era5_sst_LME_1950_2026.nc (downloads.R Section 5) and the LME
+# shapefile are read only when the monthly cache below is missing. GOA/EBS
+# SST comes from the Section 21 cache, so their AR(1) matches Fig. 2.
+
+lme.numbers <- c(1, 2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 51, 52, 53, 54,
+                 55, 56, 57, 58, 59, 60, 62, 63, 64)
+lme.drop    <- c("Laptev Sea", "Kara Sea", "Canadian Eastern Arctic - West Greenland",
+                 "Beaufort Sea", "Central Arctic", "East Siberian Sea",
+                 "East Bering Sea", "Gulf of Alaska")   # EBS/GOA: study polygons
+ice.sst.K   <- 271.465           # ERA5 sea-ice SST is 271.46 K; margin for float noise
+lme.north   <- max(ebs.poly$lat) # 65N, the northern edge of the EBS polygon
+
+# Minimal polygon shapefile reader (no sf): one data frame of vertices per
+# record, with a ring id so multi-part LMEs and holes can be masked.
+read_shp_rings <- function(shp) {
+  con <- file(shp, "rb"); on.exit(close(con))
+  invisible(readBin(con, "raw", 100))                          # file header
+  out <- list()
+  repeat {
+    hdr <- readBin(con, "integer", 2, size = 4, endian = "big")
+    if (length(hdr) < 2) break
+    rc   <- rawConnection(readBin(con, "raw", 2 * hdr[2]))    # length in 16-bit words
+    type <- readBin(rc, "integer", 1, size = 4, endian = "little")
+    if (type == 5) {                                           # polygon
+      invisible(readBin(rc, "double", 4, size = 8, endian = "little"))  # bbox
+      n     <- readBin(rc, "integer", 2, size = 4, endian = "little")   # parts, points
+      parts <- readBin(rc, "integer", n[1], size = 4, endian = "little")
+      xy    <- readBin(rc, "double", 2 * n[2], size = 8, endian = "little")
+      out[[length(out) + 1]] <- data.frame(x = xy[c(TRUE, FALSE)],
+                                           y = xy[c(FALSE, TRUE)],
+                                           ring = findInterval(seq_len(n[2]) - 1, parts))
+    } else {
+      out[length(out) + 1] <- list(NULL)
+    }
+    close(rc)
+  }
+  out
+}
+
+# Even-odd rule across all rings, so a point in a hole sits inside two rings
+in_rings <- function(x, y, rings) {
+  inside <- rep(FALSE, length(x))
+  for (r in split(rings, rings$ring)) {
+    cand <- x >= min(r$x) & x <= max(r$x) & y >= min(r$y) & y <= max(r$y)
+    if (any(cand))
+      inside[cand] <- xor(inside[cand], inpoly_vec(x[cand], y[cand], r$x, r$y))
+  }
+  inside
+}
+
+# --- Monthly area-weighted SST and ice fraction per region (cached) ------
+lme.sst.cache <- "./Output/era5_sst_lme_monthly.csv"
+
+if (file.exists(lme.sst.cache)) {
+  message("Loading cached LME monthly SST: ", lme.sst.cache)
+  lme.monthly <- read.csv(lme.sst.cache)
+} else {
+  message("Computing LME monthly SST from ./Data/era5_sst_LME_1950_2026.nc")
+  lme.dbf   <- foreign::read.dbf("./Data/LME shapefiles/LMEs66.dbf", as.is = TRUE)
+  lme.rings <- read_shp_rings("./Data/LME shapefiles/LMEs66.shp")
+  lme.keep  <- which(lme.dbf$LME_NUMBER %in% lme.numbers &
+                     !lme.dbf$LME_NAME %in% lme.drop)
+
+  nc.l  <- nc_open("./Data/era5_sst_LME_1950_2026.nc")
+  lon.l <- as.vector(ncvar_get(nc.l, "longitude"))   # -180 to 179.5, as the shapefile
+  lat.l <- as.vector(ncvar_get(nc.l, "latitude"))
+  t.l   <- ncvar_get(nc.l, "valid_time")
+  mat.l <- matrix(ncvar_get(nc.l, "sst"), nrow = length(lon.l) * length(lat.l))
+  nc_close(nc.l)
+
+  g.l  <- expand.grid(lon = lon.l, lat = lat.l)      # lon varies fastest, as sst
+  wt.l <- cos(g.l$lat * pi / 180)
+  dt.l <- as.Date(as.POSIXct(t.l, origin = "1970-01-01", tz = "UTC"))
+
+  # Same NA-safe weighting as Section 21's area_mean(); ice is the share of
+  # ocean area sitting at ERA5's sea-ice SST
+  region_stats <- function(mask, region, lat.max) {
+    x <- mat.l[mask, , drop = FALSE]; w <- wt.l[mask]
+    ocean <- colSums((!is.na(x)) * w)
+    data.frame(region = region, lat.max = lat.max, n.cells = sum(!is.na(x[, 1])),
+               year  = as.integer(format(dt.l, "%Y")),
+               month = as.integer(format(dt.l, "%m")),
+               sst   = colSums(x * w, na.rm = TRUE) / ocean - 273.15,
+               ice   = colSums((x <= ice.sst.K) * w, na.rm = TRUE) / ocean)
+  }
+
+  lme.monthly <- bind_rows(
+    lapply(lme.keep, function(k)
+      region_stats(in_rings(g.l$lon, g.l$lat, lme.rings[[k]]),
+                   lme.dbf$LME_NAME[k], max(lme.rings[[k]]$y))),
+    # Study polygons on the same 0.5-deg grid: their ice fraction, and a
+    # check of this pipeline against Fig. 2's AR(1)
+    region_stats(inpoly_vec(to360(g.l$lon), g.l$lat, ebs.poly$lon, ebs.poly$lat),
+                 "EBS", max(ebs.poly$lat)),
+    region_stats(inpoly_vec(to360(g.l$lon), g.l$lat, goa.poly$lon, goa.poly$lat),
+                 "GOA", max(goa.poly$lat)))
+  rm(mat.l); gc()
+
+  write.csv(lme.monthly, lme.sst.cache, row.names = FALSE)
+  message("Saved: ", lme.sst.cache)
+}
+
+lme.meta <- distinct(lme.monthly, region, lat.max, n.cells)
+
+# --- Winter means and rolling AR(1), as in Section 21 --------------------
+winter_means <- function(d) {
+  d %>%
+    filter(month %in% c(11, 12, 1, 2, 3)) %>%
+    mutate(year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+    group_by(region, year) %>%
+    filter(n() == 5) %>%                     # complete winters only
+    summarise(across(any_of(c("sst", "ice")), mean), .groups = "drop")
+}
+
+winter_ar1 <- function(d) {
+  d %>%
+    group_by(region) %>%
+    arrange(year, .by_group = TRUE) %>%
+    mutate(ar1 = roll_ar1_right(detrend_lin(sst))) %>%
+    ungroup()
+}
+
+lme.winter <- winter_means(lme.monthly)
+
+goa.ebs.winter <- read.csv("./Output/era5_sst_goa_ebs_monthly.csv") %>%
+  pivot_longer(c(GOA, EBS), names_to = "region", values_to = "sst") %>%
+  winter_means()
+
+# DFA input is the LMEs only; GOA/EBS AR(1), from Fig. 2's series, is
+# compared with the fitted trend afterwards
+lme.ar1   <- winter_ar1(filter(lme.winter, !region %in% c("EBS", "GOA")))
+study.ar1 <- winter_ar1(goa.ebs.winter)
+
+# Check: the 0.5-deg pipeline should reproduce Fig. 2's GOA/EBS AR(1)
+lme.pipe.check <- inner_join(
+  winter_ar1(filter(lme.winter, region %in% c("EBS", "GOA"))),
+  study.ar1,
+  by = c("region", "year"), suffix = c(".lme", ".fig2")) %>%
+  filter(!is.na(ar1.lme), !is.na(ar1.fig2)) %>%
+  group_by(region) %>%
+  summarise(r = cor(ar1.lme, ar1.fig2),
+            max.abs.diff = max(abs(ar1.lme - ar1.fig2)), .groups = "drop")
+message("Check, 0.5-deg LME pipeline vs Fig. 2 GOA/EBS AR(1):")
+print(lme.pipe.check)
+
+# --- Winter ice fraction per region --------------------------------------
+lme.ice <- lme.winter %>%
+  group_by(region) %>%
+  summarise(ice.mean  = mean(ice),
+            ice.51.80 = mean(ice[year <= 1980]),
+            ice.97.26 = mean(ice[year >= 1997]), .groups = "drop") %>%
+  left_join(lme.meta, by = "region") %>%
+  mutate(north.of.ebs = lat.max > lme.north) %>%
+  arrange(desc(ice.mean))
+write.csv(lme.ice, "./Output/LME_winter_ice_fraction.csv", row.names = FALSE)
+message("Winter ice fraction (share of ocean area at ERA5 sea-ice SST):")
+print(as.data.frame(mutate(lme.ice, across(starts_with("ice"), ~ round(.x, 3)))))
+
+# --- One-trend DFA, all LMEs and without those north of 65N --------------
+ar1.wide <- lme.ar1 %>%
+  filter(!is.na(ar1)) %>%
+  select(region, year, ar1) %>%
+  pivot_wider(names_from = year, values_from = ar1)
+ar1.mat <- as.matrix(ar1.wide[, -1])
+rownames(ar1.mat) <- ar1.wide$region
+
+# Same model, R-matrix candidates and EM settings as calculate.ar1.sd.LME.R
+dfa.control <- list(minit = 200, maxit = 30000, allow.degen = FALSE,
+                    conv.test.slope.tol = 0.1, abstol = 0.0001)
+
+fit_dfa_1trend <- function(y, run) {
+  R.forms <- c("diagonal and equal", "diagonal and unequal", "equalvarcov")
+  fits <- lapply(R.forms, function(R)
+    MARSS::MARSS(y, model = list(A = "zero", R = R, m = 1), form = "dfa",
+                 z.score = TRUE, control = dfa.control, silent = TRUE))
+  sel <- data.frame(run = run, R = R.forms,
+                    AICc = sapply(fits, function(f) f$AICc),
+                    converged = sapply(fits, function(f) f$convergence == 0),
+                    min.eig.R = sapply(fits, function(f)
+                      min(eigen(coef(f, type = "matrix")$R, symmetric = TRUE,
+                                only.values = TRUE)$values)))
+  sel$dAICc <- sel$AICc - min(sel$AICc)
+  # Boundary fits pin the trend to the data instead of estimating it: in
+  # "diagonal and unequal" one series' error variance goes to ~0 and the
+  # trend becomes that series; in "equalvarcov" the error correlation can
+  # reach its floor of -1/(n-1), making the cross-series mean noise-free.
+  # Either way the error covariance R is (near) singular and the trend SE
+  # collapses, and such a trend cannot show whether reddening is shared.
+  # AICc is therefore compared only among converged fits whose R has all
+  # eigenvalues above 0.01 (data are z-scored).
+  sel$usable <- sel$converged & sel$min.eig.R > 0.01
+  if (!any(sel$usable)) stop(run, ": no usable DFA fit")
+  best.i <- which(sel$usable)[which.min(sel$AICc[sel$usable])]
+  sel$selected <- seq_along(R.forms) == best.i
+  best <- fits[[best.i]]
+  ci <- MARSS::MARSSparamCIs(best)
+  # With one trend, loadings and trend share an arbitrary sign: orient the
+  # trend with the majority of series (loadings summing positive)
+  s  <- if (sum(ci$par$Z) < 0) -1 else 1
+  lo <- s * as.vector(ci$par.lowCI$Z); up <- s * as.vector(ci$par.upCI$Z)
+  list(selection = sel,
+       loadings  = data.frame(run = run, region = rownames(y),
+                              loading = s * as.vector(ci$par$Z),
+                              lower = pmin(lo, up), upper = pmax(lo, up)),
+       trend     = data.frame(run = run, year = as.integer(colnames(y)),
+                              trend = s * as.vector(best$states),
+                              se = as.vector(best$states.se)))
+}
+
+run.labels <- c(all   = "All LMEs",
+                south = "Excluding LMEs extending north of 65°N")
+lme.south  <- lme.meta$region[lme.meta$lat.max <= lme.north]
+
+message("Fitting DFA: all LMEs (", nrow(ar1.mat), " series)...")
+dfa.all <- fit_dfa_1trend(ar1.mat, run.labels[["all"]])
+message("Fitting DFA: without LMEs north of 65N (",
+        sum(rownames(ar1.mat) %in% lme.south), " series)...")
+dfa.south <- fit_dfa_1trend(ar1.mat[rownames(ar1.mat) %in% lme.south, ],
+                            run.labels[["south"]])
+
+# A trend's sign is arbitrary, and with loadings of both signs the
+# sum-of-loadings rule can orient the two runs oppositely, so the ice-check
+# run is aligned with the all-LMEs run before they are compared
+flip_dfa <- function(d) {
+  lo <- d$loadings$lower
+  d$loadings$lower   <- -d$loadings$upper
+  d$loadings$upper   <- -lo
+  d$loadings$loading <- -d$loadings$loading
+  d$trend$trend      <- -d$trend$trend
+  d
+}
+if (cor(dfa.all$trend$trend, dfa.south$trend$trend) < 0)
+  dfa.south <- flip_dfa(dfa.south)
+
+r.trend <- cor(dfa.all$trend$trend, dfa.south$trend$trend)
+message(sprintf("Shared trend, all LMEs vs without north of 65N: r = %.2f", r.trend))
+print(bind_rows(dfa.all$selection, dfa.south$selection))
+
+# --- GOA/EBS AR(1) vs the shared LME trend -------------------------------
+# Modified Chelton effective sample size from Section 5, since both series
+# are heavily autocorrelated 15-yr rolling statistics. The test is
+# two-sided because the trend's sign is arbitrary.
+study_vs_trend <- function(dfa) {
+  study.ar1 %>%
+    inner_join(dfa$trend, by = "year") %>%
+    group_by(run, region) %>%
+    summarise(ct = list(chelton_test(ar1, trend)), .groups = "drop") %>%
+    mutate(r     = sapply(ct, `[[`, "r.obs"),
+           n.eff = sapply(ct, `[[`, "n.eff"),
+           p     = sapply(ct, function(x) 2 * pt(-abs(x$t.obs), x$df))) %>%
+    select(-ct)
+}
+lme.study.cor <- bind_rows(study_vs_trend(dfa.all), study_vs_trend(dfa.south))
+message("GOA/EBS AR(1) vs shared LME trend (modified Chelton, two-sided):")
+print(as.data.frame(lme.study.cor))
+write.csv(lme.study.cor, "./Output/LME_winter_AR1_DFA_EBS_GOA_correlation.csv",
+          row.names = FALSE)
+
+write.csv(bind_rows(study.ar1, lme.ar1), "./Output/LME_winter_AR1_series.csv",
+          row.names = FALSE)
+write.csv(bind_rows(dfa.all$selection, dfa.south$selection),
+          "./Output/LME_winter_AR1_DFA_model_selection.csv", row.names = FALSE)
+write.csv(bind_rows(dfa.all$loadings, dfa.south$loadings),
+          "./Output/LME_winter_AR1_DFA_loadings.csv", row.names = FALSE)
+write.csv(bind_rows(dfa.all$trend, dfa.south$trend),
+          "./Output/LME_winter_AR1_DFA_trend.csv", row.names = FALSE)
+message("Saved: Output/LME_winter_AR1_*.csv, Output/LME_winter_ice_fraction.csv")
+
+# --- Figures ---------------------------------------------------------------
+# LMEs are neutral grey; GOA/EBS keep their Fig. 2 colours.
+lme_label <- function(r) recode(r, EBS = "Eastern Bering Sea", GOA = "Gulf of Alaska")
+lme.order <- lme_label(dfa.all$loadings$region[order(dfa.all$loadings$loading)])
+lme.panel.theme <- theme(plot.tag = element_text(size = 9, face = "bold"))
+
+# DFA trend units are arbitrary, so trends are shown standardized, with the
+# SE scaled by the same factor
+std_trend <- function(tr) {
+  tr %>%
+    group_by(run) %>%
+    mutate(k = sd(trend), z = (trend - mean(trend)) / k,
+           lo = z - 1.96 * se / k, hi = z + 1.96 * se / k) %>%
+    ungroup()
+}
+fmt_p <- function(p) ifelse(p < 0.01, "p < 0.01", sprintf("p = %.2f", p))
+
+dfa_loadings_panel <- function(ld, tag) {
+  ld %>%
+    mutate(label = factor(lme_label(region), levels = lme.order)) %>%
+    ggplot(aes(x = label, y = loading)) +
+    geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.25) +
+    geom_col(fill = "grey65", width = 0.7) +
+    geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.3, linewidth = 0.3) +
+    coord_flip() +
+    labs(x = NULL, y = "Loading on shared trend", tag = tag) +
+    theme_grl() + lme.panel.theme
+}
+
+# Shared LME trend with the GOA/EBS AR(1) series laid over it, all
+# standardized; the legend carries each series' r with the trend
+dfa_overlay_panel <- function(dfa, tag) {
+  tr <- std_trend(dfa$trend)
+  st <- study.ar1 %>%
+    filter(year %in% tr$year) %>%
+    group_by(region) %>%
+    mutate(z = (ar1 - mean(ar1)) / sd(ar1)) %>%
+    ungroup() %>%
+    mutate(series = lme_label(region))
+  cr   <- filter(lme.study.cor, run == dfa$trend$run[1])
+  cols <- c("Shared LME trend"   = "black",
+            "Eastern Bering Sea" = area.colors[["EBS"]],
+            "Gulf of Alaska"     = area.colors[["GOA"]])
+  labs.r <- setNames(sprintf("%s (r = %.2f, %s)", lme_label(cr$region), cr$r,
+                             fmt_p(cr$p)), lme_label(cr$region))
+  ggplot() +
+    geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.25) +
+    geom_ribbon(data = tr, aes(x = year, ymin = lo, ymax = hi), fill = "grey85") +
+    geom_line(data = st, aes(x = year, y = z, colour = series), linewidth = 0.4) +
+    geom_line(data = tr, aes(x = year, y = z, colour = "Shared LME trend"),
+              linewidth = 0.6) +
+    scale_colour_manual(values = cols, breaks = names(cols), name = NULL,
+                        labels = c("Shared LME trend" = "Shared LME trend (±1.96 SE)",
+                                   labs.r[names(cols)[-1]])) +
+    labs(x = "Year (end of 15-yr window)", y = "Winter SST AR(1), standardized",
+         tag = tag) +
+    theme_grl() + lme.panel.theme
+}
+
+p.lme.dfa <- (dfa_loadings_panel(dfa.all$loadings, "(a)") |
+                dfa_overlay_panel(dfa.all, "(b)")) +
+  plot_layout(widths = c(1, 1.15), guides = "collect") &
+  theme(legend.position = "bottom")
+
+ggsave("./Figures/LME_winter_AR1_DFA.png", plot = p.lme.dfa,
+       width = grl.width.full, height = 3.4, dpi = 400, bg = "white")
+message("Saved: Figures/LME_winter_AR1_DFA.png")
+
+# Ice check: both runs' loadings and trends on shared axes
+run.colors <- setNames(c("#2a78d6", "#eb6834"), run.labels)
+
+p.ice.a <- bind_rows(dfa.all$loadings, dfa.south$loadings) %>%
+  mutate(label = factor(lme_label(region), levels = lme.order),
+         run   = factor(run, levels = run.labels)) %>%
+  ggplot(aes(x = label, y = loading, colour = run)) +
+  geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.25) +
+  geom_pointrange(aes(ymin = lower, ymax = upper),
+                  position = position_dodge(width = 0.6),
+                  size = 0.12, linewidth = 0.3) +
+  scale_colour_manual(values = run.colors, name = NULL, guide = "none") +
+  coord_flip() +
+  labs(x = NULL, y = "Loading on shared trend", tag = "(a)") +
+  theme_grl() + lme.panel.theme
+
+p.ice.b <- std_trend(bind_rows(dfa.all$trend, dfa.south$trend)) %>%
+  mutate(run = factor(run, levels = run.labels)) %>%
+  ggplot(aes(x = year, y = z, colour = run, fill = run)) +
+  geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.25) +
+  geom_ribbon(aes(ymin = lo, ymax = hi), alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 0.4) +
+  annotate("text", x = -Inf, y = Inf, hjust = -0.15, vjust = 1.6, size = 7 / .pt,
+           label = sprintf("r = %.2f", r.trend)) +
+  scale_colour_manual(values = run.colors, name = NULL) +
+  scale_fill_manual(values = run.colors, name = NULL) +
+  labs(x = "Year (end of 15-yr window)", y = "Shared trend, standardized",
+       tag = "(b)") +
+  theme_grl() + lme.panel.theme
+
+p.lme.ice <- (p.ice.a | p.ice.b) +
+  plot_layout(widths = c(1, 1.15), guides = "collect") &
+  theme(legend.position = "bottom")
+
+ggsave("./Figures/LME_winter_AR1_DFA_ice_check.png", plot = p.lme.ice,
+       width = grl.width.full, height = 3.8, dpi = 400, bg = "white")
+message("Saved: Figures/LME_winter_AR1_DFA_ice_check.png")
+
+# Diagnostic: GOA/EBS, then the DFA inputs ordered by loading, each with its
+# winter ice fraction
+wrap_name <- function(x, width = 22)
+  vapply(strwrap(x, width, simplify = FALSE), paste, "", collapse = "\n")
+
+lme.series.dat <- bind_rows(study.ar1, lme.ar1) %>%
+  filter(!is.na(ar1)) %>%
+  left_join(select(lme.ice, region, ice.mean, north.of.ebs), by = "region") %>%
+  mutate(strip = paste0(wrap_name(lme_label(region)), "\nice ",
+                        round(100 * ice.mean), "%",
+                        ifelse(north.of.ebs, ", >65°N", "")),
+         col   = ifelse(region %in% names(area.colors),
+                        area.colors[region], "grey20"))
+lme.series.dat$strip <- factor(
+  lme.series.dat$strip,
+  levels = unique(lme.series.dat$strip[order(match(
+    lme_label(lme.series.dat$region),
+    c("Eastern Bering Sea", "Gulf of Alaska", rev(lme.order))))]))
+
+p.lme.series <- ggplot(lme.series.dat, aes(x = year, y = ar1)) +
+  geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.25) +
+  geom_line(aes(colour = col), linewidth = 0.35) +
+  scale_colour_identity() +
+  facet_wrap(~ strip, ncol = 6) +
+  labs(x = "Year (end of 15-yr window)", y = "Winter SST AR(1), 15-yr window") +
+  theme_grl(base_size = 7)
+
+ggsave("./Figures/LME_winter_AR1_series.png", plot = p.lme.series,
        width = grl.width.full, height = 5.0, dpi = 400, bg = "white")
-message("Saved: Figures/Fig_1.png")
+message("Saved: Figures/LME_winter_AR1_series.png")
+
+# ============================================================
+# SECTION 23: CMIP6 WINTER SST AR(1) — SSP2-4.5 vs PREINDUSTRIAL CONTROL
+# ============================================================
+# Is increased reddening an expression of climate change? Replots
+# CMIP6SST.AR1.png (CMIP6.ar1.sd.R) with the manuscript AR(1): Nov-Mar means
+# (year = January) over this study's GOA and EBS polygons, cos(lat)
+# weighted, then 15-yr right-aligned rolling AR(1). Each of the 20 SSP2-4.5
+# models is paired with its own piControl run (stored in its SSP5-8.5 file)
+# and both are processed identically; models are averaged with the
+# region-specific skill weights from CMIP6-attribution.
+#
+# As for the observed series (Section 21), each model series is linearly
+# detrended over its full length (winters 1851-2099) before the rolling
+# AR(1). Forced warming is curved over 250 years, but what a straight line
+# leaves within 15-yr windows barely matters: the loess detrend used in
+# CMIP6.ar1.sd.R changes the weighted mean AR(1) by at most 0.02.
+# piControl years (1850-2099) are labels only.
+#
+# ./Data/CMIP6 (downloads.R Section 6) is read only when the monthly cache
+# below is missing. The GOA polygon differs from the smaller coastal GOA box
+# used to derive the model weights; the EBS polygons are identical.
+
+cmip6.dir   <- "./Data/CMIP6"
+cmip6.cache <- "./Output/cmip6_sst_ebs_goa_monthly.csv"
+
+if (file.exists(cmip6.cache)) {
+  message("Loading cached CMIP6 GOA/EBS monthly SST: ", cmip6.cache)
+  cmip6.monthly <- read.csv(cmip6.cache)
+} else {
+  message("Computing CMIP6 GOA/EBS monthly SST from ", cmip6.dir)
+  cmip6.models <- sub("_245\\.nc$", "", list.files(file.path(cmip6.dir, "ssp245"),
+                                                    pattern = "_245\\.nc$"))
+  cmip6.monthly <- bind_rows(lapply(cmip6.models, function(model) {
+    runs <- c(hist_ssp245 = file.path(cmip6.dir, "ssp245", paste0(model, "_245.nc")),
+              piControl   = file.path(cmip6.dir, "ssp585", paste0(model, ".nc")))
+    bind_rows(lapply(names(runs), function(ex) {
+      nc  <- nc_open(runs[[ex]])
+      j   <- match(ex, ncvar_get(nc, "experiment"))
+      if (is.na(j)) stop(ex, " not found in ", runs[[ex]])
+      lon <- as.vector(ncvar_get(nc, "lon")); lat <- as.vector(ncvar_get(nc, "lat"))
+      dts <- as.Date(ncvar_get(nc, "time"), origin = "1970-01-01")
+      tos <- ncvar_get(nc, "tos", start = c(j, 1, 1, 1), count = c(1, -1, -1, -1))
+      nc_close(nc)
+      if (max(tos, na.rm = TRUE) > 200) tos <- tos - 273.15   # K -> C
+
+      g   <- expand.grid(lon = lon, lat = lat)   # lon varies fastest, as tos
+      mat <- matrix(tos, nrow = nrow(g))
+      wt  <- cos(g$lat * pi / 180)
+      # Same NA-safe area weighting as Section 21's area_mean()
+      area_mean <- function(mask) {
+        x <- mat[mask, , drop = FALSE]; w <- wt[mask]
+        colSums(x * w, na.rm = TRUE) / colSums((!is.na(x)) * w)
+      }
+      data.frame(model = model, experiment = ex,
+                 year  = as.integer(format(dts, "%Y")),
+                 month = as.integer(format(dts, "%m")),
+                 EBS = area_mean(inpoly_vec(g$lon, g$lat, ebs.poly$lon, ebs.poly$lat)),
+                 GOA = area_mean(inpoly_vec(g$lon, g$lat, goa.poly$lon, goa.poly$lat)))
+    }))
+  }))
+  write.csv(cmip6.monthly, cmip6.cache, row.names = FALSE)
+  message("Saved: ", cmip6.cache)
+}
+
+# Check: every run should be 3000 consecutive months, Jan 1850 - Dec 2099
+cmip6.span <- cmip6.monthly %>%
+  group_by(model, experiment) %>%
+  summarise(ok = n() == 3000 && all(diff(12 * year + month) == 1) &&
+              min(year) == 1850 && max(year) == 2099, .groups = "drop")
+if (!all(cmip6.span$ok))
+  stop("CMIP6 runs with unexpected time axes: ",
+       paste(with(filter(cmip6.span, !ok), paste(model, experiment)), collapse = ", "))
+message(sprintf("CMIP6: %d models x %d experiments, all Jan 1850 - Dec 2099",
+                n_distinct(cmip6.monthly$model), n_distinct(cmip6.monthly$experiment)))
+
+# --- Winter means, linear detrend, rolling AR(1) ----------------------------
+cmip6.ar1 <- cmip6.monthly %>%
+  pivot_longer(c(EBS, GOA), names_to = "region", values_to = "sst") %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  mutate(year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  group_by(model, experiment, region, year) %>%
+  filter(n() == 5) %>%                           # complete winters only
+  summarise(sst = mean(sst), .groups = "drop_last") %>%
+  arrange(year, .by_group = TRUE) %>%
+  mutate(ar1 = roll_ar1_right(detrend_lin(sst))) %>%
+  ungroup()
+
+# --- Skill-weighted mean across models --------------------------------------
+cmip6.wts <- read.csv(file.path(cmip6.dir, "normalized_CMIP6_weights.csv")) %>%
+  filter(region %in% c("Eastern_Bering_Sea", "Gulf_of_Alaska")) %>%
+  mutate(region = recode(region, Eastern_Bering_Sea = "EBS", Gulf_of_Alaska = "GOA")) %>%
+  select(region, model, weight = normalized_weight)
+
+missing.wts <- setdiff(unique(cmip6.ar1$model), cmip6.wts$model)
+if (length(missing.wts)) stop("No weights for: ", paste(missing.wts, collapse = ", "))
+
+cmip6.wtd <- cmip6.ar1 %>%
+  filter(!is.na(ar1)) %>%
+  inner_join(cmip6.wts, by = c("region", "model")) %>%
+  group_by(experiment, region, year) %>%
+  summarise(ar1.wmean = weighted.mean(ar1, weight),
+            ar1.wsd   = sqrt(sum(weight * (ar1 - weighted.mean(ar1, weight))^2) /
+                               sum(weight)),
+            n.models  = n(), .groups = "drop")
+
+# Forced minus control, per model: mean AR(1) over each period of the forced
+# run against the model's own mean control AR(1), then weighted across models
+cmip6.ctrl <- cmip6.ar1 %>%
+  filter(experiment == "piControl", !is.na(ar1)) %>%
+  group_by(model, region) %>%
+  summarise(control = mean(ar1), .groups = "drop")
+
+cmip6.change <- bind_rows(lapply(list(c(1965, 2026), c(2012, 2026), c(2070, 2099)),
+                                 function(p) {
+  cmip6.ar1 %>%
+    filter(experiment == "hist_ssp245", year >= p[1], year <= p[2]) %>%
+    group_by(model, region) %>%
+    summarise(forced = mean(ar1), .groups = "drop") %>%
+    inner_join(cmip6.ctrl, by = c("model", "region")) %>%
+    inner_join(cmip6.wts,  by = c("model", "region")) %>%
+    group_by(region) %>%
+    summarise(period          = paste(p, collapse = "-"),
+              forced.wmean    = weighted.mean(forced, weight),
+              control.wmean   = weighted.mean(control, weight),
+              diff.wmean      = weighted.mean(forced - control, weight),
+              n.models.higher = sum(forced > control),
+              n.models        = n(), .groups = "drop")
+}))
+message("CMIP6 winter AR(1), SSP2-4.5 vs each model's own control (weighted):")
+print(as.data.frame(mutate(cmip6.change, across(ends_with("wmean"), ~ round(.x, 3)))))
+
+write.csv(cmip6.wtd, "./Output/CMIP6_winter_AR1_weighted_mean.csv", row.names = FALSE)
+write.csv(cmip6.change, "./Output/CMIP6_winter_AR1_ssp245_vs_piControl.csv",
+          row.names = FALSE)
+
+# --- Figure -------------------------------------------------------------------
+# Weighted model mean, with a +/- 1 weighted SD band across models
+cmip6.cols <- c(piControl = "#2a78d6", hist_ssp245 = "#eb6834")
+cmip6.labs <- c(piControl = "Preindustrial control", hist_ssp245 = "Historical + SSP2-4.5")
+
+p.cmip6 <- cmip6.wtd %>%
+  mutate(region     = factor(region, levels = c("GOA", "EBS"),
+                             labels = c("Gulf of Alaska", "Eastern Bering Sea")),
+         experiment = factor(experiment, levels = names(cmip6.cols))) %>%
+  ggplot(aes(x = year, y = ar1.wmean, colour = experiment, fill = experiment)) +
+  geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.25) +
+  geom_ribbon(aes(ymin = ar1.wmean - ar1.wsd, ymax = ar1.wmean + ar1.wsd),
+              alpha = 0.15, colour = NA) +
+  geom_line(linewidth = 0.4) +
+  facet_wrap(~ region, nrow = 1) +
+  scale_colour_manual(values = cmip6.cols, labels = cmip6.labs, name = NULL) +
+  scale_fill_manual(values = cmip6.cols, labels = cmip6.labs, name = NULL) +
+  labs(x = "Year (end of 15-yr window)",
+       y = "Winter SST AR(1), weighted model mean") +
+  theme_grl() +
+  theme(legend.position = "bottom")
+
+ggsave("./Figures/CMIP6_winter_AR1_ssp245_piControl.png", plot = p.cmip6,
+       width = grl.width.full, height = 3.0, dpi = 400, bg = "white")
+message("Saved: Figures/CMIP6_winter_AR1_ssp245_piControl.png")
+
+# ============================================================
+# SECTION 24: MANUSCRIPT FIGURE 3 — LME DFA (a-b) + CMIP6 AR(1) (c-d)
+# ============================================================
+# Top row, Section 22: (a) boreal-LME loadings on the shared winter AR(1)
+# trend, (b) that trend with the GOA/EBS AR(1) laid over it. Bottom row,
+# Section 23: CMIP6 winter AR(1), SSP2-4.5 vs preindustrial control, for
+# (c) GOA and (d) EBS on a common y axis, with the observed (ERA5, Fig. 2)
+# AR(1) for each region added. Each row keeps its own legend, so the rows
+# are assembled separately and then stacked.
+
+fig3.legend.theme <- theme(legend.position    = "bottom",
+                           legend.margin      = margin(0, 0, 0, 0),
+                           legend.box.spacing = unit(1, "mm"))
+
+fig3.row1 <- (dfa_loadings_panel(dfa.all$loadings, "(a)") |
+                dfa_overlay_panel(dfa.all, "(b)")) +
+  plot_layout(widths = c(1, 1.15), guides = "collect") &
+  fig3.legend.theme
+
+fig3.obs <- filter(study.ar1, !is.na(ar1))
+
+fig3.cmip6.ylim <- range(c(cmip6.wtd$ar1.wmean - cmip6.wtd$ar1.wsd,
+                           cmip6.wtd$ar1.wmean + cmip6.wtd$ar1.wsd, fig3.obs$ar1))
+
+# Observed series join the colour legend; the fill scale carries the same
+# levels (observed unfilled) so the two legends merge into one
+fig3.levels <- c(names(cmip6.cols), "observed")
+fig3.cols   <- c(cmip6.cols, observed = "black")
+fig3.labs   <- c(cmip6.labs, observed = "Observed (ERA5)")
+
+# One region per panel, so each carries its own tag; the region name sits in
+# a strip as in the standalone CMIP6 figure
+cmip6_panel <- function(reg, reg.label, tag, y.title = TRUE) {
+  cmip6.wtd %>%
+    filter(region == reg) %>%
+    mutate(experiment = factor(experiment, levels = names(cmip6.cols)),
+           panel      = reg.label) %>%
+    ggplot(aes(x = year, y = ar1.wmean, colour = experiment, fill = experiment)) +
+    geom_hline(yintercept = 0, colour = "grey70", linewidth = 0.25) +
+    geom_ribbon(aes(ymin = ar1.wmean - ar1.wsd, ymax = ar1.wmean + ar1.wsd),
+                alpha = 0.15, colour = NA) +
+    geom_line(linewidth = 0.4) +
+    geom_line(data = filter(fig3.obs, region == reg),
+              aes(x = year, y = ar1, colour = "observed"),
+              inherit.aes = FALSE, linewidth = 0.5) +
+    facet_wrap(~ panel) +
+    scale_colour_manual(values = fig3.cols, limits = fig3.levels,
+                        labels = fig3.labs, name = NULL) +
+    scale_fill_manual(values = c(cmip6.cols, observed = NA), limits = fig3.levels,
+                      labels = fig3.labs, name = NULL) +
+    coord_cartesian(ylim = fig3.cmip6.ylim) +
+    labs(x = "Year (end of 15-yr window)",
+         y = if (y.title) "Winter SST AR(1), 15-yr window" else NULL,
+         tag = tag) +
+    theme_grl() + lme.panel.theme
+}
+
+fig3.row2 <- (cmip6_panel("GOA", "Gulf of Alaska", "(c)") |
+                cmip6_panel("EBS", "Eastern Bering Sea", "(d)", y.title = FALSE)) +
+  plot_layout(guides = "collect") &
+  fig3.legend.theme
+
+p.fig3 <- wrap_elements(full = fig3.row1) / wrap_elements(full = fig3.row2) +
+  plot_layout(heights = c(1.15, 1))
+
+ggsave("./Figures/Fig_3.png", plot = p.fig3,
+       width = grl.width.full, height = 6.2, dpi = 400, bg = "white")
+message("Saved: Figures/Fig_3.png")
+
+# ============================================================
+# SECTION 25: MANUSCRIPT FIGURE 4 — SST AR(1) and AL SLP SD
+# ============================================================
+# (a) Section 17's cellwise regression of SST AR(1) on AL SLP SD. (b) GOA
+# and (c) EBS: 15-yr rolling AL SLP SD and SST AR(1) on dual axes, as in
+# Section 5 but from complete winters only, like Figs. 2-3. Both panels use
+# one AR(1) range and one AL SD range, so the axes match across the row and
+# each axis title is drawn once: AR(1) at left, AL SD at right, year beneath.
+# The figure is built at GRL's full page width (190 mm), so it prints with
+# no scaling and 8-pt text stays 8 pt. The map row is taller than the
+# time-series row; the map keeps its projection's shape and is centred.
+# Saved as PNG and as a PDF at the same physical size, for checking font
+# sizes at 100% zoom.
+
+# Section 17's map, redrawn with 6-pt area labels: at this panel size the
+# default 7-pt labels run over the EBS polygon and the AL box
+p.fig4a <- ps_regression_map(sst.ar1.reg.grid,
+                             fill.name  = expression(beta~"(AR(1) per SD)"),
+                             col.lim    = col.lim.sst,
+                             label.size = 6 / .pt) +
+  labs(tag = "(a)") +
+  theme(plot.tag = element_text(size = 9, face = "bold"))
+
+# --- Complete winters only (all five Nov-Mar months) ------------------------
+# SST AR(1) is Fig. 2's series (Section 21). The AL series drops the partial
+# winter of 1950 before the rolling SD, so both series start in 1965.
+fig4.al <- al.monthly %>%
+  mutate(year = ifelse(month %in% c(11, 12), year + 1L, year)) %>%
+  filter(month %in% c(11, 12, 1, 2, 3)) %>%
+  group_by(year) %>%
+  filter(n() == 5) %>%
+  summarise(SLP = mean(SLP), .groups = "drop") %>%
+  arrange(year) %>%
+  mutate(AL.sd = as.numeric(scale(roll_sd(SLP))))
+
+fig4.dat <- fig2.roll %>%
+  pivot_wider(names_from = region, values_from = ar1, names_glue = "{region}.ar1") %>%
+  inner_join(select(fig4.al, year, AL.sd), by = "year") %>%
+  filter(!is.na(GOA.ar1), !is.na(EBS.ar1), !is.na(AL.sd))
+
+fig4.chel.goa <- chelton_test(fig4.dat$GOA.ar1, fig4.dat$AL.sd)
+fig4.chel.ebs <- chelton_test(fig4.dat$EBS.ar1, fig4.dat$AL.sd)
+message(sprintf("Fig. 4, complete winters %d-%d: GOA r = %.2f, p = %.3f; EBS r = %.2f, p = %.3f",
+                min(fig4.dat$year), max(fig4.dat$year),
+                fig4.chel.goa$r.obs, fig4.chel.goa$pval,
+                fig4.chel.ebs$r.obs, fig4.chel.ebs$pval))
+
+fig4.al.sd.range <- range(fig4.dat$AL.sd)
+fig4.ar1.range   <- range(c(fig4.dat$GOA.ar1, fig4.dat$EBS.ar1))
+fig4.k <- diff(fig4.ar1.range) / diff(fig4.al.sd.range)   # AL SD onto the AR(1) axis
+fig4.b <- fig4.ar1.range[1] - fig4.k * fig4.al.sd.range[1]
+
+# --- Shared by Figs. 4-5 -----------------------------------------------------
+# One dual-axis panel: a region's 15-yr AR(1) on the left axis and AL SLP SD
+# on the right, mapped onto the AR(1) axis by k and b. `d` holds year,
+# GOA.ar1, EBS.ar1 and AL.sd; `series` names the GOA, EBS and AL series.
+# Both panels of a figure carry all three series in their scales, so their
+# legends are identical and collect into one.
+dual_ar1_panel <- function(d, reg, reg.label, chel, tag, series, k, b, ar1.range,
+                           left.title = NULL, right.title = NULL) {
+  cols   <- setNames(c(area.colors[["GOA"]], area.colors[["EBS"]], "grey30"), series)
+  ltys   <- setNames(c("solid", "solid", "dashed"), series)
+  shapes <- setNames(c(16, 16, 1), series)
+  d.long <- bind_rows(
+    data.frame(year = d$year, y = d[[paste0(reg, ".ar1")]], series = series[[reg]]),
+    data.frame(year = d$year, y = k * d$AL.sd + b, series = series[["AL"]])) %>%
+    mutate(panel = reg.label)
+  lbl <- sprintf("r = %.2f, p = %.3f\nN* = %.1f", chel$r.obs, chel$pval, chel$n.eff)
+
+  # show.legend = TRUE: ggplot otherwise keys only the series present in
+  # each panel, and the two legends would then differ and not collect
+  ggplot(d.long, aes(x = year, y = y, colour = series, linetype = series,
+                     shape = series)) +
+    geom_line(linewidth = 0.4, show.legend = TRUE) +
+    geom_point(size = 0.8, show.legend = TRUE) +
+    annotate("text", x = min(d.long$year), y = -Inf, label = lbl, hjust = 0,
+             vjust = -0.35, size = 7 / .pt, lineheight = 1) +
+    facet_wrap(~ panel) +
+    scale_colour_manual(values = cols, limits = unname(series), name = NULL) +
+    scale_linetype_manual(values = ltys, limits = unname(series), name = NULL) +
+    scale_shape_manual(values = shapes, limits = unname(series), name = NULL) +
+    scale_y_continuous(name = left.title, limits = ar1.range,
+                       sec.axis = sec_axis(~ (. - b) / k, name = right.title)) +
+    labs(x = "Year (end of 15-yr window)", tag = tag) +
+    theme_grl() +
+    theme(plot.tag = element_text(size = 9, face = "bold"))
+}
+
+# Assemble and save a three-panel figure at GRL's full page width (190 mm),
+# so it prints unscaled: (a) map on top, centred; (b)-(c) below with one
+# legend and shared axis titles. Panel sizes are in inches: (b)-(c) are as
+# wide as two dual-axis panels allow within 190 mm and 0.71 as tall as
+# wide; the map is taller and keeps its projection's aspect. Saved as PNG
+# and as a PDF at the same physical size, for checking fonts at 100% zoom.
+save_map_dual_figure <- function(p.map, p.b, p.c, file.stem,
+                                 map.h = 2.6, dual.w = 2.75, dual.h = 1.95) {
+  map.w <- map.h * diff(p.map$coordinates$limits$x) /
+                   diff(p.map$coordinates$limits$y)
+  row1 <- p.map +
+    plot_layout(widths = unit(map.w, "in"), heights = unit(map.h, "in"))
+  row2 <- (p.b | p.c) +
+    plot_layout(widths  = unit(rep(dual.w, 2), "in"),
+                heights = unit(dual.h, "in"),
+                guides = "collect", axis_titles = "collect_x") &
+    theme(legend.position    = "bottom",
+          legend.margin      = margin(0, 0, 0, 0),
+          legend.box.spacing = unit(1, "mm"))
+  # Each row: its panel plus the space its labels, strip, colour bar and
+  # legend need around it
+  row.h <- c(map.h + 0.80, dual.h + 1.00)
+  fig <- wrap_elements(full = row1) / wrap_elements(full = row2) +
+    plot_layout(heights = row.h)
+  # Standard pdf() device: cairo_pdf needs XQuartz, which this machine lacks
+  for (ext in c("png", "pdf"))
+    ggsave(paste0(file.stem, ".", ext), plot = fig, width = grl.width.full,
+           height = sum(row.h), dpi = 400, bg = "white")
+  message(sprintf("Saved: %s.png and .pdf (%.0f x %.0f mm)", file.stem,
+                  grl.width.full * 25.4, sum(row.h) * 25.4))
+  invisible(fig)
+}
+
+fig4.series <- c(GOA = "Gulf of Alaska SST AR(1)",
+                 EBS = "Eastern Bering Sea SST AR(1)",
+                 AL  = "AL SLP SD")
+
+p.fig4 <- save_map_dual_figure(
+  p.fig4a,
+  dual_ar1_panel(fig4.dat, "GOA", "Gulf of Alaska", fig4.chel.goa, "(b)",
+                 fig4.series, fig4.k, fig4.b, fig4.ar1.range,
+                 left.title = "SST AR(1)"),
+  dual_ar1_panel(fig4.dat, "EBS", "Eastern Bering Sea", fig4.chel.ebs, "(c)",
+                 fig4.series, fig4.k, fig4.b, fig4.ar1.range,
+                 right.title = "AL SLP SD (z-scored)"),
+  "./Figures/Fig_4")
+
+# ============================================================
+# SECTION 26: MANUSCRIPT FIGURE 5 — MLD and AL SLP
+# ============================================================
+# Same layout and size as Fig. 4. (a) Section 6's cellwise regression of
+# winter MLD anomaly on winter AL SLP anomaly. (b) GOA and (c) EBS: 15-yr
+# rolling MLD AR(1), from Section 7's detrended winter MLD anomalies, with
+# the complete-winter AL SLP SD used in Fig. 4.
+# Complete winters only: ORAS5 starts in Jan 1958, so winter 1958 (Jan-Mar)
+# is dropped and MLD AR(1) starts in 1973. Winter 2026 is kept: the ORAS5
+# update in downloads.R Section 4 requested Jan-Mar 2026, but the cached
+# winter series cannot confirm that March is present.
+
+p.fig5a <- ps_regression_map(mld.reg.grid,
+                             fill.name  = expression(beta~"(m / hPa)"),
+                             col.lim    = col.lim.mld,
+                             label.size = 6 / .pt) +
+  labs(tag = "(a)") +
+  theme(plot.tag = element_text(size = 9, face = "bold"))
+
+fig5.dat <- mld.win %>%
+  filter(year > 1958) %>%
+  arrange(year) %>%
+  mutate(GOA.ar1 = roll_ar1_right(GOA),
+         EBS.ar1 = roll_ar1_right(EBS)) %>%
+  select(year, GOA.ar1, EBS.ar1) %>%
+  inner_join(select(fig4.al, year, AL.sd), by = "year") %>%
+  filter(!is.na(GOA.ar1), !is.na(EBS.ar1), !is.na(AL.sd))
+
+fig5.chel.goa <- chelton_test(fig5.dat$GOA.ar1, fig5.dat$AL.sd)
+fig5.chel.ebs <- chelton_test(fig5.dat$EBS.ar1, fig5.dat$AL.sd)
+message(sprintf("Fig. 5, complete winters %d-%d: GOA r = %.2f, p = %.3f; EBS r = %.2f, p = %.3f",
+                min(fig5.dat$year), max(fig5.dat$year),
+                fig5.chel.goa$r.obs, fig5.chel.goa$pval,
+                fig5.chel.ebs$r.obs, fig5.chel.ebs$pval))
+
+fig5.ar1.range <- range(c(fig5.dat$GOA.ar1, fig5.dat$EBS.ar1))
+fig5.k <- diff(fig5.ar1.range) / diff(range(fig5.dat$AL.sd))
+fig5.b <- fig5.ar1.range[1] - fig5.k * min(fig5.dat$AL.sd)
+fig5.series <- c(GOA = "Gulf of Alaska MLD AR(1)",
+                 EBS = "Eastern Bering Sea MLD AR(1)",
+                 AL  = "AL SLP SD")
+
+p.fig5 <- save_map_dual_figure(
+  p.fig5a,
+  dual_ar1_panel(fig5.dat, "GOA", "Gulf of Alaska", fig5.chel.goa, "(b)",
+                 fig5.series, fig5.k, fig5.b, fig5.ar1.range,
+                 left.title = "MLD AR(1)"),
+  dual_ar1_panel(fig5.dat, "EBS", "Eastern Bering Sea", fig5.chel.ebs, "(c)",
+                 fig5.series, fig5.k, fig5.b, fig5.ar1.range,
+                 right.title = "AL SLP SD (z-scored)"),
+  "./Figures/Fig_5")

@@ -758,3 +758,76 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
     - "Gulf of Alaska" and "Eastern Bering Sea" headers need to be centered over panels b-c and d-e, respectively.
     - Plot winter SST values, not anomalies. Remove "anomaly" from the x-axis labels.
     - Put a thin grey line at 0 on the AR(1) plots.
+
+# Replot LME comparison and climate model analysis
+- The goal here is to replot these two comparisons using the updated versions of SST AR(1) from analysis.R.
+- The two questions we are asking here:
+    - For the comparison of the GOA and EBS AR(1) time series with AR(1) time series for other boreal LMEs - is the reddening that we observe locally shared broadly across boreal ecosystems?
+    - For the comparison with the weighted climate model outputs for the two ecosystems under preindustrial and SSP2_45: is increased reddening an expression of climate change?
+- For the second question, I see that the direct comparison between observed AR(1) and climate model outputs isn't needed. Instead, we just need to compare SSP2_45 with preindustrial runs. These are plotted in CMIP6SST.AR1.png. If the plotted data can be recovered from this repo, we just need to replot in the same style as other plots in the manuscript.
+- For the first question, see if the data for the figure lme.AR1.DFA.png is available in the repo (loadings and shared trend from a dynamic factro analysis). If so, this figure can also be replotted in manuscript style.
+- The GOA and EBS AR(1) time series can be plotted over the DFA trend in the second panel for this question.
+- The revised plots can be combined in a four-panel figure (Fig. 2)
+
+# Next step
+- LME SST data are downloaded.
+- Re-run the DFA on AR(1) values for 15-year windows for Nov-Mar for all the LMEs. Plot the loadings and latent trend.
+- Re-run with all LMEs that extend north of the Eastern Bering Sea in the polygon used in this analysis to confirm that ice is not driving observed AR(1) trends.
+
+# Revision
+- Re-run without the EBS and GOA - this will match the initial analysis.
+
+# CMIP6 outputs
+- Use SSP245 as the forced run. 
+- CMIP6 outputs can be found at https://github.com/mikelitzow/CMIP6-attribution.
+- Evaluate whether matching preindustrial runs are available on the same repo. If not, develop and execute a plan for fetching the necessary preindustrial runs from the internet.
+
+# Combine plots
+- Make a four-panel Fig. 2 combining these results.
+- The LME comparison should be panels (a-b), on the top row, and the CMIP6 results should be panels (c-d), on the bottom row.
+
+# Refine
+- Add the observed time series to each of the CMIP6 plots (panels c, d).
+
+# Iterate
+- Linear detrending, not LOESS, should be used for the CMIP6 analysis.
+
+# Fig. 3
+- Make a three-panel figure.
+- Panel (a) should be the regression map of SST AR(1) on AL SD. This should be the top row, full-width.
+- Panels (b-c) should be the dual-axis plots of AL SD and SST AR(1) for the two ecosystems. These panels should be the second row, each half width for the figure, with shared axis titles.
+
+# Iterate
+- Restrict panels b-c to include only complete winters.
+- Make the overall figure wider, and panels b-c higher / panel a less high. Goal is to make the the three panels the same height while retaining the aspect ratio of b-c.
+
+# Refine
+- Note this should be figure 3, not figure 4.
+- Advise on the best layout for GRL. Would a single-row, three-column layout work?
+
+# Refine
+- Make the top row taller and the bottom row (panels b, c) shorter. This is to make the map a little bigger and the aspect ratio for the time series figs a little lower.
+- Produce in the final production size so the font size can be evaluated directly.
+
+# Fig. 4
+- Make a similar three-panel plot with the regression of MLD on AL anomalies in panel a, and the dual-axis time series of AR(1) for MLD and AL SD in panels b, c.
+
+# Iterate figures
+- Remove the study site figure from the current Fig. 1.
+- Create a new Figure 1 that is a standalone study site figure.
+    - It should be plotted in the same projection and over the same lat/long range as the current Figs. 3a/4a.
+    - It should include the SLP EOF loadings that are currently plotted in Findings_summary.pdf Fig. 4.
+    - The EBS, GOA, and AL Index area should all be indicated.
+- The four time series panels currenly in Fig. 1 should become the new Fig. 2.
+- Update other figure numbers.
+
+# Iterate
+- The plotted values for SLP EOF in Fig. 1 should be centered at 0.
+- So the range in the legend should be from -(max loading) to max loading.
+
+# Check
+- Something is wrong with the new loadings plot.
+- The loadings pattern does not match Fig. 4 in the findings summary. 
+- The culprit is not the legend range - that is actually not centered on 0 in the findings summary.
+- Is the problem that we should actually be using winter SLP values for the EOF as reported in the findings summary caption?
+- Investigate.
