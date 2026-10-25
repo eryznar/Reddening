@@ -831,3 +831,32 @@ ERROR - 2026-04-02T23:27:49Z - Dataset not found: global-reanalysis-phy-001-031-
 - The culprit is not the legend range - that is actually not centered on 0 in the findings summary.
 - Is the problem that we should actually be using winter SLP values for the EOF as reported in the findings summary caption?
 - Investigate.
+
+# New folder for presentation figs  
+- Create a presentation_figs folder to contain versions of project figures that will be effective for a powerpoint talk at a presentation.
+
+# Specifics
+- Create a polar projection map with each of the LMEs outlined and labeled.
+- Maintain the color shading used for EBS and GOA throughout to distinguish the study systems from the other LMEs.
+
+# Revise
+- For the DFA loadings and trend presentation figure, make the legend for the shared trend, GOA, and EBS lines all fit underneath the trend plot.
+
+# Revise
+- For the LME map, move the GOA label underneath the EBS label on the left-hand side.
+
+# Revise DFA
+- Drop the Black Sea from this analysis.
+- Refit the DFA.
+- Recalculate correlations between the shared trend and the GOA and EBS.
+- Replot all figures (manuscript, presentation, and map) at the same plot size as originals.
+- Ensure map is centered at the pole.
+
+# Revise
+- Make the presentation SST figure one-column, two rows.
+- Make the new figure taller and narrower than the last version.
+
+# Fisheries disaster
+- Search the web for all declared fisheries economic disasters in Alaska since 2014. 
+- Make a map showing locations and labelling each.
+- Include pending disasters, and label them the same way as declared disasters.

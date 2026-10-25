@@ -157,18 +157,20 @@ ps_cells <- function(lon, lat, value, half = 0.25, lon0 = 205,
 # Text with a white halo, so labels stay legible over a filled field without
 # an opaque label box hiding data. Returns a list of layers: `n` offset copies
 # in the halo colour, then the text itself. `r` is the halo radius in data
-# units (projected Earth radii).
+# units (projected Earth radii). A `hjust` column in `data` aligns each label;
+# `...` passes further fixed parameters (vjust, lineheight) to geom_text().
 geom_text_halo <- function(data, size = 7 / .pt, colour = "black",
                            halo = "white", r = 0.0028, n = 12,
-                           fontface = "bold") {
+                           fontface = "bold", ...) {
+  map <- if ("hjust" %in% names(data))
+    aes(x = x, y = y, label = lab, hjust = hjust) else aes(x = x, y = y, label = lab)
   ang <- seq(0, 2 * pi, length.out = n + 1)[-(n + 1)]
   bg  <- lapply(ang, function(a) {
     d <- data; d$x <- d$x + r * cos(a); d$y <- d$y + r * sin(a)
-    geom_text(data = d, aes(x = x, y = y, label = lab),
-              colour = halo, size = size, fontface = fontface)
+    geom_text(data = d, map, colour = halo, size = size, fontface = fontface, ...)
   })
-  c(bg, list(geom_text(data = data, aes(x = x, y = y, label = lab),
-                       colour = colour, size = size, fontface = fontface)))
+  c(bg, list(geom_text(data = data, map, colour = colour, size = size,
+                       fontface = fontface, ...)))
 }
 
 # Clean 0-360 world map used by every projected map panel.
@@ -183,11 +185,15 @@ mapWorld.clean <- map_data("world2")
 # are read from the global environment, as elsewhere in the script.
 # `land.fill = NA` leaves land unfilled so an atmospheric field shows
 # through it. `fill.scale` replaces the default diverging scale.
+# `grat.size` and `line.scale` enlarge the lat/lon labels and every stroke
+# for maps drawn bigger than a journal panel (the slides of Section 27).
 ps_regression_map <- function(grid, fill.name, col.lim,
                               lon.rng = c(160, 250), lat.rng = c(20, 66),
                               lon0 = 205, cell.half = 0.25, q.level = 0.05,
                               sig.colour = "#1B7837",
                               label.size = 7 / .pt,     # EBS/GOA/AL Index labels
+                              grat.size  = 7 / .pt,     # lat/lon labels
+                              line.scale = 1,           # multiplies every stroke
                               land.fill = "grey85",
                               fill.scale = NULL) {
   # Cells are drawn 20% oversize so neighbours overlap: exactly abutting
@@ -240,19 +246,19 @@ ps_regression_map <- function(grid, fill.name, col.lim,
     geom_polygon(data = cells, aes(x = x, y = y, group = id, fill = value)) +
     { if (!is.null(qpath))
         geom_path(data = qpath, aes(x = x, y = y, group = seg),
-                  colour = sig.colour, linewidth = 0.45) } +
+                  colour = sig.colour, linewidth = 0.45 * line.scale) } +
     geom_polygon(data = coast, aes(x = x, y = y, group = group),
-                 fill = land.fill, colour = "grey30", linewidth = 0.2) +
+                 fill = land.fill, colour = "grey30", linewidth = 0.2 * line.scale) +
     geom_path(data = grat$lines, aes(x = x, y = y, group = grat),
-              colour = "grey45", linewidth = 0.15, linetype = "dotted") +
+              colour = "grey45", linewidth = 0.15 * line.scale, linetype = "dotted") +
     geom_path(data = al.box, aes(x = x, y = y),
-              colour = "black", linewidth = 0.25, linetype = "dashed") +
+              colour = "black", linewidth = 0.25 * line.scale, linetype = "dashed") +
     geom_path(data = areas, aes(x = x, y = y, group = area),
-              colour = "black", linewidth = 0.4) +
+              colour = "black", linewidth = 0.4 * line.scale) +
     geom_path(data = domain, aes(x = x, y = y),
-              colour = "black", linewidth = 0.4) +
+              colour = "black", linewidth = 0.4 * line.scale) +
     geom_text(data = grat$labels, aes(x = x, y = y, label = lab),
-              size = 7 / .pt, colour = "black") +
+              size = grat.size, colour = "black") +
     geom_text_halo(area.lab, size = label.size) +
     { if (is.null(fill.scale))
         scale_fill_gradient2(low = "steelblue4", mid = "white",
@@ -4673,7 +4679,8 @@ message("Saved: Figures/Fig_2.png and .pdf")
 # i.e. the Section 21 (Fig. 2) method. As in that figure, the DFA is fit to
 # the LMEs alone, so comparing the GOA and EBS series with the shared trend
 # is not circular. The LMEs are those in ERA5_processing_LMEs.R: LMEs north
-# of 40N less six high-Arctic LMEs (which the original figure still had).
+# of 40N less six high-Arctic LMEs (which the original figure still had),
+# and less the Black Sea, dropped on 2026-10-24.
 #
 # Ice check: ERA5 holds SST at 271.46 K (-1.69 C) under sea ice, so winter
 # AR(1) in ice-covered LMEs partly tracks ice cover. The DFA is re-run
@@ -4688,7 +4695,8 @@ lme.numbers <- c(1, 2, 8, 9, 18, 19, 20, 21, 22, 23, 24, 51, 52, 53, 54,
                  55, 56, 57, 58, 59, 60, 62, 63, 64)
 lme.drop    <- c("Laptev Sea", "Kara Sea", "Canadian Eastern Arctic - West Greenland",
                  "Beaufort Sea", "Central Arctic", "East Siberian Sea",
-                 "East Bering Sea", "Gulf of Alaska")   # EBS/GOA: study polygons
+                 "East Bering Sea", "Gulf of Alaska",   # EBS/GOA: study polygons
+                 "Black Sea")                           # dropped 2026-10-24
 ice.sst.K   <- 271.465           # ERA5 sea-ice SST is 271.46 K; margin for float noise
 lme.north   <- max(ebs.poly$lat) # 65N, the northern edge of the EBS polygon
 
@@ -4782,7 +4790,10 @@ if (file.exists(lme.sst.cache)) {
   message("Saved: ", lme.sst.cache)
 }
 
-lme.meta <- distinct(lme.monthly, region, lat.max, n.cells)
+# The drop list is applied again here so that it also holds for a cache
+# written before an LME was dropped (the cache still carries the Black Sea)
+lme.monthly <- filter(lme.monthly, !region %in% lme.drop)
+lme.meta    <- distinct(lme.monthly, region, lat.max, n.cells)
 
 # --- Winter means and rolling AR(1), as in Section 21 --------------------
 winter_means <- function(d) {
@@ -5277,8 +5288,11 @@ fig3.cols   <- c(cmip6.cols, observed = "black")
 fig3.labs   <- c(cmip6.labs, observed = "Observed (ERA5)")
 
 # One region per panel, so each carries its own tag; the region name sits in
-# a strip as in the standalone CMIP6 figure
-cmip6_panel <- function(reg, reg.label, tag, y.title = TRUE) {
+# a strip as in the standalone CMIP6 figure. `observed = FALSE` leaves out the
+# ERA5 series (and its legend key) on the same axes, for the first step of
+# the slide build in Section 27.
+cmip6_panel <- function(reg, reg.label, tag, y.title = TRUE, observed = TRUE) {
+  levs <- if (observed) fig3.levels else names(cmip6.cols)
   cmip6.wtd %>%
     filter(region == reg) %>%
     mutate(experiment = factor(experiment, levels = names(cmip6.cols)),
@@ -5288,14 +5302,15 @@ cmip6_panel <- function(reg, reg.label, tag, y.title = TRUE) {
     geom_ribbon(aes(ymin = ar1.wmean - ar1.wsd, ymax = ar1.wmean + ar1.wsd),
                 alpha = 0.15, colour = NA) +
     geom_line(linewidth = 0.4) +
-    geom_line(data = filter(fig3.obs, region == reg),
-              aes(x = year, y = ar1, colour = "observed"),
-              inherit.aes = FALSE, linewidth = 0.5) +
+    { if (observed)
+        geom_line(data = filter(fig3.obs, region == reg),
+                  aes(x = year, y = ar1, colour = "observed"),
+                  inherit.aes = FALSE, linewidth = 0.5) } +
     facet_wrap(~ panel) +
-    scale_colour_manual(values = fig3.cols, limits = fig3.levels,
-                        labels = fig3.labs, name = NULL) +
-    scale_fill_manual(values = c(cmip6.cols, observed = NA), limits = fig3.levels,
-                      labels = fig3.labs, name = NULL) +
+    scale_colour_manual(values = fig3.cols, limits = levs,
+                        labels = fig3.labs[levs], name = NULL) +
+    scale_fill_manual(values = c(cmip6.cols, observed = NA), limits = levs,
+                      labels = fig3.labs[levs], name = NULL) +
     coord_cartesian(ylim = fig3.cmip6.ylim) +
     labs(x = "Year (end of 15-yr window)",
          y = if (y.title) "Winter SST AR(1), 15-yr window" else NULL,
@@ -5501,3 +5516,535 @@ p.fig5 <- save_map_dual_figure(
                  fig5.series, fig5.k, fig5.b, fig5.ar1.range,
                  right.title = "AL SLP SD (z-scored)"),
   "./Figures/Fig_5")
+
+# ============================================================
+# SECTION 27: PRESENTATION FIGURES — slide versions of Figs. 1-5
+# ============================================================
+# Versions of the manuscript figures for a PowerPoint talk, written to
+# ./presentation_figs. Each is drawn at the size it will be shown on a 16:9
+# slide (13.33 x 7.5 in): 5.75 in tall, which fills the slide below a title,
+# and at most 12.3 in wide. Inserted at 100%, the text is the point size it
+# shows at -- 18-pt axis titles, 16-pt tick labels -- legible from the back
+# of a room. Compared with the manuscript versions:
+#   - Multi-panel figures are split so each slide carries one result, and
+#     panel tags are dropped, as there is no caption for them to refer to.
+#   - Strokes are heavier and the CMIP6 bands darker, to survive a projector;
+#     facet strips lose their grey boxes and read as panel titles.
+#   - Fig. 3 opens with a map of the DFA's LMEs, and its CMIP6 panels come
+#     as a two-step build: models first, then the observed series added on
+#     identical axes, so the step doesn't jump.
+# The panels come from the manuscript builders (Sections 21-26), restyled,
+# so data, colours and statistics stay identical to the manuscript.
+# PNG at 300 dpi, which PowerPoint inserts at its true size.
+# Requires Sections 1-7, 17 and 21-26.
+
+talk.dir <- "./presentation_figs"
+dir.create(talk.dir, showWarnings = FALSE)
+
+talk.w <- 12.3    # in: slide width less margins
+talk.h <- 5.75    # in: slide height less a title
+talk.regions <- c(GOA = "Gulf of Alaska", EBS = "Eastern Bering Sea")
+
+theme_talk <- function(base_size = 18) {
+  theme_grl(base_size) +
+    theme(axis.text          = element_text(size = base_size - 2, colour = "black"),
+          axis.ticks         = element_line(linewidth = 0.5, colour = "black"),
+          axis.ticks.length  = unit(2, "mm"),
+          legend.text        = element_text(size = base_size - 2),
+          legend.key.width   = unit(12, "mm"),
+          legend.position    = "bottom",
+          legend.margin      = margin(0, 0, 0, 0),
+          legend.box.spacing = unit(2, "mm"),
+          panel.grid.major   = element_line(colour = "grey90", linewidth = 0.4),
+          panel.border       = element_rect(colour = "black", linewidth = 0.8, fill = NA),
+          plot.title         = element_text(size = base_size + 2, hjust = 0.5),
+          strip.background   = element_blank(),
+          strip.text         = element_text(size = base_size + 2,
+                                            margin = margin(0, 0, 2, 0, "mm")),
+          plot.margin        = margin(2, 4, 2, 4, "mm"))
+}
+
+# Restyle a manuscript panel for a slide: thicker strokes and points,
+# annotation text scaled from the manuscript's 7 pt to 16 pt, darker bands,
+# no panel tag and the slide theme. Layers are changed in place, so pass a
+# panel built for the slide, never one a manuscript figure still uses.
+talkify <- function(p, line.k = 2.5, text.k = 16 / 7, alpha.k = 1.7) {
+  for (l in p$layers) {
+    ap <- l$aes_params
+    if (inherits(l$geom, "GeomText")) {
+      if (!is.null(ap$size)) ap$size <- ap$size * text.k
+    } else {
+      for (a in intersect(c("linewidth", "size"), names(ap))) ap[[a]] <- ap[[a]] * line.k
+      if (!is.null(ap$alpha)) ap$alpha <- min(1, ap$alpha * alpha.k)
+    }
+    l$aes_params <- ap
+  }
+  p + labs(tag = NULL) + theme_talk()
+}
+
+talk_save <- function(p, name, width = talk.w, height = talk.h) {
+  f <- file.path(talk.dir, paste0(name, ".png"))
+  ggsave(f, plot = p, width = width, height = height, dpi = 300, bg = "white")
+  message(sprintf("Saved: %s (%.2f x %.2f in)", f, width, height))
+}
+
+# --- Maps: Figs. 1, 4a, 5a ---------------------------------------------------
+# ps_regression_map() at slide scale, with the colour bar upright at the
+# right so the map takes the full height. The figure width is solved from
+# the map's fixed aspect and the measured width of everything else (labels,
+# colour bar), so the saved figure has no slack beside the map.
+talk_map <- function(grid, fill.name, col.lim, ...) {
+  ps_regression_map(grid, fill.name = fill.name, col.lim = col.lim,
+                    label.size = 14 / .pt, grat.size = 15 / .pt,
+                    line.scale = 2.4, ...) +
+    guides(fill = guide_colourbar(theme = theme(
+      legend.title.position = "top",
+      legend.key.width      = unit(6, "mm"),
+      legend.key.height     = unit(90, "mm"),
+      legend.frame          = element_rect(colour = "black", linewidth = 0.5),
+      legend.ticks          = element_line(colour = "black", linewidth = 0.5),
+      legend.ticks.length   = unit(1.5, "mm")))) +
+    theme(legend.position  = "right",
+          legend.direction = "vertical",
+          legend.title     = element_text(size = 16),
+          legend.text      = element_text(size = 16),
+          legend.box.spacing = unit(4, "mm"),
+          plot.margin      = margin(2, 2, 2, 2, "mm"))
+}
+
+talk_map_width <- function(p, height = talk.h) {
+  gt   <- ggplotGrob(p)
+  fixd <- function(u, conv) sum(conv(u[grid::unitType(u) != "null"], "in",
+                                     valueOnly = TRUE))
+  asp  <- diff(p$coordinates$limits$x) / diff(p$coordinates$limits$y)
+  fixd(gt$widths, grid::convertWidth) +
+    (height - fixd(gt$heights, grid::convertHeight)) * asp
+}
+
+save_talk_map <- function(p, name) talk_save(p, name, width = talk_map_width(p))
+
+# Fig. 1: colours as in the manuscript (RdBu stretched over the data range),
+# so blue marks weak positive loadings, not negative ones
+save_talk_map(talk_map(fig1.eof, "SLP EOF1\nloading", max(abs(fig1.eof$beta)),
+                       land.fill  = NA,
+                       fill.scale = scale_fill_distiller(
+                         palette = "RdBu", direction = -1,
+                         name = "SLP EOF1\nloading")),
+              "Fig1_study_site_map")
+
+save_talk_map(talk_map(sst.ar1.reg.grid, "β (AR(1)\nper SD)", col.lim.sst),
+              "Fig4_1_SST_AR1_regression_map")
+
+save_talk_map(talk_map(mld.reg.grid, "β\n(m / hPa)", col.lim.mld),
+              "Fig5_1_MLD_regression_map")
+
+# --- Fig. 2: winter SST, then its rolling AR(1) -------------------------------
+# One variable per slide, GOA and EBS side by side, or stacked with GOA on
+# top (`stack = TRUE`). Each y axis is scaled to its own panel as in the
+# manuscript; stacked panels share the year axis, drawn once at the bottom.
+talk_region_pair <- function(panel_fn, ..., stack = FALSE) {
+  p.goa <- talkify(panel_fn("GOA", NULL) + labs(title = talk.regions[["GOA"]], ...))
+  p.ebs <- talkify(panel_fn("EBS", NULL) + labs(title = talk.regions[["EBS"]], ...))
+  if (stack)
+    (p.goa / p.ebs) + plot_layout(axis_titles = "collect", axes = "collect_x")
+  else
+    (p.goa | p.ebs) + plot_layout(axis_titles = "collect")
+}
+
+# Stacked, the SST slide is taller and narrower than the others; 6.5 in
+# still fits a 7.5-in slide under a one-line title
+talk_save(talk_region_pair(ts_panel, x = "Year", y = "Winter SST (°C)",
+                           stack = TRUE),
+          "Fig2_1_winter_SST", width = 9, height = 6.5)
+talk_save(talk_region_pair(ar1_panel, x = "Year (end of 15-yr window)",
+                           y = "Winter SST AR(1), 15-yr window"),
+          "Fig2_2_SST_AR1")
+
+# --- Fig. 3 context: map of the boreal LMEs ---------------------------------
+# The LMEs of the Section 22 DFA, outlined on the polar stereographic
+# projection of Figs. 1, 4 and 5 (Pacific at the bottom), with the EBS and GOA
+# study polygons shaded in their figure colours. Land is drawn over the
+# shading, so only the polygons' ocean is coloured. Labels sit in two columns
+# beside the map, each joined to its region by a leader line: the European
+# LMEs are too small to carry their own.
+lme.map.lat <- 38       # southern edge of the map; the LMEs reach 40.8N
+lme.map.R   <- -ps_project(0, lme.map.lat, lon0 = 0)$y  # its radius
+lme.dbf   <- foreign::read.dbf("./Data/LME shapefiles/LMEs66.dbf", as.is = TRUE)
+lme.rings <- read_shp_rings("./Data/LME shapefiles/LMEs66.shp")
+lme.keep  <- which(lme.dbf$LME_NUMBER %in% lme.numbers &
+                   !lme.dbf$LME_NAME %in% lme.drop)
+
+# Outlines as projected paths, broken wherever an edge runs along the 180
+# meridian: the shapefile cuts the Northern Bering - Chukchi Seas there, and
+# drawing the cut would put a false boundary through it
+lme_outline <- function(k) {
+  bind_rows(lapply(split(lme.rings[[k]], lme.rings[[k]]$ring), function(g) {
+    seam <- abs(g$x) > 179.999
+    runs <- split(g, cumsum(c(FALSE, seam[-1] & seam[-nrow(g)])))
+    bind_rows(lapply(names(runs), function(j) {
+      if (nrow(runs[[j]]) < 2) return(NULL)
+      d <- densify_lonlat(runs[[j]]$x, runs[[j]]$y)
+      cbind(ps_project(d$lon, d$lat), grp = paste(k, g$ring[1], j))
+    }))
+  }))
+}
+
+# Label anchor: the in-LME point of a coarse grid nearest the median of all
+# such points, so it falls inside even a concave or multi-part LME
+lme_anchor <- function(k) {
+  r <- lme.rings[[k]]
+  g <- expand.grid(x = seq(min(r$x), max(r$x), length.out = 60),
+                   y = seq(min(r$y), max(r$y), length.out = 60))
+  g <- g[in_rings(g$x, g$y, r), ]
+  g[which.min((g$x - median(g$x))^2 + (g$y - median(g$y))^2), ]
+}
+
+lme.lines <- bind_rows(lapply(lme.keep, lme_outline))
+lme.labs  <- bind_rows(
+  lapply(lme.keep, function(k)
+    cbind(lme_anchor(k), lab = lme.dbf$LME_NAME[k], face = "plain")),
+  # Study polygons: fixed points in their open ocean. GOA's is at the
+  # polygon's western end, so its leader passes below the EBS polygon.
+  data.frame(x = c(186, 200), y = c(58.5, 52),
+             lab = unname(talk.regions[c("EBS", "GOA")]), face = "bold"))
+lme.labs[c("x", "y")] <- ps_project(lme.labs$x, lme.labs$y)
+lme.labs$lab[lme.labs$lab == "Northern Bering - Chukchi Seas"] <-
+  "Northern Bering -\nChukchi Seas"
+# Left column: the anchors left of the pole, plus the Baltic (just right of
+# the pole) to even the columns up, and GOA so the two study systems sit
+# together, GOA under EBS
+lme.labs$left <- lme.labs$x < 0 |
+  lme.labs$lab %in% c("Baltic Sea", talk.regions[["GOA"]])
+
+lme.study <- bind_rows(lapply(c("EBS", "GOA"), function(a) {
+  poly <- if (a == "EBS") ebs.poly else goa.poly
+  cbind(ps_path(c(poly$lon, poly$lon[1]), c(poly$lat, poly$lat[1]), n = 500),
+        area = a)
+}))
+lme.coast  <- ps_coast(mapWorld.clean, c(0, 360), c(lme.map.lat, 90))
+lme.edge   <- ps_path(c(0, 360), rep(lme.map.lat, 2), n = 1000)
+lme.grat   <- bind_rows(
+  bind_rows(lapply(c(40, 60, 80), function(P)
+    cbind(ps_path(c(0, 360), c(P, P), n = 600), grp = paste0("p", P)))),
+  bind_rows(lapply(seq(0, 330, 30), function(L)
+    cbind(ps_path(c(L, L), c(lme.map.lat, 80)), grp = paste0("m", L)))))
+
+# Panel limits: the disc plus a label column each side, both as wide as the
+# longest label, converted from inches at the scale the 5.75-in height sets.
+# Equal columns put the pole at the centre of the figure.
+lme.lab.size <- 14
+lab_width <- function(lab, face)
+  max(mapply(function(l, f) grid::convertWidth(grid::grobWidth(grid::textGrob(
+    l, gp = grid::gpar(fontsize = lme.lab.size, fontface = f))), "in",
+    valueOnly = TRUE), lab, face))
+lme.seg.gap <- 0.06                                # disc to leader-line end
+lme.txt.pad <- 0.012                               # leader-line end to text
+lme.gap     <- lme.seg.gap + lme.txt.pad
+lme.ylim    <- c(-1, 1) * (lme.map.R + 0.02)
+lme.in.per.unit <- (talk.h - 0.16) / diff(lme.ylim) # less the 2-mm margins
+lme.xlim  <- c(-1, 1) * (lme.map.R + lme.gap + 0.02 +
+                         lab_width(lme.labs$lab, lme.labs$face) / lme.in.per.unit)
+
+# Each column keeps its labels in the order of their anchors, pushing
+# overlapping neighbours apart evenly until none overlap, inside the panel.
+# A leader line runs straight from each anchor to its label.
+lme.line.h <- lme.lab.size / 72 * 1.2 / lme.in.per.unit   # one text line
+lme_label_column <- function(d, left) {
+  d  <- d[order(-d$y), ]
+  n  <- nrow(d)
+  h  <- lme.line.h * (1 + lengths(regmatches(d$lab, gregexpr("\n", d$lab))))
+  ly <- d$y
+  for (it in 1:1000) {
+    need <- (h[-n] + h[-1]) / 2 - (ly[-n] - ly[-1])   # overlap of each pair
+    if (all(need <= 1e-9)) break
+    i <- which(need > 1e-9)
+    ly[i]     <- ly[i]     + need[i] / 2
+    ly[i + 1] <- ly[i + 1] - need[i] / 2
+    ly <- pmin(pmax(ly, lme.ylim[1] + h / 2), lme.ylim[2] - h / 2)
+  }
+  side <- if (left) -1 else 1
+  d$ly <- ly
+  d$seg.x <- side * (lme.map.R + lme.seg.gap)
+  d$txt.x <- side * (lme.map.R + lme.gap)
+  list(geom_segment(data = d, aes(x = x, y = y, xend = seg.x, yend = ly),
+                    colour = "grey35", linewidth = 0.4),
+       geom_text(data = d, aes(x = txt.x, y = ly, label = lab, fontface = face),
+                 hjust = if (left) 1 else 0, size = lme.lab.size / .pt,
+                 lineheight = 0.9))
+}
+
+p.talk.lme.map <- ggplot() +
+  geom_polygon(data = lme.study, aes(x = x, y = y, group = area, fill = area),
+               alpha = 0.6) +
+  # Land outlined in its own fill colour: world2 cuts land at 0/360, and a
+  # contrasting outline would draw that cut through Britain and France
+  geom_polygon(data = lme.coast, aes(x = x, y = y, group = group),
+               fill = "grey85", colour = "grey85", linewidth = 0.2) +
+  geom_path(data = lme.grat, aes(x = x, y = y, group = grp),
+            colour = "grey55", linewidth = 0.3, linetype = "dotted") +
+  geom_path(data = lme.lines, aes(x = x, y = y, group = grp),
+            colour = "grey20", linewidth = 0.45) +
+  geom_path(data = lme.study, aes(x = x, y = y, group = area, colour = area),
+            linewidth = 1) +
+  geom_path(data = lme.edge, aes(x = x, y = y), colour = "black", linewidth = 0.8) +
+  geom_point(data = lme.labs, aes(x = x, y = y), size = 1.3, colour = "grey15") +
+  lme_label_column(filter(lme.labs, left), TRUE) +
+  lme_label_column(filter(lme.labs, !left), FALSE) +
+  scale_fill_manual(values = area.colors, guide = "none") +
+  scale_colour_manual(values = area.colors, guide = "none") +
+  coord_equal(xlim = lme.xlim, ylim = lme.ylim, expand = FALSE) +
+  theme_grl_map() +
+  theme(plot.margin = margin(2, 2, 2, 2, "mm"))
+
+talk_save(p.talk.lme.map, "Fig3_1_LME_map",
+          width = diff(lme.xlim) * lme.in.per.unit + 0.16)
+
+# --- Fig. 3: LME DFA, then CMIP6 vs observed --------------------------------
+# Collected legends take their position from the patchwork, not the panels,
+# hence the `& theme()` on each multi-panel slide.
+talk.collect <- theme(legend.position = "bottom")
+
+# The trend legend sits in its own cell under the trend panel, one entry per
+# row (each carries its r and p, too long to share a row at 16 pt), while
+# the loadings panel spans the full height beside both. The trend panel is
+# then too short for its y title on one line.
+p.talk.lme <- talkify(dfa_loadings_panel(dfa.all$loadings, NULL)) +
+  (talkify(dfa_overlay_panel(dfa.all, NULL)) +
+     labs(y = "Winter SST AR(1),\nstandardized") +
+     guides(colour = guide_legend(ncol = 1))) +
+  guide_area() +
+  plot_layout(design = "AB\nAC", widths = c(1, 1.5),
+              heights = unit(c(1, 0.95), c("null", "in")), guides = "collect")
+talk_save(p.talk.lme, "Fig3_2_LME_DFA")
+
+talk_cmip6 <- function(observed)
+  (talkify(cmip6_panel("GOA", talk.regions[["GOA"]], NULL, observed = observed)) |
+     talkify(cmip6_panel("EBS", talk.regions[["EBS"]], NULL, y.title = FALSE,
+                         observed = observed))) +
+  plot_layout(guides = "collect", axis_titles = "collect_x") & talk.collect
+
+talk_save(talk_cmip6(observed = FALSE), "Fig3_3_CMIP6_models")
+talk_save(talk_cmip6(observed = TRUE),  "Fig3_4_CMIP6_models_observed")
+
+# --- Figs. 4-5: AR(1) vs AL SLP SD, dual axes --------------------------------
+talk_dual <- function(d, chel.goa, chel.ebs, series, k, b, ar1.range, left.title)
+  (talkify(dual_ar1_panel(d, "GOA", talk.regions[["GOA"]], chel.goa, NULL,
+                          series, k, b, ar1.range, left.title = left.title)) |
+     talkify(dual_ar1_panel(d, "EBS", talk.regions[["EBS"]], chel.ebs, NULL,
+                            series, k, b, ar1.range,
+                            right.title = "AL SLP SD (z-scored)"))) +
+  plot_layout(guides = "collect", axis_titles = "collect_x") & talk.collect
+
+talk_save(talk_dual(fig4.dat, fig4.chel.goa, fig4.chel.ebs, fig4.series,
+                    fig4.k, fig4.b, fig4.ar1.range, "SST AR(1)"),
+          "Fig4_2_SST_AR1_AL_SD")
+talk_save(talk_dual(fig5.dat, fig5.chel.goa, fig5.chel.ebs, fig5.series,
+                    fig5.k, fig5.b, fig5.ar1.range, "MLD AR(1)"),
+          "Fig5_2_MLD_AR1_AL_SD")
+
+# --- Context: Alaska fishery disasters since 2014, declared and pending -------
+# Federal fishery resource disaster determinations for Alaska, from NOAA's
+# Fishery Resource Disaster Online System (disasters.fisheries.noaa.gov,
+# read 2026-10-24; all 38 Alaska requests are saved in
+# Data/noaa_fishery_disasters_alaska.csv). Mapped: the 22 approved
+# (declared) disasters, all for fishing years 2016-2023 -- none was declared
+# for 2014 or 2015 -- and the 14 requests still pending (2023-2025), which
+# are labelled the same way with their seasons starred. Not mapped: the 2
+# not approved. A request can cover several fisheries; each is placed at its
+# fishery area, and areas share one label listing their fisheries and
+# seasons. The GOA Pacific cod and Bering Sea crab markers stand for
+# fisheries spread across those seas.
+ak.dis.noaa <- read.csv("./Data/noaa_fishery_disasters_alaska.csv")
+
+# number = NOAA disaster number; area keys index ak.dis.areas below
+ak.dis <- data.frame(rbind(
+  c(72,  "kod",   "pink salmon",     "2016"),
+  c(72,  "pws",   "pink salmon",     "2016"),
+  c(72,  "chig",  "pink salmon",     "2016"),
+  c(72,  "lci",   "pink salmon",     "2016"),
+  c(72,  "sap",   "pink salmon",     "2016"),
+  c(72,  "sea",   "pink salmon",     "2016"),
+  c(72,  "yak",   "pink salmon",     "2016"),
+  c(81,  "cod",   "Pacific cod",     "2018"),
+  c(85,  "chig",  "sockeye salmon",  "2018"),
+  c(96,  "nort",  "red king crab",   "2019"),
+  c(106, "uci",   "salmon",          "2018"),   # East Side Set Net
+  c(106, "uci",   "salmon",          "2020"),
+  c(107, "pws",   "salmon",          "2018"),   # Copper River
+  c(107, "pws",   "salmon",          "2020"),
+  c(108, "tann",  "Tanner crab",     "2019/20"),
+  c(109, "cod",   "Pacific cod",     "2020"),
+  c(110, "nort",  "salmon",          "2020"),
+  c(110, "yuk",   "salmon",          "2020"),
+  c(110, "chig",  "salmon",          "2020"),
+  c(110, "kusk",  "salmon",          "2020"),
+  c(110, "sea",   "salmon",          "2020"),
+  c(110, "yuk",   "salmon",          "2021"),
+  c(115, "chig",  "salmon",          "2021"),
+  c(116, "bbrkc", "red king crab",   "2021/22"),
+  c(116, "snow",  "snow crab",       "2021/22"),
+  c(118, "nort",  "salmon",          "2021"),
+  c(119, "nort",  "red king crab",   "2020"),
+  c(119, "nort",  "red king crab",   "2021"),
+  c(121, "kusk",  "salmon",          "2021"),
+  c(123, "pws",   "salmon",          "2020"),   # Copper River/PWS coho and pink
+  c(126, "bbrkc", "red king crab",   "2022/23"),
+  c(126, "snow",  "snow crab",       "2022/23"),
+  c(127, "yuk",   "salmon",          "2022"),
+  c(136, "kusk",  "salmon",          "2022"),
+  c(138, "uci",   "salmon",          "2021"),   # East Side Setnet
+  c(138, "uci",   "salmon",          "2022"),
+  c(138, "nel",   "salmon",          "2022"),
+  c(140, "snow",  "snow crab",       "2023/24"),
+  c(141, "chig",  "salmon",          "2022"),
+  c(142, "uci",   "salmon",          "2023")),  # East Side Setnet
+  stringsAsFactors = FALSE)
+names(ak.dis) <- c("number", "area", "fishery", "season")
+ak.dis$status <- "declared"
+
+# Pending requests. The Alaska Peninsula sockeye requests (158, 169) do not
+# split the peninsula, so like 72 they are listed under both its areas; the
+# North Peninsula area also holds the declared 2022 Nelson Lagoon disaster.
+ak.dis.pending <- data.frame(rbind(
+  c(145, "nel",   "salmon",          "2023"),   # North Peninsula drift gillnet
+  c(151, "kotz",  "chum salmon",     "2024"),
+  c(154, "pws",   "salmon",          "2024"),   # pink and chum
+  c(155, "lci",   "pink salmon",     "2024"),
+  c(156, "kod",   "pink salmon",     "2024"),
+  c(157, "chig",  "salmon",          "2024"),
+  c(158, "nel",   "salmon",          "2024"),   # Alaska Peninsula sockeye
+  c(158, "sap",   "salmon",          "2024"),   # ... and South Alaska pink
+  c(164, "uci",   "salmon",          "2024"),   # East Side Setnet
+  c(166, "yuk",   "salmon",          "2024"),
+  c(167, "snow",  "snow crab",       "2024/25"),
+  c(169, "nel",   "salmon",          "2025"),   # Alaska Peninsula sockeye
+  c(169, "sap",   "salmon",          "2025"),
+  c(171, "pws",   "salmon",          "2025"),   # set gillnet sockeye
+  c(172, "yuk",   "salmon",          "2023"),   # Algaaciq Tribe request
+  c(172, "yuk",   "salmon",          "2024"),
+  c(172, "yuk",   "salmon",          "2025"),
+  c(173, "sea",   "salmon",          "2025")),  # Metlakatla, Annette Island
+  stringsAsFactors = FALSE)
+names(ak.dis.pending) <- c("number", "area", "fishery", "season")
+ak.dis.pending$status <- "pending"
+ak.dis <- rbind(ak.dis, ak.dis.pending)
+ak.dis$number <- as.integer(ak.dis$number)
+# The mapped requests must be exactly NOAA's approved and pending ones
+stopifnot(
+  setequal(ak.dis$number[ak.dis$status == "declared"],
+           ak.dis.noaa$number[ak.dis.noaa$determination == "Approved"]),
+  setequal(ak.dis$number[ak.dis$status == "pending"],
+           ak.dis.noaa$number[ak.dis.noaa$determination == "Pending"]))
+
+# Area points (lon/lat, 0-360) and their labels. Labels are placed by hand
+# in projected map units: the Bering Sea and Yukon-Kuskokwim areas in a
+# right-aligned column over the western Bering Sea, the Alaska Peninsula and
+# Gulf areas along the open North Pacific, Cook Inlet and Prince William
+# Sound over interior Alaska. hjust 1 puts a label left of its position, 0
+# right of it; the leader line ends at that position.
+ak.dis.areas <- data.frame(rbind(
+  c("kotz",  "Kotzebue Sound",                      197.4, 66.9, -0.040, -0.400, 0),
+  c("nort",  "Norton Sound",                        196.5, 64.0, -0.205, -0.415, 1),
+  c("yuk",   "Yukon River",                         197.0, 62.0, -0.205, -0.465, 1),
+  c("kusk",  "Kuskokwim River",                     198.2, 60.8, -0.205, -0.500, 1),
+  c("snow",  "Bering Sea",                          188.5, 59.0, -0.205, -0.535, 1),
+  c("tann",  "Bering Sea",                          193.5, 56.8, -0.205, -0.578, 1),
+  c("bbrkc", "Bristol Bay",                         197.5, 57.4, -0.205, -0.612, 1),
+  c("nel",   "North Alaska Peninsula",              198.8, 56.0, -0.080, -0.650, 1),
+  c("sap",   "South Alaska Peninsula",              199.6, 55.2, -0.080, -0.685, 1),
+  c("chig",  "Chignik",                             201.6, 56.3, -0.030, -0.685, 0),
+  c("kod",   "Kodiak",                              207.3, 57.5,  0.030, -0.655, 0),
+  c("cod",   "Gulf of Alaska",                      211.0, 57.0,  0.165, -0.655, 0),
+  c("lci",   "Lower Cook Inlet",                    208.3, 59.4,  0.075, -0.565, 0),
+  c("uci",   "Upper Cook Inlet",                    208.7, 60.6,  0.000, -0.440, 0),
+  c("pws",   "Prince William Sound / Copper River", 214.0, 60.5,  0.090, -0.475, 0),
+  c("yak",   "Yakutat",                             220.3, 59.5,  0.190, -0.510, 0),
+  c("sea",   "Southeast Alaska",                    225.5, 57.0,  0.160, -0.598, 0)),
+  stringsAsFactors = FALSE)
+names(ak.dis.areas) <- c("area", "place", "lon", "lat", "lx", "ly", "hjust")
+ak.dis.areas[3:7] <- lapply(ak.dis.areas[3:7], as.numeric)
+
+# Seasons as items with runs of consecutive years as ranges: 2020, 2021,
+# 2022 -> 2020-22; 2021/22, 2022/23 -> 2021/22-2022/23
+season_items <- function(s) {
+  if (!length(s)) return(character(0))
+  s <- sort(unique(s)); split.yr <- grepl("/", s[1])
+  y <- as.integer(substr(s, 1, 4))
+  runs <- split(seq_along(y), cumsum(c(1, diff(y) != 1)))
+  unname(vapply(runs, function(i) {
+    if (length(i) == 1) s[i]
+    else if (split.yr) paste0(s[i[1]], "\u2013", s[i[length(i)]])
+    else sprintf("%d\u2013%02d", y[i[1]], y[i[length(i)]] %% 100)
+  }, ""))
+}
+# Declared seasons, then pending ones starred (in every area the pending
+# seasons postdate the declared ones). wrap_line() breaks a label line
+# longer than `width` characters after a comma.
+season_list <- function(s, pending) {
+  d <- unique(s[!pending]); p <- setdiff(unique(s[pending]), d)
+  c(season_items(d), if (length(p)) paste0(season_items(p), "*"))
+}
+wrap_line <- function(x, width = 34) {
+  if (nchar(x) <= width) return(x)
+  cut <- gregexpr(", ", x)[[1]]
+  cut <- cut[cut > 0 & cut + 1 <= width]
+  if (!length(cut)) return(x)
+  k <- max(cut)
+  paste0(substr(x, 1, k), "\n", substr(x, k + 2, nchar(x)))
+}
+
+# One label per area: place name, then a line per fishery. An area's salmon
+# disasters share one line, naming the species only when they all agree.
+ak.dis.labs <- ak.dis %>%
+  mutate(group = ifelse(grepl("salmon", fishery), "salmon", fishery)) %>%
+  group_by(area, group) %>%
+  summarise(fishery = if (n_distinct(fishery) == 1) fishery[1] else "salmon",
+            seasons = paste(season_list(season, status == "pending"),
+                            collapse = ", "), .groups = "drop") %>%
+  mutate(line = vapply(paste(fishery, seasons), wrap_line, "")) %>%
+  group_by(area) %>%
+  summarise(detail = paste(line, collapse = "\n"), .groups = "drop") %>%
+  inner_join(ak.dis.areas, by = "area")
+ak.dis.labs[c("x", "y")] <- ps_project(ak.dis.labs$lon, ak.dis.labs$lat)
+ak.dis.labs$seg.x <- ak.dis.labs$lx + ifelse(ak.dis.labs$hjust == 1, 0.004, -0.004)
+
+# A rectangle of the polar stereographic projection, so the map fills the
+# panel; land, graticule and study polygons are clipped by the panel
+ak.xlim  <- c(-0.36, 0.30); ak.ylim <- c(-0.705, -0.385)
+ak.coast <- ps_coast(mapWorld.clean, c(150, 250), c(45, 75))
+ak.grat  <- bind_rows(
+  bind_rows(lapply(seq(50, 70, 5), function(P)
+    cbind(ps_path(c(150, 250), c(P, P), n = 400), grp = paste0("p", P)))),
+  bind_rows(lapply(seq(160, 240, 10), function(L)
+    cbind(ps_path(c(L, L), c(45, 75)), grp = paste0("m", L)))))
+
+p.talk.ak.dis <- ggplot() +
+  geom_polygon(data = lme.study, aes(x = x, y = y, group = area, fill = area),
+               alpha = 0.3) +
+  geom_polygon(data = ak.coast, aes(x = x, y = y, group = group),
+               fill = "grey88", colour = "grey55", linewidth = 0.3) +
+  geom_path(data = ak.grat, aes(x = x, y = y, group = grp),
+            colour = "grey60", linewidth = 0.3, linetype = "dotted") +
+  geom_path(data = lme.study, aes(x = x, y = y, group = area, colour = area),
+            linewidth = 0.8) +
+  geom_segment(data = ak.dis.labs, aes(x = x, y = y, xend = seg.x, yend = ly),
+               colour = "grey30", linewidth = 0.45) +
+  geom_point(data = ak.dis.labs, aes(x = x, y = y), shape = 21, size = 3,
+             fill = "grey10", colour = "white", stroke = 0.8) +
+  # Haloed, as the study-polygon outlines pass under some labels
+  geom_text_halo(transmute(ak.dis.labs, x = lx, y = ly, lab = place, hjust),
+                 size = 14 / .pt, r = 0.0012, n = 16, vjust = -0.15) +
+  geom_text_halo(transmute(ak.dis.labs, x = lx, y = ly, lab = detail, hjust),
+                 size = 13 / .pt, r = 0.0012, n = 16, fontface = "plain",
+                 vjust = 1.15, lineheight = 0.95) +
+  annotate("text", x = ak.xlim[1] + 0.006, y = ak.ylim[1] + 0.006,
+           label = "* request pending", hjust = 0, vjust = 0, size = 13 / .pt) +
+  scale_fill_manual(values = area.colors, guide = "none") +
+  scale_colour_manual(values = area.colors, guide = "none") +
+  coord_equal(xlim = ak.xlim, ylim = ak.ylim, expand = FALSE) +
+  theme_grl_map() +
+  theme(panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.8),
+        plot.margin  = margin(2, 2, 2, 2, "mm"))
+
+talk_save(p.talk.ak.dis, "AK_fishery_disasters_map",
+          width = talk_map_width(p.talk.ak.dis))
